@@ -33,10 +33,15 @@
 body {
   margin: 0;
   min-width: 960px;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(243, 246, 250, 0.94)),
     #f3f6fa;
+}
+
+#root {
+  height: 100vh;
 }
 
 button,
@@ -97,7 +102,8 @@ input:focus {
 .app-shell {
   display: grid;
   grid-template-columns: 294px minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
 }
 
 .sidebar {
@@ -108,6 +114,7 @@ input:focus {
   background: rgba(246, 249, 252, 0.78);
   padding: 22px 16px;
   backdrop-filter: blur(18px);
+  min-height: 0;
 }
 
 .brand {
@@ -183,7 +190,11 @@ input:focus {
 }
 
 .sidebar .panel {
-  align-self: start;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-self: stretch;
+  min-height: 0;
+  max-height: 100%;
   box-shadow: none;
 }
 
@@ -228,10 +239,30 @@ input:focus {
 
 .repo-list {
   display: grid;
+  align-content: start;
   gap: 8px;
-  max-height: calc(100vh - 250px);
-  overflow: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0 10px 12px;
+  scrollbar-color: rgba(37, 99, 235, 0.44) transparent;
+  scrollbar-width: thin;
+}
+
+.repo-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.repo-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.repo-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.42);
+}
+
+.repo-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(37, 99, 235, 0.62);
 }
 
 .repo-item {
@@ -274,6 +305,7 @@ input:focus {
   display: grid;
   grid-template-rows: auto 1fr auto;
   min-width: 0;
+  min-height: 0;
 }
 
 .topbar {
@@ -327,7 +359,32 @@ input:focus {
   grid-template-columns: minmax(430px, 1.2fr) minmax(320px, 0.8fr);
   grid-auto-rows: min-content;
   gap: 18px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 22px;
+  scrollbar-color: rgba(97, 112, 133, 0.34) rgba(255, 255, 255, 0.28);
+  scrollbar-width: auto;
+}
+
+.content-grid::-webkit-scrollbar {
+  width: 12px;
+}
+
+.content-grid::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.content-grid::-webkit-scrollbar-thumb {
+  border: 3px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(97, 112, 133, 0.42);
+  background-clip: padding-box;
+}
+
+.content-grid::-webkit-scrollbar-thumb:hover {
+  background: rgba(97, 112, 133, 0.62);
+  background-clip: padding-box;
 }
 
 .stats-strip {
@@ -368,6 +425,19 @@ input:focus {
 }
 
 .add-panel {
+  grid-column: 1 / -1;
+}
+
+.detail-panel {
+  grid-column: 1;
+}
+
+.status-panel {
+  grid-column: 2;
+  min-height: 100%;
+}
+
+.roadmap-panel {
   grid-column: 1 / -1;
 }
 
@@ -530,13 +600,9 @@ input:focus {
   line-height: 1.6;
 }
 
-.status-panel {
-  grid-column: 1 / -1;
-}
-
 .change-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  grid-template-columns: repeat(2, minmax(110px, 1fr));
   gap: 10px;
   margin-top: 16px;
 }
@@ -565,9 +631,30 @@ input:focus {
 .change-list {
   display: grid;
   gap: 8px;
-  max-height: 300px;
-  overflow: auto;
+  max-height: 360px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   margin-top: 14px;
+  padding-right: 2px;
+  scrollbar-color: rgba(37, 99, 235, 0.38) transparent;
+  scrollbar-width: thin;
+}
+
+.change-list::-webkit-scrollbar {
+  width: 7px;
+}
+
+.change-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.change-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.32);
+}
+
+.change-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(37, 99, 235, 0.52);
 }
 
 .change-row {
@@ -684,5 +771,11 @@ input:focus {
 
   .stats-strip {
     grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+
+  .detail-panel,
+  .status-panel,
+  .roadmap-panel {
+    grid-column: 1;
   }
 }

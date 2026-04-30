@@ -634,6 +634,7 @@ fn summarize_changes(changes: &[ChangeItem]) -> RepositoryStatusSummary {
 
 fn svn_status_warning(error: &str) -> String {
     if error.contains("The system cannot find the file specified")
+        || error.contains("program not found")
         || error.contains("找不到")
         || error.contains("os error 2")
     {
