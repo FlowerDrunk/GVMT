@@ -1,0 +1,307 @@
+:root {
+  color: #1f2937;
+  background: #edf1f5;
+  font-family:
+    Inter, "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 900px;
+  min-height: 100vh;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  border: 1px solid #c8d1dc;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2937;
+  cursor: pointer;
+  min-height: 36px;
+  padding: 0 14px;
+}
+
+button:hover:not(:disabled) {
+  border-color: #2f6f9f;
+  color: #164f76;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #c8d1dc;
+  border-radius: 6px;
+  padding: 0 12px;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 292px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: #26313f;
+  color: #f8fafc;
+  padding: 24px 18px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 26px;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: #5cb8a7;
+  color: #102027;
+  font-weight: 800;
+}
+
+.brand h1,
+.brand p,
+.topbar h2,
+.topbar p,
+.panel h3 {
+  margin: 0;
+}
+
+.brand h1 {
+  font-size: 24px;
+}
+
+.brand p {
+  color: #b9c5d3;
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.panel {
+  border: 1px solid #d6dee8;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.sidebar .panel {
+  background: #303d4d;
+  border-color: #435265;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px;
+}
+
+.section-heading h2 {
+  font-size: 15px;
+  margin: 0;
+}
+
+.repo-list {
+  display: grid;
+  gap: 8px;
+  padding: 0 10px 12px;
+}
+
+.repo-item {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  width: 100%;
+  height: 62px;
+  background: #364557;
+  border-color: #4a5a6e;
+  color: #f8fafc;
+  text-align: left;
+}
+
+.repo-item span {
+  color: #aebccd;
+  font-size: 12px;
+}
+
+.repo-item.active {
+  border-color: #5cb8a7;
+  background: #405165;
+}
+
+.empty-list {
+  color: #aebccd;
+  font-size: 14px;
+  padding: 14px 6px;
+}
+
+.workspace {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-width: 0;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 26px 30px;
+  background: #ffffff;
+  border-bottom: 1px solid #d6dee8;
+}
+
+.topbar h2 {
+  font-size: 28px;
+}
+
+.eyebrow {
+  color: #63758a;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.topbar-actions,
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.2fr) minmax(320px, 0.8fr);
+  grid-auto-rows: min-content;
+  gap: 18px;
+  padding: 22px;
+}
+
+.add-panel,
+.detail-panel,
+.roadmap-panel {
+  padding: 18px;
+}
+
+.add-panel {
+  grid-column: 1 / -1;
+}
+
+.add-panel form {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.add-panel label {
+  color: #526173;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.hint {
+  color: #7a4b16;
+  margin: 12px 0 0;
+}
+
+.repo-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.repo-header h3,
+.empty-state h3,
+.roadmap-panel h3,
+.add-panel h3 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.status-pill {
+  border: 1px solid #9fd7cd;
+  border-radius: 999px;
+  background: #e3f6f2;
+  color: #176557;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 10px;
+}
+
+.metadata {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+}
+
+.metadata div {
+  display: grid;
+  gap: 4px;
+}
+
+.metadata dt {
+  color: #63758a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.metadata dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.empty-state {
+  display: grid;
+  align-content: center;
+  min-height: 230px;
+  color: #526173;
+}
+
+.empty-state p {
+  max-width: 420px;
+}
+
+.task-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.task-list span {
+  border-left: 4px solid #5cb8a7;
+  background: #f4f7fa;
+  padding: 10px 12px;
+}
+
+.statusbar {
+  border-top: 1px solid #d6dee8;
+  background: #ffffff;
+  color: #526173;
+  min-height: 38px;
+  padding: 10px 22px;
+}
+
