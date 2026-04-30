@@ -203,6 +203,20 @@ fn add_repository(app: AppHandle, input: AddRepositoryInput) -> Result<Repositor
 }
 
 #[tauri::command]
+fn delete_repository(app: AppHandle, id: i64) -> Result<(), String> {
+    let connection = open_database(&app)?;
+    let deleted = connection
+        .execute("DELETE FROM repositories WHERE id = ?1", params![id])
+        .map_err(|error| error.to_string())?;
+
+    if deleted == 0 {
+        return Err("未找到需要删除的仓库记录".to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 fn refresh_repository(app: AppHandle, id: i64) -> Result<Repository, String> {
     let connection = open_database(&app)?;
     let repository = find_repository_by_id(&connection, id)?
@@ -1448,6 +1462,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             add_repository,
             commit_repository,
+            delete_repository,
             detect_repository,
             get_repository_diff,
             get_repository_status,

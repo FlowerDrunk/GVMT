@@ -122,6 +122,10 @@ export async function addRepository(input: AddRepositoryInput): Promise<Reposito
   return invoke<Repository>("add_repository", { input });
 }
 
+export async function deleteRepository(id: number): Promise<void> {
+  return invoke<void>("delete_repository", { id });
+}
+
 export async function detectRepository(path: string): Promise<DetectedRepository> {
   return invoke<DetectedRepository>("detect_repository", { path });
 }

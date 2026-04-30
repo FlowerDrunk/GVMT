@@ -1,4 +1,4 @@
-import { CSSProperties, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { CSSProperties, FormEvent, MouseEvent, useCallback, useEffect, useMemo, useState } from "react";
 import fileIconUrl from "../src-tauri/icons/file.png";
 import folderIconUrl from "../src-tauri/icons/folder.png";
 import {
@@ -6,6 +6,7 @@ import {
   ChangeItem,
   ChangeStatus,
   commitRepository,
+  deleteRepository,
   detectRepository,
   getRepositoryDiff,
   getRepositoryStatus,
@@ -100,6 +101,12 @@ interface VisibleSections {
   files: boolean;
   changes: boolean;
   review: boolean;
+}
+
+interface RepositoryContextMenu {
+  repository: Repository;
+  x: number;
+  y: number;
 }
 
 function buildChangeTree(changes: ChangeItem[]) {
@@ -224,6 +231,9 @@ function App() {
   const [pushAfterCommit, setPushAfterCommit] = useState(true);
   const [selectedCommitKeys, setSelectedCommitKeys] = useState<Set<string>>(new Set());
   const [isCommitLoading, setIsCommitLoading] = useState(false);
+  const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
+  const [repositoryContextMenu, setRepositoryContextMenu] = useState<RepositoryContextMenu | null>(null);
+  const [repositoryPendingDelete, setRepositoryPendingDelete] = useState<Repository | null>(null);
   const [expandedFilePaths, setExpandedFilePaths] = useState<Set<string>>(new Set());
   const [loadedFilePaths, setLoadedFilePaths] = useState<Set<string>>(new Set());
   const [expandedChangePaths, setExpandedChangePaths] = useState<Set<string>>(new Set());
@@ -253,7 +263,9 @@ function App() {
     try {
       const nextRepositories = await listRepositories();
       setRepositories(nextRepositories);
-      if (!selectedId && nextRepositories.length > 0) {
+      if (nextRepositories.length === 0) {
+        setSelectedId(null);
+      } else if (!selectedId || !nextRepositories.some((repository) => repository.id === selectedId)) {
         setSelectedId(nextRepositories[0].id);
       }
       setStatus(`已加载 ${nextRepositories.length} 个仓库`);
@@ -319,6 +331,35 @@ function App() {
       await refreshRepositories();
       setSelectedId(refreshed.id);
       setStatus(`已重新检测 ${refreshed.name}：${refreshed.vcsType}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  function handleRepositoryContextMenu(event: MouseEvent<HTMLButtonElement>, repository: Repository) {
+    event.preventDefault();
+    setSelectedId(repository.id);
+    setRepositoryContextMenu({
+      repository,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  }
+
+  async function handleDeleteRepositoryRecord() {
+    if (!repositoryPendingDelete) return;
+
+    setIsLoading(true);
+    try {
+      await deleteRepository(repositoryPendingDelete.id);
+      if (selectedId === repositoryPendingDelete.id) {
+        setSelectedId(null);
+      }
+      setRepositoryPendingDelete(null);
+      await refreshRepositories();
+      setStatus("已删除仓库记录，本地文件未受影响");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
@@ -538,6 +579,7 @@ function App() {
       setStatus(failed.length === 0 ? "提交完成" : `${failed.length} 个提交步骤失败`);
       if (failed.length === 0) {
         setCommitMessage("");
+        setIsCommitDialogOpen(false);
       }
       await loadRepositoryStatus(true);
     } catch (error) {
@@ -569,6 +611,9 @@ function App() {
     setCommitMessage("");
     setSelectedCommitKeys(new Set());
     setIsCommitLoading(false);
+    setIsCommitDialogOpen(false);
+    setRepositoryContextMenu(null);
+    setRepositoryPendingDelete(null);
     setExpandedFilePaths(new Set());
     setLoadedFilePaths(new Set());
     setExpandedChangePaths(new Set());
@@ -598,6 +643,21 @@ function App() {
     };
   }, [selectedRepository?.id, loadRepositoryStatus]);
 
+  useEffect(() => {
+    if (!repositoryContextMenu) return;
+
+    function closeRepositoryContextMenu() {
+      setRepositoryContextMenu(null);
+    }
+
+    window.addEventListener("click", closeRepositoryContextMenu);
+    window.addEventListener("blur", closeRepositoryContextMenu);
+    return () => {
+      window.removeEventListener("click", closeRepositoryContextMenu);
+      window.removeEventListener("blur", closeRepositoryContextMenu);
+    };
+  }, [repositoryContextMenu]);
+
   const currentChangeCount = repositoryStatus?.summary.total ?? 0;
   const currentReviewState = repositoryStatus
     ? repositoryStatus.clean
@@ -611,6 +671,7 @@ function App() {
   const hasGitCommitSelection = committableFiles.some(
     (change) => change.vcsType === "git" && selectedCommitKeys.has(changeKey(change)),
   );
+  const canOpenCommitDialog = Boolean(selectedRepository && repositoryStatus && committableFiles.length > 0);
   const changeTree = buildChangeTree(changedFiles);
   const changeTreeWithRoot: ChangeTreeNode[] =
     selectedRepository && changeTree.length > 0
@@ -805,6 +866,7 @@ function App() {
                     key={repository.id}
                     type="button"
                     onClick={() => setSelectedId(repository.id)}
+                    onContextMenu={(event) => handleRepositoryContextMenu(event, repository)}
                   >
                     <span className={`repo-dot ${statusTone(repository.vcsType)}`} />
                     <span className="repo-copy">
@@ -881,6 +943,14 @@ function App() {
               刷新状态
             </button>
             <button
+              className="secondary-button"
+              type="button"
+              disabled={!canOpenCommitDialog || isCommitLoading}
+              onClick={() => setIsCommitDialogOpen(true)}
+            >
+              提交
+            </button>
+            <button
               className="primary-button"
               type="button"
               disabled={!selectedRepository || isLoading}
@@ -938,7 +1008,7 @@ function App() {
                   <strong>更新仓库</strong>
                   <small>Git pull 或 SVN update</small>
                 </button>
-                <button type="button" disabled={!repositoryStatus || committableFiles.length === 0}>
+                <button type="button" disabled={!canOpenCommitDialog} onClick={() => setIsCommitDialogOpen(true)}>
                   <span>03</span>
                   <strong>提交变更</strong>
                   <small>选择文件、填写信息并提交</small>
@@ -1092,65 +1162,6 @@ function App() {
                 </div>
               )}
             </section>
-
-            {repositoryStatus && committableFiles.length > 0 ? (
-              <section className="panel commit-panel">
-                <div className="panel-title-row">
-                  <div>
-                    <p className="eyebrow">Commit changes</p>
-                    <h3>提交变更</h3>
-                  </div>
-                  <span className="soft-chip">{selectedCommitCount} / {committableFiles.length}</span>
-                </div>
-                <form className="commit-form" onSubmit={handleCommitRepository}>
-                  <div className="commit-file-toolbar">
-                    <button type="button" className="secondary-button" onClick={() => toggleAllCommitFiles(committableFiles)}>
-                      {selectedCommitCount === committableFiles.length ? "取消全选" : "全选文件"}
-                    </button>
-                    {hasGitCommitSelection ? (
-                      <label className="commit-push-toggle">
-                        <input
-                          type="checkbox"
-                          checked={pushAfterCommit}
-                          onChange={(event) => setPushAfterCommit(event.currentTarget.checked)}
-                        />
-                        Git 提交后 push
-                      </label>
-                    ) : null}
-                  </div>
-                  <div className="commit-file-list">
-                    {committableFiles.map((change) => {
-                      const key = changeKey(change);
-                      return (
-                        <label className="commit-file-row" key={key}>
-                          <input
-                            type="checkbox"
-                            checked={selectedCommitKeys.has(key)}
-                            onChange={() => toggleCommitFile(change)}
-                          />
-                          <span className={`change-badge ${change.status}`}>{changeLabels[change.status]}</span>
-                          <strong>{change.path}</strong>
-                          <small>{vcsLabels[change.vcsType]}</small>
-                        </label>
-                      );
-                    })}
-                  </div>
-                  <textarea
-                    value={commitMessage}
-                    onChange={(event) => setCommitMessage(event.currentTarget.value)}
-                    placeholder="输入提交信息..."
-                    rows={3}
-                  />
-                  <button
-                    className="primary-button"
-                    type="submit"
-                    disabled={isCommitLoading || selectedCommitCount === 0 || !commitMessage.trim()}
-                  >
-                    {isCommitLoading ? "提交中..." : "提交选中文件"}
-                  </button>
-                </form>
-              </section>
-            ) : null}
 
             {operationResults.length > 0 ? (
               <section className="panel operation-panel">
@@ -1336,6 +1347,141 @@ function App() {
           <span>{status}</span>
         </footer>
       </section>
+      {repositoryContextMenu ? (
+        <div
+          className="context-menu"
+          style={{ left: repositoryContextMenu.x, top: repositoryContextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setRepositoryPendingDelete(repositoryContextMenu.repository);
+              setRepositoryContextMenu(null);
+            }}
+          >
+            删除仓库记录
+          </button>
+        </div>
+      ) : null}
+
+      {repositoryPendingDelete ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-card confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-repo-title">
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">Repository record</p>
+                <h3 id="delete-repo-title">删除仓库记录</h3>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setRepositoryPendingDelete(null)} title="关闭">
+                ×
+              </button>
+            </div>
+            <p>
+              将从 GVMT 的本地列表中移除 <strong>{repositoryPendingDelete.name}</strong>，不会删除磁盘上的仓库文件。
+            </p>
+            <dl className="metadata compact">
+              <div>
+                <dt>路径</dt>
+                <dd>{repositoryPendingDelete.path}</dd>
+              </div>
+            </dl>
+            <div className="modal-actions">
+              <button className="secondary-button" type="button" onClick={() => setRepositoryPendingDelete(null)}>
+                取消
+              </button>
+              <button className="danger-button" type="button" disabled={isLoading} onClick={handleDeleteRepositoryRecord}>
+                删除记录
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isCommitDialogOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-card commit-dialog" role="dialog" aria-modal="true" aria-labelledby="commit-dialog-title">
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">Commit changes</p>
+                <h3 id="commit-dialog-title">提交变更</h3>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setIsCommitDialogOpen(false)} title="关闭">
+                ×
+              </button>
+            </div>
+            <div className="commit-dialog-summary">
+              <div>
+                <span>选中文件</span>
+                <strong>{selectedCommitCount}</strong>
+              </div>
+              <div>
+                <span>可提交</span>
+                <strong>{committableFiles.length}</strong>
+              </div>
+              <div>
+                <span>Git push</span>
+                <strong>{hasGitCommitSelection && pushAfterCommit ? "开启" : "关闭"}</strong>
+              </div>
+            </div>
+            <form className="commit-form" onSubmit={handleCommitRepository}>
+              <div className="commit-file-toolbar">
+                <button type="button" className="secondary-button" onClick={() => toggleAllCommitFiles(committableFiles)}>
+                  {selectedCommitCount === committableFiles.length ? "取消全选" : "全选文件"}
+                </button>
+                {hasGitCommitSelection ? (
+                  <label className="commit-push-toggle">
+                    <input
+                      type="checkbox"
+                      checked={pushAfterCommit}
+                      onChange={(event) => setPushAfterCommit(event.currentTarget.checked)}
+                    />
+                    Git 提交后 push
+                  </label>
+                ) : null}
+              </div>
+              <div className="commit-file-list">
+                {committableFiles.map((change) => {
+                  const key = changeKey(change);
+                  return (
+                    <label className="commit-file-row" key={key}>
+                      <input
+                        type="checkbox"
+                        checked={selectedCommitKeys.has(key)}
+                        onChange={() => toggleCommitFile(change)}
+                      />
+                      <span className={`change-badge ${change.status}`}>{changeLabels[change.status]}</span>
+                      <strong>{change.path}</strong>
+                      <small>{vcsLabels[change.vcsType]}</small>
+                    </label>
+                  );
+                })}
+              </div>
+              <label className="commit-message-field">
+                <span>提交信息</span>
+                <textarea
+                  value={commitMessage}
+                  onChange={(event) => setCommitMessage(event.currentTarget.value)}
+                  placeholder="说明这次变更的目的..."
+                  rows={4}
+                />
+              </label>
+              <div className="modal-actions">
+                <button className="secondary-button" type="button" onClick={() => setIsCommitDialogOpen(false)}>
+                  取消
+                </button>
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={isCommitLoading || selectedCommitCount === 0 || !commitMessage.trim()}
+                >
+                  {isCommitLoading ? "提交中..." : "提交选中文件"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

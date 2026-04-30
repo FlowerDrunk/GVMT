@@ -3,9 +3,10 @@ dist/
 dist-ssr/
 target/
 src-tauri/target/
+test-results/
+playwright-report/
 *.log
 *.local
 .env
 .env.*
 !.env.example
-

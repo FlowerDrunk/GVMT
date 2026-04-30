@@ -46,7 +46,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -80,14 +81,13 @@ button:disabled {
   opacity: 0.48;
 }
 
-input {
+input,
+textarea {
   width: 100%;
-  min-height: 38px;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.94);
   color: var(--text);
-  padding: 0 11px;
   outline: none;
   transition:
     border-color 140ms ease,
@@ -95,7 +95,17 @@ input {
     background-color 140ms ease;
 }
 
-input:focus {
+input {
+  min-height: 38px;
+  padding: 0 11px;
+}
+
+textarea {
+  padding: 10px 11px;
+}
+
+input:focus,
+textarea:focus {
   border-color: #6aa1f7;
   background: #ffffff;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
@@ -382,6 +392,33 @@ input:focus {
 
 .repo-dot.mixed {
   background: var(--mixed);
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 168px;
+  border: 1px solid #d9e2ee;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 40px rgba(31, 44, 66, 0.16);
+  padding: 6px;
+}
+
+.context-menu button {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 34px;
+  border-color: transparent;
+  background: transparent;
+  color: #a12b35;
+  font-size: 13px;
+  font-weight: 750;
+  text-align: left;
+}
+
+.context-menu button:hover:not(:disabled) {
+  background: #fff0f1;
 }
 
 .empty-list {
@@ -936,13 +973,14 @@ input:focus {
   font-weight: 800;
 }
 
-.commit-panel {
-  gap: 14px;
-}
-
 .commit-form {
   display: grid;
-  gap: 12px;
+  gap: 14px;
+  min-height: 0;
+}
+
+.commit-dialog .commit-form {
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
 }
 
 .commit-file-toolbar {
@@ -965,7 +1003,7 @@ input:focus {
 .commit-file-list {
   display: grid;
   gap: 6px;
-  max-height: 220px;
+  max-height: min(300px, 34vh);
   overflow: auto;
   padding-right: 2px;
 }
@@ -980,6 +1018,11 @@ input:focus {
   border-radius: 8px;
   background: #ffffff;
   padding: 7px 9px;
+}
+
+.commit-file-row:hover {
+  border-color: #c9d8ea;
+  background: #f8fbff;
 }
 
 .commit-file-row strong {
@@ -998,10 +1041,44 @@ input:focus {
   font-weight: 800;
 }
 
-.commit-form textarea {
+.commit-message-field {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.commit-message-field textarea {
   width: 100%;
   min-height: 82px;
   resize: vertical;
+}
+
+.commit-dialog-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.commit-dialog-summary div {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #dfe7f1;
+  border-radius: 9px;
+  background: #fbfdff;
+  padding: 10px;
+}
+
+.commit-dialog-summary span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.commit-dialog-summary strong {
+  color: var(--text);
+  font-size: 18px;
 }
 
 .changes-stats {
@@ -1343,6 +1420,18 @@ input:focus {
   color: #ffffff;
 }
 
+.danger-button {
+  border-color: #f3b7bd;
+  background: #fff0f1;
+  color: #a12b35;
+  font-weight: 750;
+}
+
+.danger-button:hover:not(:disabled) {
+  border-color: #dc6f7a;
+  background: #ffe6e8;
+}
+
 .ghost-button {
   min-height: 30px;
   border-color: transparent;
@@ -1459,6 +1548,67 @@ input:focus {
 .detection-card.mixed {
   border-color: #c8c9ff;
   background: var(--mixed-soft);
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 70;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(16, 25, 39, 0.34);
+  padding: 24px;
+  backdrop-filter: blur(10px);
+}
+
+.modal-card {
+  display: grid;
+  gap: 16px;
+  width: min(720px, calc(100vw - 48px));
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: hidden;
+  border: 1px solid rgba(215, 224, 234, 0.96);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 28px 80px rgba(17, 27, 45, 0.24);
+  padding: 18px;
+}
+
+.commit-dialog {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.confirm-dialog {
+  width: min(480px, calc(100vw - 48px));
+}
+
+.confirm-dialog p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.confirm-dialog strong {
+  color: var(--text);
+}
+
+.modal-heading,
+.modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-heading h3 {
+  color: var(--text);
+  font-size: 19px;
+  margin: 0;
+}
+
+.modal-actions {
+  justify-content: flex-end;
 }
 
 .metadata {
