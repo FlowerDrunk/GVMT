@@ -1,4 +1,6 @@
-import { CSSProperties, FormEvent, useEffect, useMemo, useState } from "react";
+import { CSSProperties, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import fileIconUrl from "../src-tauri/icons/file.png";
+import folderIconUrl from "../src-tauri/icons/folder.png";
 import {
   addRepository,
   detectRepository,
@@ -277,25 +279,37 @@ function App() {
     }
   }
 
+  const loadRepositoryStatus = useCallback(
+    async (silent = false) => {
+      if (!selectedRepository) {
+        if (!silent) setStatus("请先选择一个仓库");
+        return;
+      }
+
+      if (!silent) setIsLoading(true);
+      try {
+        const nextStatus = await getRepositoryStatus(selectedRepository.id);
+        setRepositoryStatus(nextStatus);
+        const nextChangeTree = buildChangeTree(nextStatus.changes);
+        setExpandedChangePaths(new Set(["", ...collectChangeDirectoryPaths(nextChangeTree)]));
+        if (!silent) setStatus(nextStatus.clean ? "工作区干净" : `检测到 ${nextStatus.summary.total} 个变更`);
+      } catch (error) {
+        setRepositoryStatus(null);
+        if (!silent) setStatus(error instanceof Error ? error.message : String(error));
+      } finally {
+        if (!silent) setIsLoading(false);
+      }
+    },
+    [selectedRepository],
+  );
+
   async function handleLoadRepositoryStatus() {
     if (!selectedRepository) {
       setStatus("请先选择一个仓库");
       return;
     }
 
-    setIsLoading(true);
-    try {
-      const nextStatus = await getRepositoryStatus(selectedRepository.id);
-      setRepositoryStatus(nextStatus);
-      const nextChangeTree = buildChangeTree(nextStatus.changes);
-      setExpandedChangePaths(new Set(collectChangeDirectoryPaths(nextChangeTree)));
-      setStatus(nextStatus.clean ? "工作区干净" : `检测到 ${nextStatus.summary.total} 个变更`);
-    } catch (error) {
-      setRepositoryStatus(null);
-      setStatus(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsLoading(false);
-    }
+    await loadRepositoryStatus(false);
   }
 
   async function handleOpenSvnDownload(target: "tortoise" | "sliksvn") {
@@ -392,6 +406,19 @@ function App() {
     }
   }, [selectedRepository?.id]);
 
+  useEffect(() => {
+    if (!selectedRepository || !isTauriRuntime()) {
+      return;
+    }
+
+    void loadRepositoryStatus(true);
+    const refreshTimer = window.setInterval(() => {
+      void loadRepositoryStatus(true);
+    }, 12000);
+
+    return () => window.clearInterval(refreshTimer);
+  }, [selectedRepository?.id, loadRepositoryStatus]);
+
   const currentChangeCount = repositoryStatus?.summary.total ?? 0;
   const currentReviewState = repositoryStatus
     ? repositoryStatus.clean
@@ -401,6 +428,16 @@ function App() {
   const breadcrumbs = fileBreadcrumbs(repositoryFiles?.path ?? "");
   const changedFiles = repositoryStatus?.changes ?? [];
   const changeTree = buildChangeTree(changedFiles);
+  const changeTreeWithRoot: ChangeTreeNode[] =
+    selectedRepository && changeTree.length > 0
+      ? [
+          {
+            name: selectedRepository.name,
+            path: "",
+            children: changeTree,
+          },
+        ]
+      : changeTree;
   const appShellClassName = `app-shell ${visibleSections.repositories ? "" : "repositories-collapsed"}`;
   const workbenchClassName = [
     "workbench",
@@ -420,11 +457,19 @@ function App() {
             className={`tree-row file-tree-row ${isDirectory ? "directory" : "file"}`}
             type="button"
             style={{ "--tree-level": level } as CSSProperties}
-            onClick={() => (isDirectory ? toggleFileNode(entry.path) : undefined)}
+            onClick={() => {
+              if (!isDirectory) return;
+              if (entry.children.length === 0) {
+                void handleLoadRepositoryFiles(entry.path);
+              } else {
+                toggleFileNode(entry.path);
+              }
+            }}
           >
             <span className="tree-toggle" aria-hidden="true">
               {isDirectory ? (isExpanded ? "⌄" : "›") : "·"}
             </span>
+            <img className="tree-icon" src={isDirectory ? folderIconUrl : fileIconUrl} alt="" aria-hidden="true" />
             <strong>{entry.name}</strong>
             <span>{isDirectory ? "文件夹" : formatFileSize(entry.size)}</span>
             <time>{formatModifiedAt(entry.modifiedAt)}</time>
@@ -450,6 +495,7 @@ function App() {
             <span className="tree-toggle" aria-hidden="true">
               {isDirectory ? (isExpanded ? "⌄" : "›") : "·"}
             </span>
+            <img className="tree-icon" src={isDirectory ? folderIconUrl : fileIconUrl} alt="" aria-hidden="true" />
             <strong>{node.name}</strong>
             {node.change ? (
               <>
@@ -925,7 +971,7 @@ function App() {
               <input placeholder="筛选文件..." aria-label="筛选文件" />
             </header>
             {changedFiles.length > 0 ? (
-              <div className="tree-list change-tree">{renderChangeTree(changeTree)}</div>
+              <div className="tree-list change-tree">{renderChangeTree(changeTreeWithRoot)}</div>
             ) : (
               <div className="changes-empty">
                 <p>{repositoryStatus ? "没有匹配的文件" : "尚未刷新状态"}</p>

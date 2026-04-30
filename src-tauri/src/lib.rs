@@ -292,7 +292,7 @@ fn list_repository_files(
         .transpose()?
         .unwrap_or_default();
     let parent_path = parent_relative_path(&current_path);
-    let mut remaining_entries = 650;
+    let mut remaining_entries = 5000;
     let entries =
         repository_file_entries(&directory_path, &current_path, 0, &mut remaining_entries)?;
 
@@ -597,7 +597,7 @@ fn repository_file_entries(
     depth: usize,
     remaining_entries: &mut usize,
 ) -> Result<Vec<RepositoryFileEntry>, String> {
-    const MAX_TREE_DEPTH: usize = 4;
+    const MAX_TREE_DEPTH: usize = 7;
 
     if *remaining_entries == 0 {
         return Ok(Vec::new());
@@ -615,7 +615,10 @@ fn repository_file_entries(
             continue;
         }
 
-        let metadata = item.metadata().map_err(|error| error.to_string())?;
+        let metadata = match item.metadata() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
         let is_directory = metadata.is_dir();
         let entry_path = if current_path.is_empty() {
             file_name.clone()
@@ -630,7 +633,8 @@ fn repository_file_entries(
 
         *remaining_entries -= 1;
         let children = if is_directory && depth < MAX_TREE_DEPTH && *remaining_entries > 0 {
-            repository_file_entries(&item.path(), &entry_path, depth + 1, remaining_entries)?
+            repository_file_entries(&item.path(), &entry_path, depth + 1, remaining_entries)
+                .unwrap_or_default()
         } else {
             Vec::new()
         };

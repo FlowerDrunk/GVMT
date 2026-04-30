@@ -652,7 +652,7 @@ input:focus {
 .tree-list {
   display: grid;
   align-content: start;
-  gap: 4px;
+  gap: 2px;
   min-height: 0;
   overflow-y: auto;
   padding: 12px;
@@ -669,7 +669,12 @@ input:focus {
 
 .tree-node {
   display: grid;
-  gap: 4px;
+  gap: 2px;
+}
+
+.tree-node .tree-node {
+  border-left: 1px solid rgba(215, 224, 234, 0.92);
+  margin-left: 18px;
 }
 
 .tree-row {
@@ -678,10 +683,11 @@ input:focus {
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 36px;
+  min-height: 38px;
   border-color: transparent;
+  border-radius: 8px;
   background: transparent;
-  padding: 6px 8px 6px calc(8px + var(--tree-level) * 18px);
+  padding: 6px 9px 6px calc(8px + var(--tree-level) * 18px);
   text-align: left;
 }
 
@@ -692,18 +698,22 @@ input:focus {
 .tree-toggle {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-  background: var(--surface-muted);
+  width: 18px;
+  height: 22px;
+  background: transparent;
   color: var(--muted);
   font-family: "Cascadia Code", "Consolas", monospace;
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .tree-row.directory .tree-toggle {
-  background: var(--accent-soft);
   color: var(--accent);
+}
+
+.tree-icon {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
 }
 
 .tree-row strong {
@@ -717,7 +727,7 @@ input:focus {
 }
 
 .file-tree-row {
-  grid-template-columns: 24px minmax(0, 1fr) 94px 120px;
+  grid-template-columns: 20px 24px minmax(0, 1fr) 94px 120px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.66);
@@ -736,7 +746,7 @@ input:focus {
 }
 
 .change-tree-row {
-  grid-template-columns: 24px minmax(0, 1fr) 72px auto;
+  grid-template-columns: 20px 24px minmax(0, 1fr) 72px auto;
 }
 
 .change-tree-row > span:not(.tree-toggle):not(.change-badge),
