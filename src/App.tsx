@@ -6,9 +6,11 @@ import {
   isTauriRuntime,
   listRepositories,
   openSvnCliDownloadPage,
+  OperationResult,
   refreshRepository,
   Repository,
   RepositoryStatus,
+  updateRepository,
   VcsType,
 } from "./lib/api";
 
@@ -54,6 +56,7 @@ function App() {
   const [status, setStatus] = useState("准备就绪");
   const [isLoading, setIsLoading] = useState(false);
   const [repositoryStatus, setRepositoryStatus] = useState<RepositoryStatus | null>(null);
+  const [operationResults, setOperationResults] = useState<OperationResult[]>([]);
 
   const selectedRepository = useMemo(
     () => repositories.find((repository) => repository.id === selectedId) ?? repositories[0],
@@ -175,8 +178,29 @@ function App() {
     }
   }
 
+  async function handleUpdateRepository() {
+    if (!selectedRepository) {
+      setStatus("请先选择一个仓库");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const results = await updateRepository(selectedRepository.id);
+      setOperationResults(results);
+      const failed = results.filter((result) => !result.success);
+      setStatus(failed.length === 0 ? "更新完成" : `${failed.length} 个更新步骤失败`);
+      await handleLoadRepositoryStatus();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   useEffect(() => {
     setRepositoryStatus(null);
+    setOperationResults([]);
   }, [selectedRepository?.id]);
 
   return (
@@ -258,7 +282,12 @@ function App() {
             >
               刷新状态
             </button>
-            <button className="secondary-button" type="button" disabled={!selectedRepository}>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={!selectedRepository || isLoading}
+              onClick={handleUpdateRepository}
+            >
               更新
             </button>
             <button className="primary-button" type="button" disabled={!selectedRepository}>
@@ -445,6 +474,55 @@ function App() {
               </div>
             )}
           </div>
+
+          {operationResults.length > 0 ? (
+            <div className="panel operation-panel">
+              <div className="panel-title-row">
+                <div>
+                  <p className="eyebrow">Operation result</p>
+                  <h3>最近操作</h3>
+                </div>
+                <span className="soft-chip">更新</span>
+              </div>
+              <div className="operation-list">
+                {operationResults.map((result) => (
+                  <div
+                    className={`operation-card ${result.success ? "success" : "failed"}`}
+                    key={`${result.vcsType}-${result.operation}`}
+                  >
+                    <div className="operation-heading">
+                      <strong>{vcsLabels[result.vcsType]}</strong>
+                      <span>{result.summary}</span>
+                    </div>
+                    {result.warning ? (
+                      <div className="operation-warning">
+                        <p>{result.warning}</p>
+                        {result.missingSvnCli ? (
+                          <div className="hint-actions">
+                            <button
+                              className="secondary-button"
+                              type="button"
+                              onClick={() => handleOpenSvnDownload("tortoise")}
+                            >
+                              下载 / 修改 TortoiseSVN
+                            </button>
+                            <button
+                              className="secondary-button"
+                              type="button"
+                              onClick={() => handleOpenSvnDownload("sliksvn")}
+                            >
+                              下载 SlikSVN
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {result.output ? <pre>{result.output}</pre> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className="panel roadmap-panel">
             <div className="panel-title-row">

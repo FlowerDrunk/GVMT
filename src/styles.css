@@ -419,6 +419,7 @@ input:focus {
 
 .add-panel,
 .detail-panel,
+.operation-panel,
 .roadmap-panel,
 .status-panel {
   padding: 18px;
@@ -438,6 +439,10 @@ input:focus {
 }
 
 .roadmap-panel {
+  grid-column: 1 / -1;
+}
+
+.operation-panel {
   grid-column: 1 / -1;
 }
 
@@ -729,6 +734,72 @@ input:focus {
   text-align: right;
 }
 
+.operation-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.operation-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.68);
+  padding: 12px;
+}
+
+.operation-card.success {
+  border-color: #b7dfd9;
+}
+
+.operation-card.failed {
+  border-color: #f2d7a4;
+  background: var(--warning-soft);
+}
+
+.operation-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.operation-heading strong {
+  color: var(--text);
+}
+
+.operation-heading span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.operation-warning {
+  display: grid;
+  gap: 10px;
+  color: var(--warning);
+}
+
+.operation-warning p {
+  margin: 0;
+}
+
+.operation-card pre {
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(17, 24, 39, 0.04);
+  color: var(--text);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  margin: 0;
+  padding: 10px;
+  white-space: pre-wrap;
+}
+
 .task-list {
   display: grid;
   gap: 10px;
@@ -791,6 +862,7 @@ input:focus {
 
   .detail-panel,
   .status-panel,
+  .operation-panel,
   .roadmap-panel {
     grid-column: 1;
   }

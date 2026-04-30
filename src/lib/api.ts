@@ -53,6 +53,16 @@ export interface RepositoryStatus {
   changes: ChangeItem[];
 }
 
+export interface OperationResult {
+  operation: string;
+  vcsType: VcsType;
+  success: boolean;
+  summary: string;
+  output: string;
+  warning: string | null;
+  missingSvnCli: boolean;
+}
+
 export function isTauriRuntime() {
   return "__TAURI_INTERNALS__" in window;
 }
@@ -80,4 +90,8 @@ export async function getRepositoryStatus(id: number): Promise<RepositoryStatus>
 
 export async function openSvnCliDownloadPage(target: "tortoise" | "sliksvn"): Promise<void> {
   return invoke<void>("open_svn_cli_download_page", { target });
+}
+
+export async function updateRepository(id: number): Promise<OperationResult[]> {
+  return invoke<OperationResult[]>("update_repository", { id });
 }

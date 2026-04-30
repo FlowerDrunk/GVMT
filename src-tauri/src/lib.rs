@@ -73,6 +73,18 @@ struct RepositoryStatus {
     changes: Vec<ChangeItem>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OperationResult {
+    operation: String,
+    vcs_type: String,
+    success: bool,
+    summary: String,
+    output: String,
+    warning: Option<String>,
+    missing_svn_cli: bool,
+}
+
 #[tauri::command]
 fn list_repositories(app: AppHandle) -> Result<Vec<Repository>, String> {
     let connection = open_database(&app)?;
@@ -208,6 +220,33 @@ fn get_repository_status(app: AppHandle, id: i64) -> Result<RepositoryStatus, St
         summary,
         changes,
     })
+}
+
+#[tauri::command]
+fn update_repository(app: AppHandle, id: i64) -> Result<Vec<OperationResult>, String> {
+    let connection = open_database(&app)?;
+    let repository = find_repository_by_id(&connection, id)?
+        .ok_or_else(|| "未找到需要更新的仓库".to_string())?;
+
+    let results = match repository.vcs_type.as_str() {
+        "git" => vec![git_update_result(&repository.path)],
+        "svn" => vec![svn_update_result(&repository.path)],
+        "mixed" => vec![
+            git_update_result(&repository.path),
+            svn_update_result(&repository.path),
+        ],
+        _ => vec![OperationResult {
+            operation: "update".to_string(),
+            vcs_type: repository.vcs_type,
+            success: false,
+            summary: "当前目录未识别为 Git 或 SVN 仓库".to_string(),
+            output: String::new(),
+            warning: Some("请先重新检测仓库类型。".to_string()),
+            missing_svn_cli: false,
+        }],
+    };
+
+    Ok(results)
 }
 
 #[tauri::command]
@@ -659,6 +698,71 @@ fn svn_status_warning(error: &str) -> String {
     }
 }
 
+fn git_update_result(path: &str) -> OperationResult {
+    match run_command(["git", "-C", path, "pull", "--ff-only"]) {
+        Ok(output) => OperationResult {
+            operation: "update".to_string(),
+            vcs_type: "git".to_string(),
+            success: true,
+            summary: if output.contains("Already up to date")
+                || output.contains("Already up-to-date")
+            {
+                "Git 已是最新".to_string()
+            } else {
+                "Git 更新完成".to_string()
+            },
+            output,
+            warning: None,
+            missing_svn_cli: false,
+        },
+        Err(error) => OperationResult {
+            operation: "update".to_string(),
+            vcs_type: "git".to_string(),
+            success: false,
+            summary: "Git 更新失败".to_string(),
+            output: String::new(),
+            warning: Some(git_update_warning(&error)),
+            missing_svn_cli: false,
+        },
+    }
+}
+
+fn svn_update_result(path: &str) -> OperationResult {
+    match run_command(["svn", "update", path]) {
+        Ok(output) => OperationResult {
+            operation: "update".to_string(),
+            vcs_type: "svn".to_string(),
+            success: true,
+            summary: "SVN 更新完成".to_string(),
+            output,
+            warning: None,
+            missing_svn_cli: false,
+        },
+        Err(error) => {
+            let missing_svn_cli = is_missing_svn_cli_error(&error);
+            OperationResult {
+                operation: "update".to_string(),
+                vcs_type: "svn".to_string(),
+                success: false,
+                summary: "SVN 更新失败".to_string(),
+                output: String::new(),
+                warning: Some(svn_status_warning(&error)),
+                missing_svn_cli,
+            }
+        }
+    }
+}
+
+fn git_update_warning(error: &str) -> String {
+    if error.contains("Not possible to fast-forward") || error.contains("divergent") {
+        "Git 无法快进更新，请先检查本地提交或分支分叉情况。".to_string()
+    } else if error.contains("Your local changes") {
+        "Git 更新前需要先处理本地修改。".to_string()
+    } else {
+        format!("Git 更新失败：{error}")
+    }
+}
+
 fn is_missing_svn_cli_error(error: &str) -> bool {
     let normalized = error.to_lowercase();
     normalized.contains("the system cannot find the file specified")
@@ -781,7 +885,8 @@ pub fn run() {
             get_repository_status,
             list_repositories,
             open_svn_cli_download_page,
-            refresh_repository
+            refresh_repository,
+            update_repository
         ])
         .run(tauri::generate_context!())
         .expect("error while running GVMT");
