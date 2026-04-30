@@ -43,3 +43,6 @@ export async function detectRepository(path: string): Promise<DetectedRepository
   return invoke<DetectedRepository>("detect_repository", { path });
 }
 
+export async function refreshRepository(id: number): Promise<Repository> {
+  return invoke<Repository>("refresh_repository", { id });
+}

@@ -4,6 +4,7 @@ import {
   detectRepository,
   isTauriRuntime,
   listRepositories,
+  refreshRepository,
   Repository,
 } from "./lib/api";
 
@@ -83,6 +84,25 @@ function App() {
     }
   }
 
+  async function handleRefreshSelected() {
+    if (!selectedRepository) {
+      setStatus("请先选择一个仓库");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const refreshed = await refreshRepository(selectedRepository.id);
+      await refreshRepositories();
+      setSelectedId(refreshed.id);
+      setStatus(`已重新检测 ${refreshed.name}：${refreshed.vcsType}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -128,6 +148,9 @@ function App() {
             <h2>{selectedRepository?.name ?? "仓库工作台"}</h2>
           </div>
           <div className="topbar-actions">
+            <button type="button" disabled={!selectedRepository || isLoading} onClick={handleRefreshSelected}>
+              重新检测
+            </button>
             <button type="button" disabled={!selectedRepository}>
               更新
             </button>
@@ -213,4 +236,3 @@ function App() {
 }
 
 export default App;
-
