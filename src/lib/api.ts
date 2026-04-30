@@ -157,3 +157,41 @@ export async function commitRepository(id: number, input: CommitRequest): Promis
 export async function listRepositoryFiles(id: number, relativePath?: string): Promise<RepositoryDirectory> {
   return invoke<RepositoryDirectory>("list_repository_files", { id, relativePath });
 }
+
+export interface SvnIgnoreEntry {
+  directory: string;
+  rules: string[];
+}
+
+export interface IgnoreRules {
+  vcsType: VcsType;
+  gitignorePath: string | null;
+  gitignoreContent: string | null;
+  svnEntries: SvnIgnoreEntry[];
+}
+
+export async function getIgnoreRules(id: number): Promise<IgnoreRules> {
+  return invoke<IgnoreRules>("get_ignore_rules", { id });
+}
+
+export async function addIgnoreRule(
+  id: number,
+  input: { path: string; vcsType: VcsType },
+): Promise<OperationResult> {
+  return invoke<OperationResult>("add_ignore_rule", { id, input });
+}
+
+export async function updateGitignore(
+  id: number,
+  input: { content: string },
+): Promise<OperationResult> {
+  return invoke<OperationResult>("update_gitignore", { id, input });
+}
+
+export async function updateSvnIgnore(
+  id: number,
+  directory: string,
+  rules: string[],
+): Promise<OperationResult> {
+  return invoke<OperationResult>("update_svn_ignore", { id, directory, rules });
+}

@@ -142,6 +142,35 @@ struct RepositoryDirectory {
     entries: Vec<RepositoryFileEntry>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IgnoreRules {
+    vcs_type: String,
+    gitignore_path: Option<String>,
+    gitignore_content: Option<String>,
+    svn_entries: Vec<SvnIgnoreEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SvnIgnoreEntry {
+    directory: String,
+    rules: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateGitignoreRequest {
+    content: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AddIgnoreRuleRequest {
+    path: String,
+    vcs_type: String,
+}
+
 #[tauri::command]
 fn list_repositories(app: AppHandle) -> Result<Vec<Repository>, String> {
     let connection = open_database(&app)?;
@@ -437,6 +466,116 @@ fn list_repository_files(
         path: current_path,
         parent_path,
         entries,
+    })
+}
+
+#[tauri::command]
+fn get_ignore_rules(app: AppHandle, id: i64) -> Result<IgnoreRules, String> {
+    let connection = open_database(&app)?;
+    let repository = find_repository_by_id(&connection, id)?
+        .ok_or_else(|| "未找到仓库".to_string())?;
+
+    let mut gitignore_path = None;
+    let mut gitignore_content = None;
+    let mut svn_entries = Vec::new();
+
+    if repository.vcs_type == "git" || repository.vcs_type == "mixed" {
+        let gitignore = Path::new(&repository.path).join(".gitignore");
+        gitignore_path = Some(String::from(".gitignore"));
+        if gitignore.exists() {
+            gitignore_content = Some(fs::read_to_string(&gitignore).unwrap_or_default());
+        }
+    }
+
+    if repository.vcs_type == "svn" || repository.vcs_type == "mixed" {
+        match run_command(["svn", "propget", "svn:ignore", "-R", &repository.path]) {
+            Ok(output) => {
+                if !output.trim().is_empty() {
+                    svn_entries = parse_svn_ignore_recursive(&output);
+                }
+            }
+            Err(_) => {} // No svn:ignore properties set yet
+        }
+    }
+
+    Ok(IgnoreRules {
+        vcs_type: repository.vcs_type,
+        gitignore_path,
+        gitignore_content,
+        svn_entries,
+    })
+}
+
+#[tauri::command]
+fn add_ignore_rule(
+    app: AppHandle,
+    id: i64,
+    input: AddIgnoreRuleRequest,
+) -> Result<OperationResult, String> {
+    let connection = open_database(&app)?;
+    let repository = find_repository_by_id(&connection, id)?
+        .ok_or_else(|| "未找到仓库".to_string())?;
+    let normalized_path = normalize_relative_path(&input.path)?;
+
+    match input.vcs_type.as_str() {
+        "git" => gitignore_append_rule(&repository.path, &normalized_path),
+        "svn" => svn_ignore_append_rule(&repository.path, &normalized_path),
+        _ => Err("无法识别的版本控制类型".to_string()),
+    }
+}
+
+#[tauri::command]
+fn update_gitignore(
+    app: AppHandle,
+    id: i64,
+    input: UpdateGitignoreRequest,
+) -> Result<OperationResult, String> {
+    let connection = open_database(&app)?;
+    let repository = find_repository_by_id(&connection, id)?
+        .ok_or_else(|| "未找到仓库".to_string())?;
+
+    let gitignore = Path::new(&repository.path).join(".gitignore");
+    fs::write(&gitignore, input.content.as_bytes()).map_err(|error| error.to_string())?;
+
+    Ok(OperationResult {
+        operation: "ignore".to_string(),
+        vcs_type: "git".to_string(),
+        success: true,
+        summary: "已更新 .gitignore".to_string(),
+        output: String::new(),
+        warning: None,
+        missing_svn_cli: false,
+    })
+}
+
+#[tauri::command]
+fn update_svn_ignore(
+    app: AppHandle,
+    id: i64,
+    directory: String,
+    rules: Vec<String>,
+) -> Result<OperationResult, String> {
+    let connection = open_database(&app)?;
+    let repository = find_repository_by_id(&connection, id)?
+        .ok_or_else(|| "未找到仓库".to_string())?;
+
+    let dir_path = safe_repository_child_path(
+        Path::new(&repository.path),
+        if directory.is_empty() { None } else { Some(&directory) },
+    )?;
+    let dir_str = dir_path.to_string_lossy().to_string();
+    let value = rules.join("\n");
+
+    run_command_args("svn", &["propset".into(), "svn:ignore".into(), value.clone(), dir_str])?;
+
+    Ok(OperationResult {
+        operation: "ignore".to_string(),
+        vcs_type: "svn".to_string(),
+        success: true,
+        summary: format!("已更新 svn:ignore — {}", if directory.is_empty() { "仓库根目录" } else { &directory }),
+        output: String::new(),
+        warning: None,
+        missing_svn_cli: false,
     })
 }
 
@@ -1456,21 +1595,165 @@ fn registry_value(key: &str, value: &str) -> Option<String> {
     })
 }
 
+fn parse_svn_ignore_recursive(output: &str) -> Vec<SvnIgnoreEntry> {
+    let mut entries = Vec::new();
+    let mut current_dir: Option<String> = None;
+    let mut current_rules: Vec<String> = Vec::new();
+
+    for line in output.lines() {
+        if line.trim().is_empty() {
+            if let Some(dir) = current_dir.take() {
+                entries.push(SvnIgnoreEntry {
+                    directory: dir,
+                    rules: std::mem::take(&mut current_rules),
+                });
+            }
+            continue;
+        }
+
+        if let Some((dir, first_rule)) = line.split_once(" - ") {
+            if let Some(prev_dir) = current_dir.take() {
+                entries.push(SvnIgnoreEntry {
+                    directory: prev_dir,
+                    rules: std::mem::take(&mut current_rules),
+                });
+            }
+            current_dir = Some(dir.to_string());
+            if !first_rule.is_empty() {
+                current_rules.push(first_rule.to_string());
+            }
+        } else if current_dir.is_some() {
+            current_rules.push(line.to_string());
+        }
+    }
+
+    if let Some(dir) = current_dir {
+        if !current_rules.is_empty() {
+            entries.push(SvnIgnoreEntry { directory: dir, rules: current_rules });
+        }
+    }
+
+    entries
+}
+
+fn gitignore_append_rule(root_path: &str, rule: &str) -> Result<OperationResult, String> {
+    let gitignore = Path::new(root_path).join(".gitignore");
+    let mut content = if gitignore.exists() {
+        fs::read_to_string(&gitignore).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let normalized_rule = rule.replace('\\', "/");
+    if content.lines().any(|line| line.trim() == normalized_rule) {
+        return Ok(OperationResult {
+            operation: "ignore".to_string(),
+            vcs_type: "git".to_string(),
+            success: true,
+            summary: format!("规则已在 .gitignore 中存在：{normalized_rule}"),
+            output: String::new(),
+            warning: None,
+            missing_svn_cli: false,
+        });
+    }
+
+    if !content.is_empty() && !content.ends_with('\n') {
+        content.push('\n');
+    }
+    content.push_str(&normalized_rule);
+    content.push('\n');
+
+    fs::write(&gitignore, content.as_bytes()).map_err(|error| error.to_string())?;
+
+    Ok(OperationResult {
+        operation: "ignore".to_string(),
+        vcs_type: "git".to_string(),
+        success: true,
+        summary: format!("已添加 Git 忽略规则：{normalized_rule}"),
+        output: String::new(),
+        warning: None,
+        missing_svn_cli: false,
+    })
+}
+
+fn svn_ignore_append_rule(root_path: &str, relative_path: &str) -> Result<OperationResult, String> {
+    let root = Path::new(root_path);
+    let file_name = relative_path
+        .rsplit_once('/')
+        .map(|(_, name)| name)
+        .unwrap_or(relative_path);
+
+    let parent_dir = relative_path
+        .rsplit_once('/')
+        .map(|(parent, _)| parent)
+        .unwrap_or("");
+    let dir_path = if parent_dir.is_empty() {
+        root.to_path_buf()
+    } else {
+        root.join(parent_dir.replace('/', std::path::MAIN_SEPARATOR_STR))
+    };
+    let dir_str = dir_path.to_string_lossy().to_string();
+
+    let mut existing = Vec::new();
+    if let Ok(output) = run_command(["svn", "propget", "svn:ignore", &dir_str]) {
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                existing.push(trimmed.to_string());
+            }
+        }
+    }
+
+    if existing.iter().any(|rule| rule == file_name) {
+        return Ok(OperationResult {
+            operation: "ignore".to_string(),
+            vcs_type: "svn".to_string(),
+            success: true,
+            summary: format!("规则已在 svn:ignore 中存在：{file_name}"),
+            output: String::new(),
+            warning: None,
+            missing_svn_cli: false,
+        });
+    }
+
+    existing.push(file_name.to_string());
+    let value = existing.join("\n");
+
+    run_command_args(
+        "svn",
+        &["propset".into(), "svn:ignore".into(), value, dir_str],
+    )?;
+
+    Ok(OperationResult {
+        operation: "ignore".to_string(),
+        vcs_type: "svn".to_string(),
+        success: true,
+        summary: format!("已添加 SVN 忽略规则：{file_name}"),
+        output: String::new(),
+        warning: None,
+        missing_svn_cli: false,
+    })
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            add_ignore_rule,
             add_repository,
             commit_repository,
             delete_repository,
             detect_repository,
+            get_ignore_rules,
             get_repository_diff,
             get_repository_status,
             list_repository_files,
             list_repositories,
             open_svn_cli_download_page,
             refresh_repository,
-            update_repository
+            update_gitignore,
+            update_repository,
+            update_svn_ignore
         ])
         .run(tauri::generate_context!())
         .expect("error while running GVMT");
