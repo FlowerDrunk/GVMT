@@ -471,12 +471,28 @@ input:focus {
 }
 
 .hint {
+  display: grid;
+  gap: 10px;
   border: 1px solid #f2d7a4;
   border-radius: 8px;
   background: var(--warning-soft);
   color: var(--warning);
   margin: 12px 0 0;
   padding: 10px 12px;
+}
+
+.hint p {
+  margin: 0;
+}
+
+.hint-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hint-actions button {
+  min-height: 32px;
 }
 
 .repo-header {

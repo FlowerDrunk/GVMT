@@ -68,6 +68,7 @@ struct RepositoryStatus {
     vcs_type: String,
     clean: bool,
     warning: Option<String>,
+    missing_svn_cli: bool,
     summary: RepositoryStatusSummary,
     changes: Vec<ChangeItem>,
 }
@@ -170,19 +171,26 @@ fn get_repository_status(app: AppHandle, id: i64) -> Result<RepositoryStatus, St
         .ok_or_else(|| "未找到需要检测状态的仓库".to_string())?;
 
     let mut warning = None;
+    let mut missing_svn_cli = false;
     let mut changes = Vec::new();
 
     match repository.vcs_type.as_str() {
         "git" => changes.extend(git_status_changes(&repository.path)?),
         "svn" => match svn_status_changes(&repository.path) {
             Ok(items) => changes.extend(items),
-            Err(error) => warning = Some(svn_status_warning(&error)),
+            Err(error) => {
+                missing_svn_cli = is_missing_svn_cli_error(&error);
+                warning = Some(svn_status_warning(&error));
+            }
         },
         "mixed" => {
             changes.extend(git_status_changes(&repository.path)?);
             match svn_status_changes(&repository.path) {
                 Ok(items) => changes.extend(items),
-                Err(error) => warning = Some(svn_status_warning(&error)),
+                Err(error) => {
+                    missing_svn_cli = is_missing_svn_cli_error(&error);
+                    warning = Some(svn_status_warning(&error));
+                }
             }
         }
         _ => warning = Some("当前目录未识别为 Git 或 SVN 仓库，请先重新检测。".to_string()),
@@ -196,9 +204,20 @@ fn get_repository_status(app: AppHandle, id: i64) -> Result<RepositoryStatus, St
         vcs_type: repository.vcs_type,
         clean,
         warning,
+        missing_svn_cli,
         summary,
         changes,
     })
+}
+
+#[tauri::command]
+fn open_svn_cli_download_page(target: String) -> Result<(), String> {
+    let url = match target.as_str() {
+        "sliksvn" => "https://sliksvn.com/download/",
+        _ => "https://tortoisesvn.net/downloads.html",
+    };
+
+    open_url(url)
 }
 
 #[tauri::command]
@@ -633,14 +652,31 @@ fn summarize_changes(changes: &[ChangeItem]) -> RepositoryStatusSummary {
 }
 
 fn svn_status_warning(error: &str) -> String {
-    if error.contains("The system cannot find the file specified")
-        || error.contains("program not found")
-        || error.contains("找不到")
-        || error.contains("os error 2")
-    {
-        "当前环境没有可调用的 svn.exe。TortoiseSVN GUI 可用于识别工作副本，但状态检测仍需要 SVN 命令行工具。".to_string()
+    if is_missing_svn_cli_error(error) {
+        "当前环境没有可调用的 svn.exe。TortoiseSVN GUI 可用于识别工作副本，但状态检测仍需要 SVN 命令行工具。可以安装 SlikSVN，或重新安装 / 修改 TortoiseSVN 并勾选 command line client tools。".to_string()
     } else {
         format!("SVN 状态检测失败：{error}")
+    }
+}
+
+fn is_missing_svn_cli_error(error: &str) -> bool {
+    let normalized = error.to_lowercase();
+    normalized.contains("the system cannot find the file specified")
+        || normalized.contains("program not found")
+        || normalized.contains("找不到")
+        || normalized.contains("os error 2")
+        || normalized.contains("no such file or directory")
+}
+
+fn open_url(url: &str) -> Result<(), String> {
+    if cfg!(windows) {
+        Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", url])
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    } else {
+        Err("当前版本仅支持 Windows 打开下载页面".to_string())
     }
 }
 
@@ -744,6 +780,7 @@ pub fn run() {
             detect_repository,
             get_repository_status,
             list_repositories,
+            open_svn_cli_download_page,
             refresh_repository
         ])
         .run(tauri::generate_context!())

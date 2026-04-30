@@ -48,6 +48,7 @@ export interface RepositoryStatus {
   vcsType: VcsType;
   clean: boolean;
   warning: string | null;
+  missingSvnCli: boolean;
   summary: RepositoryStatusSummary;
   changes: ChangeItem[];
 }
@@ -75,4 +76,8 @@ export async function refreshRepository(id: number): Promise<Repository> {
 
 export async function getRepositoryStatus(id: number): Promise<RepositoryStatus> {
   return invoke<RepositoryStatus>("get_repository_status", { id });
+}
+
+export async function openSvnCliDownloadPage(target: "tortoise" | "sliksvn"): Promise<void> {
+  return invoke<void>("open_svn_cli_download_page", { target });
 }

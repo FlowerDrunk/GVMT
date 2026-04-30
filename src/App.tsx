@@ -5,6 +5,7 @@ import {
   getRepositoryStatus,
   isTauriRuntime,
   listRepositories,
+  openSvnCliDownloadPage,
   refreshRepository,
   Repository,
   RepositoryStatus,
@@ -162,6 +163,15 @@ function App() {
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handleOpenSvnDownload(target: "tortoise" | "sliksvn") {
+    try {
+      await openSvnCliDownloadPage(target);
+      setStatus(target === "sliksvn" ? "已打开 SlikSVN 下载页" : "已打开 TortoiseSVN 下载页");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -388,7 +398,29 @@ function App() {
                     <strong>{repositoryStatus.summary.untracked}</strong>
                   </div>
                 </div>
-                {repositoryStatus.warning ? <p className="hint">{repositoryStatus.warning}</p> : null}
+                {repositoryStatus.warning ? (
+                  <div className="hint">
+                    <p>{repositoryStatus.warning}</p>
+                    {repositoryStatus.missingSvnCli ? (
+                      <div className="hint-actions">
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={() => handleOpenSvnDownload("tortoise")}
+                        >
+                          下载 / 修改 TortoiseSVN
+                        </button>
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={() => handleOpenSvnDownload("sliksvn")}
+                        >
+                          下载 SlikSVN
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {repositoryStatus.changes.length === 0 ? (
                   <div className="empty-state compact">
                     <h3>{repositoryStatus.warning ? "暂无可展示变更" : "工作区干净"}</h3>
