@@ -94,6 +94,7 @@ struct RepositoryFileEntry {
     entry_type: String,
     size: Option<u64>,
     modified_at: Option<u64>,
+    children: Vec<RepositoryFileEntry>,
 }
 
 #[derive(Debug, Serialize)]
@@ -291,53 +292,9 @@ fn list_repository_files(
         .transpose()?
         .unwrap_or_default();
     let parent_path = parent_relative_path(&current_path);
-    let mut entries = Vec::new();
-
-    for item in fs::read_dir(&directory_path).map_err(|error| error.to_string())? {
-        let item = item.map_err(|error| error.to_string())?;
-        let file_name = item.file_name().to_string_lossy().to_string();
-        if should_hide_repository_entry(&file_name) {
-            continue;
-        }
-
-        let metadata = item.metadata().map_err(|error| error.to_string())?;
-        let entry_type = if metadata.is_dir() {
-            "directory"
-        } else {
-            "file"
-        }
-        .to_string();
-        let entry_path = if current_path.is_empty() {
-            file_name.clone()
-        } else {
-            format!("{current_path}/{file_name}")
-        };
-        let modified_at = metadata
-            .modified()
-            .ok()
-            .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-            .map(|value| value.as_secs());
-
-        entries.push(RepositoryFileEntry {
-            name: file_name,
-            path: entry_path,
-            entry_type,
-            size: if metadata.is_file() {
-                Some(metadata.len())
-            } else {
-                None
-            },
-            modified_at,
-        });
-    }
-
-    entries.sort_by(|left, right| {
-        let left_is_directory = left.entry_type == "directory";
-        let right_is_directory = right.entry_type == "directory";
-        right_is_directory
-            .cmp(&left_is_directory)
-            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-    });
+    let mut remaining_entries = 650;
+    let entries =
+        repository_file_entries(&directory_path, &current_path, 0, &mut remaining_entries)?;
 
     Ok(RepositoryDirectory {
         repository_id: repository.id,
@@ -632,6 +589,82 @@ fn parent_relative_path(path: &str) -> Option<String> {
     path.rsplit_once('/')
         .map(|(parent, _)| parent.to_string())
         .or_else(|| Some(String::new()))
+}
+
+fn repository_file_entries(
+    directory_path: &Path,
+    current_path: &str,
+    depth: usize,
+    remaining_entries: &mut usize,
+) -> Result<Vec<RepositoryFileEntry>, String> {
+    const MAX_TREE_DEPTH: usize = 4;
+
+    if *remaining_entries == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut entries = Vec::new();
+    for item in fs::read_dir(directory_path).map_err(|error| error.to_string())? {
+        if *remaining_entries == 0 {
+            break;
+        }
+
+        let item = item.map_err(|error| error.to_string())?;
+        let file_name = item.file_name().to_string_lossy().to_string();
+        if should_hide_repository_entry(&file_name) {
+            continue;
+        }
+
+        let metadata = item.metadata().map_err(|error| error.to_string())?;
+        let is_directory = metadata.is_dir();
+        let entry_path = if current_path.is_empty() {
+            file_name.clone()
+        } else {
+            format!("{current_path}/{file_name}")
+        };
+        let modified_at = metadata
+            .modified()
+            .ok()
+            .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+            .map(|value| value.as_secs());
+
+        *remaining_entries -= 1;
+        let children = if is_directory && depth < MAX_TREE_DEPTH && *remaining_entries > 0 {
+            repository_file_entries(&item.path(), &entry_path, depth + 1, remaining_entries)?
+        } else {
+            Vec::new()
+        };
+
+        entries.push(RepositoryFileEntry {
+            name: file_name,
+            path: entry_path,
+            entry_type: if is_directory { "directory" } else { "file" }.to_string(),
+            size: if metadata.is_file() {
+                Some(metadata.len())
+            } else {
+                None
+            },
+            modified_at,
+            children,
+        });
+    }
+
+    sort_repository_entries(&mut entries);
+    Ok(entries)
+}
+
+fn sort_repository_entries(entries: &mut [RepositoryFileEntry]) {
+    entries.sort_by(|left, right| {
+        let left_is_directory = left.entry_type == "directory";
+        let right_is_directory = right.entry_type == "directory";
+        right_is_directory
+            .cmp(&left_is_directory)
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+    });
+
+    for entry in entries {
+        sort_repository_entries(&mut entry.children);
+    }
 }
 
 fn should_hide_repository_entry(name: &str) -> bool {

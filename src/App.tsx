@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { CSSProperties, FormEvent, useEffect, useMemo, useState } from "react";
 import {
   addRepository,
   detectRepository,
@@ -11,6 +11,7 @@ import {
   refreshRepository,
   Repository,
   RepositoryDirectory,
+  RepositoryFileEntry,
   RepositoryStatus,
   updateRepository,
   VcsType,
@@ -77,11 +78,92 @@ function statusTone(vcsType: VcsType) {
   return "ready";
 }
 
+interface ChangeTreeNode {
+  name: string;
+  path: string;
+  children: ChangeTreeNode[];
+  change?: {
+    status: string;
+    vcsType: VcsType;
+  };
+}
+
 interface VisibleSections {
   repositories: boolean;
   files: boolean;
   changes: boolean;
   review: boolean;
+}
+
+function buildChangeTree(changes: { path: string; status: string; vcsType: VcsType }[]) {
+  const root: ChangeTreeNode[] = [];
+  const rootsByName = new Map<string, ChangeTreeNode>();
+
+  for (const change of changes) {
+    const parts = change.path.replace(/\\/g, "/").split("/").filter(Boolean);
+    let children = root;
+    let siblings = rootsByName;
+    let currentPath = "";
+
+    parts.forEach((part, index) => {
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      let node = siblings.get(part);
+      if (!node) {
+        node = {
+          name: part,
+          path: currentPath,
+          children: [],
+        };
+        siblings.set(part, node);
+        children.push(node);
+      }
+
+      if (index === parts.length - 1) {
+        node.change = {
+          status: change.status,
+          vcsType: change.vcsType,
+        };
+      }
+
+      children = node.children;
+      siblings = new Map(node.children.map((child) => [child.name, child]));
+    });
+  }
+
+  sortChangeTree(root);
+  return root;
+}
+
+function sortChangeTree(nodes: ChangeTreeNode[]) {
+  nodes.sort((left, right) => {
+    const leftDirectory = left.children.length > 0 && !left.change;
+    const rightDirectory = right.children.length > 0 && !right.change;
+    if (leftDirectory !== rightDirectory) return leftDirectory ? -1 : 1;
+    return left.name.localeCompare(right.name);
+  });
+  nodes.forEach((node) => sortChangeTree(node.children));
+}
+
+function collectFileDirectoryPaths(entries: RepositoryFileEntry[]) {
+  const paths: string[] = [];
+  for (const entry of entries) {
+    if (entry.entryType === "directory") {
+      paths.push(entry.path);
+      paths.push(...collectFileDirectoryPaths(entry.children));
+    }
+  }
+  return paths;
+}
+
+function collectChangeDirectoryPaths(nodes: ChangeTreeNode[]) {
+  const paths: string[] = [];
+  for (const node of nodes) {
+    if (node.children.length > 0) {
+      paths.push(node.path);
+      paths.push(...collectChangeDirectoryPaths(node.children));
+    }
+  }
+  return paths;
 }
 
 function App() {
@@ -94,6 +176,8 @@ function App() {
   const [repositoryStatus, setRepositoryStatus] = useState<RepositoryStatus | null>(null);
   const [operationResults, setOperationResults] = useState<OperationResult[]>([]);
   const [repositoryFiles, setRepositoryFiles] = useState<RepositoryDirectory | null>(null);
+  const [expandedFilePaths, setExpandedFilePaths] = useState<Set<string>>(new Set());
+  const [expandedChangePaths, setExpandedChangePaths] = useState<Set<string>>(new Set());
   const [visibleSections, setVisibleSections] = useState<VisibleSections>({
     repositories: true,
     files: true,
@@ -203,6 +287,8 @@ function App() {
     try {
       const nextStatus = await getRepositoryStatus(selectedRepository.id);
       setRepositoryStatus(nextStatus);
+      const nextChangeTree = buildChangeTree(nextStatus.changes);
+      setExpandedChangePaths(new Set(collectChangeDirectoryPaths(nextChangeTree)));
       setStatus(nextStatus.clean ? "工作区干净" : `检测到 ${nextStatus.summary.total} 个变更`);
     } catch (error) {
       setRepositoryStatus(null);
@@ -251,6 +337,7 @@ function App() {
     try {
       const nextFiles = await listRepositoryFiles(selectedRepository.id, relativePath);
       setRepositoryFiles(nextFiles);
+      setExpandedFilePaths(new Set(collectFileDirectoryPaths(nextFiles.entries)));
       setStatus(nextFiles.path ? `已打开 ${nextFiles.path}` : "已打开仓库根目录");
     } catch (error) {
       setRepositoryFiles(null);
@@ -267,10 +354,36 @@ function App() {
     }));
   }
 
+  function toggleFileNode(path: string) {
+    setExpandedFilePaths((current) => {
+      const next = new Set(current);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }
+
+  function toggleChangeNode(path: string) {
+    setExpandedChangePaths((current) => {
+      const next = new Set(current);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }
+
   useEffect(() => {
     setRepositoryStatus(null);
     setOperationResults([]);
     setRepositoryFiles(null);
+    setExpandedFilePaths(new Set());
+    setExpandedChangePaths(new Set());
   }, [selectedRepository?.id]);
 
   useEffect(() => {
@@ -287,6 +400,7 @@ function App() {
     : "等待检测";
   const breadcrumbs = fileBreadcrumbs(repositoryFiles?.path ?? "");
   const changedFiles = repositoryStatus?.changes ?? [];
+  const changeTree = buildChangeTree(changedFiles);
   const appShellClassName = `app-shell ${visibleSections.repositories ? "" : "repositories-collapsed"}`;
   const workbenchClassName = [
     "workbench",
@@ -295,6 +409,64 @@ function App() {
   ]
     .filter(Boolean)
     .join(" ");
+  const renderFileTree = (entries: RepositoryFileEntry[], level = 0) =>
+    entries.map((entry) => {
+      const isDirectory = entry.entryType === "directory";
+      const isExpanded = expandedFilePaths.has(entry.path);
+
+      return (
+        <div className="tree-node" key={entry.path}>
+          <button
+            className={`tree-row file-tree-row ${isDirectory ? "directory" : "file"}`}
+            type="button"
+            style={{ "--tree-level": level } as CSSProperties}
+            onClick={() => (isDirectory ? toggleFileNode(entry.path) : undefined)}
+          >
+            <span className="tree-toggle" aria-hidden="true">
+              {isDirectory ? (isExpanded ? "⌄" : "›") : "·"}
+            </span>
+            <strong>{entry.name}</strong>
+            <span>{isDirectory ? "文件夹" : formatFileSize(entry.size)}</span>
+            <time>{formatModifiedAt(entry.modifiedAt)}</time>
+          </button>
+          {isDirectory && isExpanded && entry.children.length > 0 ? renderFileTree(entry.children, level + 1) : null}
+        </div>
+      );
+    });
+  const renderChangeTree = (nodes: ChangeTreeNode[], level = 0) =>
+    nodes.map((node) => {
+      const isDirectory = node.children.length > 0;
+      const isExpanded = expandedChangePaths.has(node.path);
+      const status = node.change?.status ?? "unknown";
+
+      return (
+        <div className="tree-node" key={node.path}>
+          <button
+            className={`tree-row change-tree-row ${isDirectory ? "directory" : "file"}`}
+            type="button"
+            style={{ "--tree-level": level } as CSSProperties}
+            onClick={() => (isDirectory ? toggleChangeNode(node.path) : undefined)}
+          >
+            <span className="tree-toggle" aria-hidden="true">
+              {isDirectory ? (isExpanded ? "⌄" : "›") : "·"}
+            </span>
+            <strong>{node.name}</strong>
+            {node.change ? (
+              <>
+                <span className={`change-badge ${status}`}>{changeLabels[status]}</span>
+                <small>{vcsLabels[node.change.vcsType]}</small>
+              </>
+            ) : (
+              <>
+                <span>{node.children.length} 项</span>
+                <small>目录</small>
+              </>
+            )}
+          </button>
+          {isDirectory && isExpanded ? renderChangeTree(node.children, level + 1) : null}
+        </div>
+      );
+    });
 
   return (
     <main className={appShellClassName}>
@@ -600,24 +772,7 @@ function App() {
                     <p>当前目录下没有可展示的文件或文件夹。</p>
                   </div>
                 ) : (
-                  <div className="file-list">
-                    {repositoryFiles.entries.map((entry) => (
-                      <button
-                        className="file-row"
-                        type="button"
-                        key={entry.path}
-                        disabled={entry.entryType !== "directory" || isFileBrowserLoading}
-                        onClick={() => handleLoadRepositoryFiles(entry.path)}
-                      >
-                        <span className={`file-icon ${entry.entryType}`} aria-hidden="true">
-                          {entry.entryType === "directory" ? "▸" : "·"}
-                        </span>
-                        <strong>{entry.name}</strong>
-                        <span>{entry.entryType === "directory" ? "文件夹" : formatFileSize(entry.size)}</span>
-                        <time>{formatModifiedAt(entry.modifiedAt)}</time>
-                      </button>
-                    ))}
-                  </div>
+                  <div className="tree-list file-tree">{renderFileTree(repositoryFiles.entries)}</div>
                 )
               ) : (
                 <div className="empty-state compact">
@@ -770,15 +925,7 @@ function App() {
               <input placeholder="筛选文件..." aria-label="筛选文件" />
             </header>
             {changedFiles.length > 0 ? (
-              <div className="changed-file-list">
-                {changedFiles.slice(0, 80).map((change) => (
-                  <button className="changed-file-row" type="button" key={`${change.vcsType}-${change.status}-${change.path}`}>
-                    <span className={`change-badge ${change.status}`}>{changeLabels[change.status]}</span>
-                    <strong>{change.path}</strong>
-                    <small>{vcsLabels[change.vcsType]}</small>
-                  </button>
-                ))}
-              </div>
+              <div className="tree-list change-tree">{renderChangeTree(changeTree)}</div>
             ) : (
               <div className="changes-empty">
                 <p>{repositoryStatus ? "没有匹配的文件" : "尚未刷新状态"}</p>

@@ -71,6 +71,7 @@ export interface RepositoryFileEntry {
   entryType: RepositoryFileEntryType;
   size: number | null;
   modifiedAt: number | null;
+  children: RepositoryFileEntry[];
 }
 
 export interface RepositoryDirectory {

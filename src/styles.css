@@ -648,15 +648,103 @@ input:focus {
   background: #ffffff;
 }
 
-.changed-file-list {
+.changed-file-list,
+.tree-list {
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: 4px;
   min-height: 0;
   overflow-y: auto;
   padding: 12px;
   scrollbar-color: rgba(97, 112, 133, 0.28) transparent;
   scrollbar-width: thin;
+}
+
+.file-tree {
+  max-height: 460px;
+  margin-top: 13px;
+  padding: 0 2px 0 0;
+  scrollbar-color: rgba(37, 99, 235, 0.38) transparent;
+}
+
+.tree-node {
+  display: grid;
+  gap: 4px;
+}
+
+.tree-row {
+  --tree-level: 0;
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  border-color: transparent;
+  background: transparent;
+  padding: 6px 8px 6px calc(8px + var(--tree-level) * 18px);
+  text-align: left;
+}
+
+.tree-row:hover:not(:disabled) {
+  background: #f5f7fa;
+}
+
+.tree-toggle {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 13px;
+}
+
+.tree-row.directory .tree-toggle {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.tree-row strong {
+  overflow: hidden;
+  color: var(--text);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-tree-row {
+  grid-template-columns: 24px minmax(0, 1fr) 94px 120px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.file-tree-row span,
+.file-tree-row time {
+  color: var(--subtle);
+  font-size: 12px;
+  font-weight: 750;
+  text-align: right;
+}
+
+.file-tree-row .tree-toggle {
+  text-align: center;
+}
+
+.change-tree-row {
+  grid-template-columns: 24px minmax(0, 1fr) 72px auto;
+}
+
+.change-tree-row > span:not(.tree-toggle):not(.change-badge),
+.change-tree-row small {
+  color: var(--subtle);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: right;
 }
 
 .changed-file-row {
@@ -1471,11 +1559,11 @@ input:focus {
     padding: 16px;
   }
 
-  .file-row {
+  .file-tree-row {
     grid-template-columns: 24px minmax(0, 1fr) 82px;
   }
 
-  .file-row time {
+  .file-tree-row time {
     display: none;
   }
 }
