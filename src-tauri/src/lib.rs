@@ -36,6 +36,12 @@ struct AddRepositoryInput {
     name: Option<String>,
 }
 
+#[derive(Debug)]
+struct SvnMetadata {
+    remote_url: Option<String>,
+    revision: Option<String>,
+}
+
 #[tauri::command]
 fn list_repositories(app: AppHandle) -> Result<Vec<Repository>, String> {
     let connection = open_database(&app)?;
@@ -144,10 +150,10 @@ fn detect_repository(path: String) -> Result<DetectedRepository, String> {
         "rev-parse",
         "--show-toplevel",
     ]);
-    let svn_info = svn_info(&repository_path_string);
+    let svn_metadata = detect_svn_metadata(&repository_path_string, &repository_path);
 
     let has_git = git_root.is_ok();
-    let has_svn = svn_info.is_ok();
+    let has_svn = svn_metadata.is_ok();
     let vcs_type = match (has_git, has_svn) {
         (true, true) => "mixed",
         (true, false) => "git",
@@ -166,7 +172,10 @@ fn detect_repository(path: String) -> Result<DetectedRepository, String> {
             "remote.origin.url",
         ])
         .ok(),
-        "svn" => svn_info_item(&repository_path_string, "url", "URL"),
+        "svn" => svn_metadata
+            .as_ref()
+            .ok()
+            .and_then(|metadata| metadata.remote_url.clone()),
         _ => None,
     };
 
@@ -179,7 +188,10 @@ fn detect_repository(path: String) -> Result<DetectedRepository, String> {
             "--show-current",
         ])
         .ok(),
-        "svn" => svn_info_item(&repository_path_string, "revision", "Revision"),
+        "svn" => svn_metadata
+            .as_ref()
+            .ok()
+            .and_then(|metadata| metadata.revision.clone()),
         _ => None,
     };
 
@@ -350,14 +362,13 @@ fn svn_info(path: &str) -> Result<String, String> {
     run_command(["svn", "info", path])
 }
 
-fn svn_info_item(path: &str, item: &str, fallback_label: &str) -> Option<String> {
-    run_command(["svn", "info", "--show-item", item, path])
-        .ok()
-        .or_else(|| {
-            svn_info(path)
-                .ok()
-                .and_then(|info| parse_svn_info_item(&info, fallback_label))
+fn detect_svn_metadata(path: &str, repository_path: &Path) -> Result<SvnMetadata, String> {
+    svn_info(path)
+        .map(|info| SvnMetadata {
+            remote_url: parse_svn_info_item(&info, "URL"),
+            revision: parse_svn_info_item(&info, "Revision"),
         })
+        .or_else(|_| detect_svn_metadata_from_wc_db(repository_path))
 }
 
 fn parse_svn_info_item(info: &str, label: &str) -> Option<String> {
@@ -368,6 +379,84 @@ fn parse_svn_info_item(info: &str, label: &str) -> Option<String> {
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned)
     })
+}
+
+fn detect_svn_metadata_from_wc_db(path: &Path) -> Result<SvnMetadata, String> {
+    let wc_db_path = find_svn_wc_db(path).ok_or_else(|| "未找到 SVN 工作副本数据库".to_string())?;
+    let connection = Connection::open(wc_db_path).map_err(|error| error.to_string())?;
+
+    let remote_url = svn_wc_remote_url(&connection)?;
+    let revision = svn_wc_revision(&connection)?;
+
+    Ok(SvnMetadata {
+        remote_url,
+        revision,
+    })
+}
+
+fn find_svn_wc_db(path: &Path) -> Option<PathBuf> {
+    let mut cursor = if path.is_file() {
+        path.parent()?.to_path_buf()
+    } else {
+        path.to_path_buf()
+    };
+
+    loop {
+        let wc_db_path = cursor.join(".svn").join("wc.db");
+        if wc_db_path.exists() {
+            return Some(wc_db_path);
+        }
+
+        if !cursor.pop() {
+            return None;
+        }
+    }
+}
+
+fn svn_wc_remote_url(connection: &Connection) -> Result<Option<String>, String> {
+    connection
+        .query_row(
+            "SELECT repository.root, nodes.repos_path
+             FROM nodes
+             JOIN repository ON nodes.repos_id = repository.id
+             WHERE nodes.local_relpath = ''
+             ORDER BY nodes.op_depth DESC
+             LIMIT 1",
+            [],
+            |row| {
+                let root: String = row.get(0)?;
+                let repos_path: Option<String> = row.get(1)?;
+                Ok(join_svn_url(&root, repos_path.as_deref().unwrap_or("")))
+            },
+        )
+        .optional()
+        .map_err(|error| error.to_string())
+}
+
+fn svn_wc_revision(connection: &Connection) -> Result<Option<String>, String> {
+    connection
+        .query_row(
+            "SELECT MAX(revision)
+             FROM nodes
+             WHERE revision IS NOT NULL AND revision >= 0",
+            [],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .optional()
+        .map(|value| value.flatten().map(|revision| revision.to_string()))
+        .map_err(|error| error.to_string())
+}
+
+fn join_svn_url(root: &str, repos_path: &str) -> String {
+    if repos_path.is_empty() {
+        root.to_string()
+    } else {
+        format!(
+            "{}/{}",
+            root.trim_end_matches('/'),
+            repos_path.trim_start_matches('/')
+        )
+    }
 }
 
 fn run_command<const N: usize>(parts: [&str; N]) -> Result<String, String> {
@@ -395,16 +484,71 @@ fn resolve_program(program: &str) -> String {
         return program.to_string();
     }
 
-    [
+    svn_executable_candidates()
+        .into_iter()
+        .find(|candidate| Path::new(candidate).exists())
+        .unwrap_or_else(|| program.to_string())
+}
+
+fn svn_executable_candidates() -> Vec<String> {
+    let mut candidates = vec![
         "C:\\Program Files\\TortoiseSVN\\bin\\svn.exe",
         "C:\\Program Files (x86)\\TortoiseSVN\\bin\\svn.exe",
         "C:\\Program Files\\SlikSvn\\bin\\svn.exe",
         "C:\\Program Files (x86)\\SlikSvn\\bin\\svn.exe",
         "C:\\Program Files\\VisualSVN\\bin\\svn.exe",
     ]
-    .iter()
-    .find(|candidate| Path::new(candidate).exists())
-    .map_or_else(|| program.to_string(), |candidate| (*candidate).to_string())
+    .into_iter()
+    .map(ToOwned::to_owned)
+    .collect::<Vec<_>>();
+
+    candidates.extend(
+        tortoise_svn_registry_directories()
+            .into_iter()
+            .map(|directory| {
+                Path::new(&directory)
+                    .join("bin")
+                    .join("svn.exe")
+                    .to_string_lossy()
+                    .to_string()
+            }),
+    );
+
+    candidates
+}
+
+fn tortoise_svn_registry_directories() -> Vec<String> {
+    [
+        "HKLM\\SOFTWARE\\TortoiseSVN",
+        "HKLM\\SOFTWARE\\WOW6432Node\\TortoiseSVN",
+    ]
+    .into_iter()
+    .filter_map(|key| registry_value(key, "Directory"))
+    .collect()
+}
+
+fn registry_value(key: &str, value: &str) -> Option<String> {
+    let output = Command::new("reg")
+        .args(["query", key, "/v", value])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout.lines().find_map(|line| {
+        let trimmed = line.trim();
+        if !trimmed.starts_with(value) {
+            return None;
+        }
+
+        trimmed
+            .split_once("REG_SZ")
+            .map(|(_, path)| path.trim().to_string())
+            .filter(|path| !path.is_empty())
+    })
 }
 
 pub fn run() {
