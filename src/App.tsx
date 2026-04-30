@@ -203,44 +203,87 @@ function App() {
     setOperationResults([]);
   }, [selectedRepository?.id]);
 
+  const currentChangeCount = repositoryStatus?.summary.total ?? 0;
+  const currentReviewState = repositoryStatus
+    ? repositoryStatus.clean
+      ? "可进入评审"
+      : "有待处理变更"
+    : "等待检测";
+
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            G
-          </span>
-          <div>
-            <h1>GVMT</h1>
-            <p>通用版本控制工具</p>
-          </div>
-        </div>
-
-        <nav className="nav-stack" aria-label="主导航">
-          <button className="nav-item active" type="button">
-            仓库工作台
+      <aside className="activity-rail" aria-label="主导航">
+        <div className="rail-logo">G</div>
+        <nav className="rail-nav">
+          <button className="rail-button active" type="button" title="仓库">
+            <span aria-hidden="true">⌂</span>
+            <small>仓库</small>
           </button>
-          <button className="nav-item" type="button" disabled>
-            代码评审
+          <button className="rail-button" type="button" title="评审" disabled>
+            <span aria-hidden="true">◎</span>
+            <small>评审</small>
           </button>
-          <button className="nav-item" type="button" disabled>
-            质量检查
+          <button className="rail-button" type="button" title="质量" disabled>
+            <span aria-hidden="true">✓</span>
+            <small>质量</small>
           </button>
-          <button className="nav-item" type="button" disabled>
-            设置
+          <button className="rail-button" type="button" title="设置" disabled>
+            <span aria-hidden="true">⚙</span>
+            <small>设置</small>
           </button>
         </nav>
+        <div className="rail-status" title={isLoading ? "处理中" : "准备就绪"}>
+          <span className={isLoading ? "status-dot busy" : "status-dot"} />
+        </div>
+      </aside>
 
-        <section className="panel">
-          <div className="section-heading">
-            <h2>仓库</h2>
-            <button className="ghost-button" type="button" onClick={refreshRepositories} disabled={isLoading}>
-              刷新
-            </button>
+      <aside className="explorer-pane">
+        <header className="pane-header">
+          <div>
+            <h1>GVMT</h1>
+            <p>版本控制工作台</p>
+          </div>
+          <button className="icon-button" type="button" onClick={refreshRepositories} disabled={isLoading} title="刷新仓库">
+            ↻
+          </button>
+        </header>
+
+        <section className="add-strip">
+          <form onSubmit={handleAddRepository}>
+            <label htmlFor="repo-path">打开本地仓库</label>
+            <div className="path-row">
+              <input
+                id="repo-path"
+                placeholder="C:\\Projects\\example"
+                value={path}
+                onChange={(event) => setPath(event.target.value)}
+              />
+            </div>
+            <div className="form-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={handleDetect}
+                disabled={isLoading || !isTauriRuntime()}
+              >
+                检测
+              </button>
+              <button className="primary-button" type="submit" disabled={isLoading || !isTauriRuntime()}>
+                添加
+              </button>
+            </div>
+          </form>
+          {!isTauriRuntime() ? <p className="inline-warning">需要 Tauri 运行时访问本地仓库。</p> : null}
+        </section>
+
+        <section className="repo-section">
+          <div className="section-title">
+            <span>仓库</span>
+            <strong>{repositories.length}</strong>
           </div>
           <div className="repo-list">
             {repositories.length === 0 ? (
-              <div className="empty-list">暂无仓库</div>
+              <div className="empty-list">{emptyStateCopy.title}</div>
             ) : (
               repositories.map((repository) => (
                 <button
@@ -249,8 +292,12 @@ function App() {
                   type="button"
                   onClick={() => setSelectedId(repository.id)}
                 >
-                  <strong>{repository.name}</strong>
-                  <span>{vcsLabels[repository.vcsType]}</span>
+                  <span className={`repo-dot ${statusTone(repository.vcsType)}`} />
+                  <span className="repo-copy">
+                    <strong>{repository.name}</strong>
+                    <small>{repository.path}</small>
+                  </span>
+                  <span className="repo-type">{vcsLabels[repository.vcsType]}</span>
                 </button>
               ))
             )}
@@ -259,13 +306,12 @@ function App() {
       </aside>
 
       <section className="workspace">
-        <header className="topbar">
-          <div>
+        <header className="command-bar">
+          <div className="command-title">
             <p className="eyebrow">Windows first · React · SQLite</p>
-            <h2>{selectedRepository?.name ?? "仓库工作台"}</h2>
-            <p className="subtitle">统一管理 Git 与 SVN 仓库，先把高频操作做轻、做快、做清楚。</p>
+            <h2>{selectedRepository?.name ?? "选择或添加仓库"}</h2>
           </div>
-          <div className="topbar-actions">
+          <div className="command-actions">
             <button
               className="secondary-button"
               type="button"
@@ -283,266 +329,299 @@ function App() {
               刷新状态
             </button>
             <button
-              className="secondary-button"
+              className="primary-button"
               type="button"
               disabled={!selectedRepository || isLoading}
               onClick={handleUpdateRepository}
             >
               更新
             </button>
-            <button className="primary-button" type="button" disabled={!selectedRepository}>
-              提交并 Push
-            </button>
           </div>
         </header>
 
-        <section className="content-grid">
-          <div className="stats-strip" aria-label="仓库统计">
-            <div className="stat-card">
-              <span>总仓库</span>
-              <strong>{repositoryStats.total}</strong>
-            </div>
-            <div className="stat-card">
-              <span>Git</span>
-              <strong>{repositoryStats.git}</strong>
-            </div>
-            <div className="stat-card">
-              <span>SVN</span>
-              <strong>{repositoryStats.svn}</strong>
-            </div>
-            <div className="stat-card">
-              <span>待确认</span>
-              <strong>{repositoryStats.unknown}</strong>
-            </div>
-          </div>
-
-          <div className="panel add-panel">
-            <div className="panel-title-row">
-              <div>
-                <p className="eyebrow">Repository intake</p>
-                <h3>添加仓库</h3>
+        <div className="workbench">
+          <section className="main-thread">
+            <section className="hero-panel">
+              <div className="hero-copy">
+                <p className="eyebrow">Repository session</p>
+                <h3>{selectedRepository ? "当前仓库会话" : "从左侧打开一个仓库"}</h3>
+                <p>
+                  {selectedRepository
+                    ? "围绕当前仓库查看状态、执行更新，并把后续提交、评审和质量检查放在同一条工作流里。"
+                    : emptyStateCopy.body}
+                </p>
               </div>
-              <span className="soft-chip">本地 SQLite</span>
-            </div>
-            <form onSubmit={handleAddRepository}>
-              <label htmlFor="repo-path">本地路径</label>
-              <div className="input-row">
-                <input
-                  id="repo-path"
-                  placeholder="例如 C:\\Projects\\example"
-                  value={path}
-                  onChange={(event) => setPath(event.target.value)}
-                />
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={handleDetect}
-                  disabled={isLoading || !isTauriRuntime()}
-                >
-                  检测
+              <div className="hero-metrics" aria-label="当前仓库概览">
+                <div>
+                  <span>变更</span>
+                  <strong>{currentChangeCount}</strong>
+                </div>
+                <div>
+                  <span>类型</span>
+                  <strong>{selectedRepository ? vcsLabels[selectedRepository.vcsType] : "-"}</strong>
+                </div>
+                <div>
+                  <span>评审</span>
+                  <strong>{currentReviewState}</strong>
+                </div>
+              </div>
+            </section>
+
+            <section className="workflow-card">
+              <div className="workflow-header">
+                <div>
+                  <p className="eyebrow">Active workflow</p>
+                  <h3>版本控制流程</h3>
+                </div>
+                <span className="soft-chip">本地优先</span>
+              </div>
+              <div className="step-grid">
+                <button type="button" disabled={!selectedRepository || isLoading} onClick={handleLoadRepositoryStatus}>
+                  <span>01</span>
+                  <strong>刷新状态</strong>
+                  <small>读取 Git / SVN 工作区变更</small>
                 </button>
-                <button className="primary-button" type="submit" disabled={isLoading || !isTauriRuntime()}>
-                  添加
+                <button type="button" disabled={!selectedRepository || isLoading} onClick={handleUpdateRepository}>
+                  <span>02</span>
+                  <strong>更新仓库</strong>
+                  <small>Git pull 或 SVN update</small>
+                </button>
+                <button type="button" disabled>
+                  <span>03</span>
+                  <strong>提交变更</strong>
+                  <small>默认包含 push，可在设置关闭</small>
+                </button>
+                <button type="button" disabled>
+                  <span>04</span>
+                  <strong>发起评审</strong>
+                  <small>预留 Git / SVN 线上评审</small>
                 </button>
               </div>
-            </form>
-            {!isTauriRuntime() ? (
-              <p className="hint">当前在浏览器预览模式，仓库检测和 SQLite 写入需要 Tauri 运行时。</p>
-            ) : null}
-          </div>
+            </section>
 
-          <div className="panel detail-panel">
-            {selectedRepository ? (
-              <>
-                <div className="repo-header">
-                  <div>
-                    <p className="eyebrow">{vcsLabels[selectedRepository.vcsType]}</p>
-                    <h3>{selectedRepository.name}</h3>
-                  </div>
-                  <span className={`status-pill ${statusTone(selectedRepository.vcsType)}`}>已记录</span>
-                </div>
-                <div className={`detection-card ${statusTone(selectedRepository.vcsType)}`}>
-                  <strong>{vcsDescriptions[selectedRepository.vcsType]}</strong>
-                  <span>
-                    {selectedRepository.vcsType === "unknown"
-                      ? "如果这是 SVN 工作副本，请确认目录中存在 .svn 元数据，或点击重新检测。"
-                      : "仓库元数据已写入本地数据库，可继续查看状态和后续操作。"}
-                  </span>
-                </div>
-                <dl className="metadata">
-                  <div>
-                    <dt>路径</dt>
-                    <dd>{selectedRepository.path}</dd>
-                  </div>
-                  <div>
-                    <dt>远端</dt>
-                    <dd>{selectedRepository.remoteUrl ?? "未检测到"}</dd>
-                  </div>
-                  <div>
-                    <dt>分支 / Revision</dt>
-                    <dd>{selectedRepository.branchOrRevision ?? "未检测到"}</dd>
-                  </div>
-                </dl>
-              </>
-            ) : (
-              <div className="empty-state">
-                <h3>{emptyStateCopy.title}</h3>
-                <p>{emptyStateCopy.body}</p>
-              </div>
-            )}
-          </div>
-
-          <div className="panel status-panel">
-            <div className="panel-title-row">
-              <div>
-                <p className="eyebrow">Workspace status</p>
-                <h3>工作区状态</h3>
-              </div>
-              <button
-                className="ghost-button"
-                type="button"
-                disabled={!selectedRepository || isLoading}
-                onClick={handleLoadRepositoryStatus}
-              >
-                刷新
-              </button>
-            </div>
-            {repositoryStatus ? (
-              <>
-                <div className="change-summary" aria-label="变更统计">
-                  <div>
-                    <span>总变更</span>
-                    <strong>{repositoryStatus.summary.total}</strong>
-                  </div>
-                  <div>
-                    <span>新增</span>
-                    <strong>{repositoryStatus.summary.added}</strong>
-                  </div>
-                  <div>
-                    <span>修改</span>
-                    <strong>{repositoryStatus.summary.modified}</strong>
-                  </div>
-                  <div>
-                    <span>未跟踪</span>
-                    <strong>{repositoryStatus.summary.untracked}</strong>
-                  </div>
-                </div>
-                {repositoryStatus.warning ? (
-                  <div className="hint">
-                    <p>{repositoryStatus.warning}</p>
-                    {repositoryStatus.missingSvnCli ? (
-                      <div className="hint-actions">
-                        <button
-                          className="secondary-button"
-                          type="button"
-                          onClick={() => handleOpenSvnDownload("tortoise")}
-                        >
-                          下载 / 修改 TortoiseSVN
-                        </button>
-                        <button
-                          className="secondary-button"
-                          type="button"
-                          onClick={() => handleOpenSvnDownload("sliksvn")}
-                        >
-                          下载 SlikSVN
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-                {repositoryStatus.changes.length === 0 ? (
-                  <div className="empty-state compact">
-                    <h3>{repositoryStatus.warning ? "暂无可展示变更" : "工作区干净"}</h3>
-                    <p>{repositoryStatus.warning ?? "没有检测到新增、修改、删除或冲突文件。"}</p>
-                  </div>
-                ) : (
-                  <div className="change-list">
-                    {repositoryStatus.changes.slice(0, 80).map((change) => (
-                      <div className="change-row" key={`${change.vcsType}-${change.status}-${change.path}`}>
-                        <span className={`change-badge ${change.status}`}>{changeLabels[change.status]}</span>
-                        <span className="change-path">{change.path}</span>
-                        <span className="change-vcs">{vcsLabels[change.vcsType]}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="empty-state compact">
-                <h3>尚未刷新状态</h3>
-                <p>选择仓库后点击“刷新状态”，这里会显示 Git / SVN 的变更摘要和文件列表。</p>
-              </div>
-            )}
-          </div>
-
-          {operationResults.length > 0 ? (
-            <div className="panel operation-panel">
+            <section className="panel status-panel">
               <div className="panel-title-row">
                 <div>
-                  <p className="eyebrow">Operation result</p>
-                  <h3>最近操作</h3>
+                  <p className="eyebrow">Workspace status</p>
+                  <h3>工作区状态</h3>
                 </div>
-                <span className="soft-chip">更新</span>
+                <button
+                  className="ghost-button"
+                  type="button"
+                  disabled={!selectedRepository || isLoading}
+                  onClick={handleLoadRepositoryStatus}
+                >
+                  刷新
+                </button>
               </div>
-              <div className="operation-list">
-                {operationResults.map((result) => (
-                  <div
-                    className={`operation-card ${result.success ? "success" : "failed"}`}
-                    key={`${result.vcsType}-${result.operation}`}
-                  >
-                    <div className="operation-heading">
-                      <strong>{vcsLabels[result.vcsType]}</strong>
-                      <span>{result.summary}</span>
+              {repositoryStatus ? (
+                <>
+                  <div className="change-summary" aria-label="变更统计">
+                    <div>
+                      <span>总变更</span>
+                      <strong>{repositoryStatus.summary.total}</strong>
                     </div>
-                    {result.warning ? (
-                      <div className="operation-warning">
-                        <p>{result.warning}</p>
-                        {result.missingSvnCli ? (
-                          <div className="hint-actions">
-                            <button
-                              className="secondary-button"
-                              type="button"
-                              onClick={() => handleOpenSvnDownload("tortoise")}
-                            >
-                              下载 / 修改 TortoiseSVN
-                            </button>
-                            <button
-                              className="secondary-button"
-                              type="button"
-                              onClick={() => handleOpenSvnDownload("sliksvn")}
-                            >
-                              下载 SlikSVN
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {result.output ? <pre>{result.output}</pre> : null}
+                    <div>
+                      <span>新增</span>
+                      <strong>{repositoryStatus.summary.added}</strong>
+                    </div>
+                    <div>
+                      <span>修改</span>
+                      <strong>{repositoryStatus.summary.modified}</strong>
+                    </div>
+                    <div>
+                      <span>未跟踪</span>
+                      <strong>{repositoryStatus.summary.untracked}</strong>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
+                  {repositoryStatus.warning ? (
+                    <div className="hint">
+                      <p>{repositoryStatus.warning}</p>
+                      {repositoryStatus.missingSvnCli ? (
+                        <div className="hint-actions">
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            onClick={() => handleOpenSvnDownload("tortoise")}
+                          >
+                            下载 / 修改 TortoiseSVN
+                          </button>
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            onClick={() => handleOpenSvnDownload("sliksvn")}
+                          >
+                            下载 SlikSVN
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {repositoryStatus.changes.length === 0 ? (
+                    <div className="empty-state compact">
+                      <h3>{repositoryStatus.warning ? "暂无可展示变更" : "工作区干净"}</h3>
+                      <p>{repositoryStatus.warning ?? "没有检测到新增、修改、删除或冲突文件。"}</p>
+                    </div>
+                  ) : (
+                    <div className="change-list">
+                      {repositoryStatus.changes.slice(0, 80).map((change) => (
+                        <div className="change-row" key={`${change.vcsType}-${change.status}-${change.path}`}>
+                          <span className={`change-badge ${change.status}`}>{changeLabels[change.status]}</span>
+                          <span className="change-path">{change.path}</span>
+                          <span className="change-vcs">{vcsLabels[change.vcsType]}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="empty-state compact">
+                  <h3>尚未刷新状态</h3>
+                  <p>选择仓库后点击“刷新状态”，这里会显示 Git / SVN 的变更摘要和文件列表。</p>
+                </div>
+              )}
+            </section>
 
-          <div className="panel roadmap-panel">
-            <div className="panel-title-row">
-              <div>
-                <p className="eyebrow">Phase 1</p>
-                <h3>当前阶段目标</h3>
+            {operationResults.length > 0 ? (
+              <section className="panel operation-panel">
+                <div className="panel-title-row">
+                  <div>
+                    <p className="eyebrow">Operation result</p>
+                    <h3>最近操作</h3>
+                  </div>
+                  <span className="soft-chip">更新</span>
+                </div>
+                <div className="operation-list">
+                  {operationResults.map((result) => (
+                    <div
+                      className={`operation-card ${result.success ? "success" : "failed"}`}
+                      key={`${result.vcsType}-${result.operation}`}
+                    >
+                      <div className="operation-heading">
+                        <strong>{vcsLabels[result.vcsType]}</strong>
+                        <span>{result.summary}</span>
+                      </div>
+                      {result.warning ? (
+                        <div className="operation-warning">
+                          <p>{result.warning}</p>
+                          {result.missingSvnCli ? (
+                            <div className="hint-actions">
+                              <button
+                                className="secondary-button"
+                                type="button"
+                                onClick={() => handleOpenSvnDownload("tortoise")}
+                              >
+                                下载 / 修改 TortoiseSVN
+                              </button>
+                              <button
+                                className="secondary-button"
+                                type="button"
+                                onClick={() => handleOpenSvnDownload("sliksvn")}
+                              >
+                                下载 SlikSVN
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {result.output ? <pre>{result.output}</pre> : null}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </section>
+
+          <aside className="context-pane">
+            <section className="panel detail-panel">
+              {selectedRepository ? (
+                <>
+                  <div className="repo-header">
+                    <div>
+                      <p className="eyebrow">{vcsLabels[selectedRepository.vcsType]}</p>
+                      <h3>{selectedRepository.name}</h3>
+                    </div>
+                    <span className={`status-pill ${statusTone(selectedRepository.vcsType)}`}>已记录</span>
+                  </div>
+                  <div className={`detection-card ${statusTone(selectedRepository.vcsType)}`}>
+                    <strong>{vcsDescriptions[selectedRepository.vcsType]}</strong>
+                    <span>
+                      {selectedRepository.vcsType === "unknown"
+                        ? "如果这是 SVN 工作副本，请确认目录中存在 .svn 元数据，或点击重新检测。"
+                        : "仓库元数据已写入本地数据库，可继续查看状态和后续操作。"}
+                    </span>
+                  </div>
+                  <dl className="metadata">
+                    <div>
+                      <dt>路径</dt>
+                      <dd>{selectedRepository.path}</dd>
+                    </div>
+                    <div>
+                      <dt>远端</dt>
+                      <dd>{selectedRepository.remoteUrl ?? "未检测到"}</dd>
+                    </div>
+                    <div>
+                      <dt>分支 / Revision</dt>
+                      <dd>{selectedRepository.branchOrRevision ?? "未检测到"}</dd>
+                    </div>
+                  </dl>
+                </>
+              ) : (
+                <div className="empty-state">
+                  <h3>{emptyStateCopy.title}</h3>
+                  <p>{emptyStateCopy.body}</p>
+                </div>
+              )}
+            </section>
+
+            <section className="panel stats-panel">
+              <div className="panel-title-row">
+                <div>
+                  <p className="eyebrow">Workspace</p>
+                  <h3>仓库概览</h3>
+                </div>
               </div>
-            </div>
-            <div className="task-list">
-              <span data-state="done">项目骨架</span>
-              <span data-state="done">SQLite 仓库记录</span>
-              <span data-state="done">Git / SVN 检测</span>
-              <span data-state="active">Win11 风格工作台</span>
-            </div>
-          </div>
-        </section>
+              <div className="stats-grid" aria-label="仓库统计">
+                <div>
+                  <span>总仓库</span>
+                  <strong>{repositoryStats.total}</strong>
+                </div>
+                <div>
+                  <span>Git</span>
+                  <strong>{repositoryStats.git}</strong>
+                </div>
+                <div>
+                  <span>SVN</span>
+                  <strong>{repositoryStats.svn}</strong>
+                </div>
+                <div>
+                  <span>待确认</span>
+                  <strong>{repositoryStats.unknown}</strong>
+                </div>
+              </div>
+            </section>
+
+            <section className="panel roadmap-panel">
+              <div className="panel-title-row">
+                <div>
+                  <p className="eyebrow">Phase 1</p>
+                  <h3>当前阶段目标</h3>
+                </div>
+              </div>
+              <div className="task-list">
+                <span data-state="done">项目骨架</span>
+                <span data-state="done">SQLite 仓库记录</span>
+                <span data-state="done">Git / SVN 检测</span>
+                <span data-state="done">仓库更新操作</span>
+                <span data-state="active">Codex 风格工作台布局</span>
+              </div>
+            </section>
+          </aside>
+        </div>
 
         <footer className="statusbar">
           <span className={isLoading ? "status-dot busy" : "status-dot"} />
-          {status}
+          <span>{status}</span>
         </footer>
       </section>
     </main>
