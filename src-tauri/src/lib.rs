@@ -42,6 +42,36 @@ struct SvnMetadata {
     revision: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ChangeItem {
+    path: String,
+    status: String,
+    vcs_type: String,
+}
+
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RepositoryStatusSummary {
+    total: usize,
+    added: usize,
+    modified: usize,
+    deleted: usize,
+    untracked: usize,
+    conflicted: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RepositoryStatus {
+    repository_id: i64,
+    vcs_type: String,
+    clean: bool,
+    warning: Option<String>,
+    summary: RepositoryStatusSummary,
+    changes: Vec<ChangeItem>,
+}
+
 #[tauri::command]
 fn list_repositories(app: AppHandle) -> Result<Vec<Repository>, String> {
     let connection = open_database(&app)?;
@@ -131,6 +161,44 @@ fn refresh_repository(app: AppHandle, id: i64) -> Result<Repository, String> {
         .map_err(|error| error.to_string())?;
 
     find_repository_by_id(&connection, id)?.ok_or_else(|| "仓库重新检测后未能读取记录".to_string())
+}
+
+#[tauri::command]
+fn get_repository_status(app: AppHandle, id: i64) -> Result<RepositoryStatus, String> {
+    let connection = open_database(&app)?;
+    let repository = find_repository_by_id(&connection, id)?
+        .ok_or_else(|| "未找到需要检测状态的仓库".to_string())?;
+
+    let mut warning = None;
+    let mut changes = Vec::new();
+
+    match repository.vcs_type.as_str() {
+        "git" => changes.extend(git_status_changes(&repository.path)?),
+        "svn" => match svn_status_changes(&repository.path) {
+            Ok(items) => changes.extend(items),
+            Err(error) => warning = Some(svn_status_warning(&error)),
+        },
+        "mixed" => {
+            changes.extend(git_status_changes(&repository.path)?);
+            match svn_status_changes(&repository.path) {
+                Ok(items) => changes.extend(items),
+                Err(error) => warning = Some(svn_status_warning(&error)),
+            }
+        }
+        _ => warning = Some("当前目录未识别为 Git 或 SVN 仓库，请先重新检测。".to_string()),
+    }
+
+    let summary = summarize_changes(&changes);
+    let clean = summary.total == 0 && warning.is_none();
+
+    Ok(RepositoryStatus {
+        repository_id: repository.id,
+        vcs_type: repository.vcs_type,
+        clean,
+        warning,
+        summary,
+        changes,
+    })
 }
 
 #[tauri::command]
@@ -459,6 +527,122 @@ fn join_svn_url(root: &str, repos_path: &str) -> String {
     }
 }
 
+fn git_status_changes(path: &str) -> Result<Vec<ChangeItem>, String> {
+    let output = run_command(["git", "-C", path, "status", "--porcelain=v1"])?;
+    Ok(output
+        .lines()
+        .filter_map(parse_git_status_line)
+        .collect::<Vec<_>>())
+}
+
+fn parse_git_status_line(line: &str) -> Option<ChangeItem> {
+    if line.len() < 4 {
+        return None;
+    }
+
+    let status_code = &line[..2];
+    let raw_path = line[3..].trim();
+    let path = raw_path
+        .rsplit(" -> ")
+        .next()
+        .unwrap_or(raw_path)
+        .trim_matches('"')
+        .to_string();
+
+    Some(ChangeItem {
+        path,
+        status: git_status_kind(status_code).to_string(),
+        vcs_type: "git".to_string(),
+    })
+}
+
+fn git_status_kind(status_code: &str) -> &'static str {
+    if status_code.contains('U') || status_code == "AA" || status_code == "DD" {
+        "conflicted"
+    } else if status_code == "??" {
+        "untracked"
+    } else if status_code.contains('R') {
+        "renamed"
+    } else if status_code.contains('A') {
+        "added"
+    } else if status_code.contains('D') {
+        "deleted"
+    } else if status_code.contains('M') {
+        "modified"
+    } else {
+        "unknown"
+    }
+}
+
+fn svn_status_changes(path: &str) -> Result<Vec<ChangeItem>, String> {
+    let output = run_command(["svn", "status", path])?;
+    Ok(output
+        .lines()
+        .filter_map(parse_svn_status_line)
+        .collect::<Vec<_>>())
+}
+
+fn parse_svn_status_line(line: &str) -> Option<ChangeItem> {
+    let status_code = line.chars().next()?;
+    if line.trim().is_empty() {
+        return None;
+    }
+
+    let path = line.get(8..).unwrap_or("").trim();
+    if path.is_empty() {
+        return None;
+    }
+
+    Some(ChangeItem {
+        path: path.to_string(),
+        status: svn_status_kind(status_code).to_string(),
+        vcs_type: "svn".to_string(),
+    })
+}
+
+fn svn_status_kind(status_code: char) -> &'static str {
+    match status_code {
+        'A' => "added",
+        'M' => "modified",
+        'D' => "deleted",
+        'R' => "renamed",
+        '?' => "untracked",
+        'C' | '!' | '~' => "conflicted",
+        _ => "unknown",
+    }
+}
+
+fn summarize_changes(changes: &[ChangeItem]) -> RepositoryStatusSummary {
+    let mut summary = RepositoryStatusSummary {
+        total: changes.len(),
+        ..RepositoryStatusSummary::default()
+    };
+
+    for change in changes {
+        match change.status.as_str() {
+            "added" => summary.added += 1,
+            "modified" => summary.modified += 1,
+            "deleted" => summary.deleted += 1,
+            "untracked" => summary.untracked += 1,
+            "conflicted" => summary.conflicted += 1,
+            _ => {}
+        }
+    }
+
+    summary
+}
+
+fn svn_status_warning(error: &str) -> String {
+    if error.contains("The system cannot find the file specified")
+        || error.contains("找不到")
+        || error.contains("os error 2")
+    {
+        "当前环境没有可调用的 svn.exe。TortoiseSVN GUI 可用于识别工作副本，但状态检测仍需要 SVN 命令行工具。".to_string()
+    } else {
+        format!("SVN 状态检测失败：{error}")
+    }
+}
+
 fn run_command<const N: usize>(parts: [&str; N]) -> Result<String, String> {
     let (program, args) = parts.split_first().ok_or_else(|| "命令为空".to_string())?;
     let resolved_program = resolve_program(program);
@@ -557,6 +741,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             add_repository,
             detect_repository,
+            get_repository_status,
             list_repositories,
             refresh_repository
         ])

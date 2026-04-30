@@ -2,10 +2,12 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   addRepository,
   detectRepository,
+  getRepositoryStatus,
   isTauriRuntime,
   listRepositories,
   refreshRepository,
   Repository,
+  RepositoryStatus,
   VcsType,
 } from "./lib/api";
 
@@ -28,6 +30,16 @@ const vcsDescriptions: Record<VcsType, string> = {
   unknown: "未检测到 Git 或 SVN 元数据",
 };
 
+const changeLabels: Record<string, string> = {
+  added: "新增",
+  modified: "修改",
+  deleted: "删除",
+  renamed: "重命名",
+  untracked: "未跟踪",
+  conflicted: "冲突",
+  unknown: "未知",
+};
+
 function statusTone(vcsType: VcsType) {
   if (vcsType === "unknown") return "warning";
   if (vcsType === "mixed") return "mixed";
@@ -40,6 +52,7 @@ function App() {
   const [path, setPath] = useState("");
   const [status, setStatus] = useState("准备就绪");
   const [isLoading, setIsLoading] = useState(false);
+  const [repositoryStatus, setRepositoryStatus] = useState<RepositoryStatus | null>(null);
 
   const selectedRepository = useMemo(
     () => repositories.find((repository) => repository.id === selectedId) ?? repositories[0],
@@ -133,6 +146,29 @@ function App() {
     }
   }
 
+  async function handleLoadRepositoryStatus() {
+    if (!selectedRepository) {
+      setStatus("请先选择一个仓库");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const nextStatus = await getRepositoryStatus(selectedRepository.id);
+      setRepositoryStatus(nextStatus);
+      setStatus(nextStatus.clean ? "工作区干净" : `检测到 ${nextStatus.summary.total} 个变更`);
+    } catch (error) {
+      setRepositoryStatus(null);
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    setRepositoryStatus(null);
+  }, [selectedRepository?.id]);
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -203,6 +239,14 @@ function App() {
               onClick={handleRefreshSelected}
             >
               重新检测
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={!selectedRepository || isLoading}
+              onClick={handleLoadRepositoryStatus}
+            >
+              刷新状态
             </button>
             <button className="secondary-button" type="button" disabled={!selectedRepository}>
               更新
@@ -305,6 +349,67 @@ function App() {
               <div className="empty-state">
                 <h3>{emptyStateCopy.title}</h3>
                 <p>{emptyStateCopy.body}</p>
+              </div>
+            )}
+          </div>
+
+          <div className="panel status-panel">
+            <div className="panel-title-row">
+              <div>
+                <p className="eyebrow">Workspace status</p>
+                <h3>工作区状态</h3>
+              </div>
+              <button
+                className="ghost-button"
+                type="button"
+                disabled={!selectedRepository || isLoading}
+                onClick={handleLoadRepositoryStatus}
+              >
+                刷新
+              </button>
+            </div>
+            {repositoryStatus ? (
+              <>
+                <div className="change-summary" aria-label="变更统计">
+                  <div>
+                    <span>总变更</span>
+                    <strong>{repositoryStatus.summary.total}</strong>
+                  </div>
+                  <div>
+                    <span>新增</span>
+                    <strong>{repositoryStatus.summary.added}</strong>
+                  </div>
+                  <div>
+                    <span>修改</span>
+                    <strong>{repositoryStatus.summary.modified}</strong>
+                  </div>
+                  <div>
+                    <span>未跟踪</span>
+                    <strong>{repositoryStatus.summary.untracked}</strong>
+                  </div>
+                </div>
+                {repositoryStatus.warning ? <p className="hint">{repositoryStatus.warning}</p> : null}
+                {repositoryStatus.changes.length === 0 ? (
+                  <div className="empty-state compact">
+                    <h3>{repositoryStatus.warning ? "暂无可展示变更" : "工作区干净"}</h3>
+                    <p>{repositoryStatus.warning ?? "没有检测到新增、修改、删除或冲突文件。"}</p>
+                  </div>
+                ) : (
+                  <div className="change-list">
+                    {repositoryStatus.changes.slice(0, 80).map((change) => (
+                      <div className="change-row" key={`${change.vcsType}-${change.status}-${change.path}`}>
+                        <span className={`change-badge ${change.status}`}>{changeLabels[change.status]}</span>
+                        <span className="change-path">{change.path}</span>
+                        <span className="change-vcs">{vcsLabels[change.vcsType]}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="empty-state compact">
+                <h3>尚未刷新状态</h3>
+                <p>选择仓库后点击“刷新状态”，这里会显示 Git / SVN 的变更摘要和文件列表。</p>
               </div>
             )}
           </div>

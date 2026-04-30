@@ -362,7 +362,8 @@ input:focus {
 
 .add-panel,
 .detail-panel,
-.roadmap-panel {
+.roadmap-panel,
+.status-panel {
   padding: 18px;
 }
 
@@ -520,9 +521,109 @@ input:focus {
   color: var(--muted);
 }
 
+.empty-state.compact {
+  min-height: 150px;
+}
+
 .empty-state p {
   max-width: 420px;
   line-height: 1.6;
+}
+
+.status-panel {
+  grid-column: 1 / -1;
+}
+
+.change-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.change-summary div {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+  padding: 12px;
+}
+
+.change-summary span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.change-summary strong {
+  color: var(--text);
+  font-size: 23px;
+  line-height: 1;
+}
+
+.change-list {
+  display: grid;
+  gap: 8px;
+  max-height: 300px;
+  overflow: auto;
+  margin-top: 14px;
+}
+
+.change-row {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr) 76px;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.68);
+  padding: 8px 10px;
+}
+
+.change-badge {
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 8px;
+  text-align: center;
+}
+
+.change-badge.added,
+.change-badge.untracked {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.change-badge.modified,
+.change-badge.renamed {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.change-badge.deleted,
+.change-badge.conflicted {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.change-path {
+  overflow: hidden;
+  color: var(--text);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.change-vcs {
+  color: var(--subtle);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
 }
 
 .task-list {
