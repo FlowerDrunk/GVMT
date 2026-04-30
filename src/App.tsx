@@ -270,49 +270,24 @@ function App() {
 
   return (
     <main className="app-shell">
-      <header className="window-menu" aria-label="应用菜单">
-        <div className="window-menu-left">
-          <button className="titlebar-button" type="button" title="侧边栏">
-            □
-          </button>
-          <button className="titlebar-button" type="button" title="后退">
-            ←
-          </button>
-          <button className="titlebar-button" type="button" title="前进" disabled>
-            →
-          </button>
-          <button className="titlebar-button accent" type="button" title="更新">
-            ↓
-          </button>
-          <nav className="menu-links" aria-label="窗口菜单">
-            <button type="button">文件</button>
-            <button type="button">编辑</button>
-            <button type="button">查看</button>
-            <button type="button">窗口</button>
-            <button type="button">帮助</button>
-          </nav>
-        </div>
-        <div className="window-menu-right" aria-hidden="true">
-          <span>－</span>
-          <span>□</span>
-          <span>×</span>
-        </div>
-      </header>
-
       <aside className="activity-rail" aria-label="主导航">
         <div className="rail-logo">G</div>
         <nav className="rail-nav">
           <button className="rail-button active" type="button" title="仓库">
-            <span aria-hidden="true">⌂</span>
+            <span aria-hidden="true">□</span>
             <small>仓库</small>
+          </button>
+          <button className="rail-button" type="button" title="文件" disabled>
+            <span aria-hidden="true">▤</span>
+            <small>文件</small>
+          </button>
+          <button className="rail-button" type="button" title="变更" disabled>
+            <span aria-hidden="true">✓</span>
+            <small>变更</small>
           </button>
           <button className="rail-button" type="button" title="评审" disabled>
             <span aria-hidden="true">◎</span>
             <small>评审</small>
-          </button>
-          <button className="rail-button" type="button" title="质量" disabled>
-            <span aria-hidden="true">✓</span>
-            <small>质量</small>
           </button>
           <button className="rail-button" type="button" title="设置" disabled>
             <span aria-hidden="true">⚙</span>
@@ -395,13 +370,21 @@ function App() {
       <section className="workspace">
         <header className="command-bar">
           <div className="command-title">
-            <p className="eyebrow">GVMT</p>
+            <p className="eyebrow">当前仓库</p>
             <h2>{selectedRepository?.name ?? "选择或添加仓库"}</h2>
           </div>
-          <div className="command-actions">
-            <button className="icon-button ghost-icon" type="button" title="运行检测" disabled={!selectedRepository || isLoading}>
-              ▷
+          <nav className="function-nav" aria-label="功能区">
+            <button className="active" type="button">
+              仓库
             </button>
+            <button type="button">文件</button>
+            <button type="button">变更</button>
+            <button type="button">评审</button>
+            <button type="button" disabled>
+              设置
+            </button>
+          </nav>
+          <div className="command-actions">
             <button
               className="secondary-button"
               type="button"
@@ -425,13 +408,6 @@ function App() {
               onClick={handleUpdateRepository}
             >
               更新
-            </button>
-            <span className="toolbar-divider" />
-            <button className="icon-button ghost-icon" type="button" title="打开文件浏览">
-              □
-            </button>
-            <button className="icon-button ghost-icon active" type="button" title="显示侧栏">
-              ◧
             </button>
           </div>
         </header>
@@ -703,69 +679,10 @@ function App() {
             ) : null}
           </section>
 
-          <aside className="context-pane">
-            <div className="context-tabs" role="tablist" aria-label="仓库上下文">
-              <button className="active" type="button">
-                概览
-              </button>
-              <button type="button">审查</button>
-              <button type="button" disabled>
-                +
-              </button>
-            </div>
-
-            <section className="context-section repository-summary">
-              <div className="summary-topline">
-                <span className={`status-pill ${selectedRepository ? statusTone(selectedRepository.vcsType) : "warning"}`}>
-                  {selectedRepository ? vcsLabels[selectedRepository.vcsType] : "未选择"}
-                </span>
-                <button className="icon-button ghost-icon" type="button" title="更多">
-                  …
-                </button>
-              </div>
-              {selectedRepository ? (
-                <div className="summary-copy">
-                  <h3>{selectedRepository.name}</h3>
-                  <p>{vcsDescriptions[selectedRepository.vcsType]}</p>
-                  <dl className="metadata compact">
-                    <div>
-                      <dt>路径</dt>
-                      <dd>{selectedRepository.path}</dd>
-                    </div>
-                    <div>
-                      <dt>远端</dt>
-                      <dd>{selectedRepository.remoteUrl ?? "未检测到"}</dd>
-                    </div>
-                    <div>
-                      <dt>分支 / Revision</dt>
-                      <dd>{selectedRepository.branchOrRevision ?? "未检测到"}</dd>
-                    </div>
-                  </dl>
-                </div>
-              ) : (
-                <div className="review-empty">
-                  <h3>{emptyStateCopy.title}</h3>
-                  <p>{emptyStateCopy.body}</p>
-                </div>
-              )}
-            </section>
-
-            <section className="context-section review-stage">
-              <div className="review-title-row">
-                <h3>质量流程</h3>
-                <span>{currentReviewState}</span>
-              </div>
-              <div className="review-empty">
-                <h3>{repositoryStatus?.clean ? "无未暂存更改" : "等待审查内容"}</h3>
-                <p>{repositoryStatus ? "代码更改和评审事项会在此处集中展示。" : "先刷新工作区状态，随后可进入代码评审流程。"}</p>
-              </div>
-            </section>
-          </aside>
-
           <aside className="changes-pane">
             <header className="changes-header">
               <button className="changes-title" type="button">
-                已更改文件⌄
+                变更状态
               </button>
               <input placeholder="筛选文件..." aria-label="筛选文件" />
             </header>
@@ -808,7 +725,61 @@ function App() {
               <h3>当前阶段</h3>
               <div className="task-list compact">
                 <span data-state="done">仓库文件浏览</span>
-                <span data-state="active">Codex 参考布局</span>
+                <span data-state="active">功能分区布局</span>
+              </div>
+            </section>
+          </aside>
+
+          <aside className="context-pane">
+            <section className="context-section repository-summary">
+              <div className="section-kicker">仓库信息</div>
+              <div className="summary-topline">
+                <span className={`status-pill ${selectedRepository ? statusTone(selectedRepository.vcsType) : "warning"}`}>
+                  {selectedRepository ? vcsLabels[selectedRepository.vcsType] : "未选择"}
+                </span>
+                <span className="soft-chip">{selectedRepository ? currentReviewState : "等待选择"}</span>
+              </div>
+              {selectedRepository ? (
+                <div className="summary-copy">
+                  <h3>{selectedRepository.name}</h3>
+                  <p>{vcsDescriptions[selectedRepository.vcsType]}</p>
+                  <dl className="metadata compact">
+                    <div>
+                      <dt>路径</dt>
+                      <dd>{selectedRepository.path}</dd>
+                    </div>
+                    <div>
+                      <dt>远端</dt>
+                      <dd>{selectedRepository.remoteUrl ?? "未检测到"}</dd>
+                    </div>
+                    <div>
+                      <dt>分支 / Revision</dt>
+                      <dd>{selectedRepository.branchOrRevision ?? "未检测到"}</dd>
+                    </div>
+                  </dl>
+                </div>
+              ) : (
+                <div className="review-empty">
+                  <h3>{emptyStateCopy.title}</h3>
+                  <p>{emptyStateCopy.body}</p>
+                </div>
+              )}
+            </section>
+
+            <section className="context-section review-stage">
+              <div className="review-title-row">
+                <h3>评审与质量</h3>
+                <span>{repositoryStatus ? `${currentChangeCount} 个变更` : "未检测"}</span>
+              </div>
+              <div className="quality-steps">
+                <span data-state={repositoryStatus ? "done" : "active"}>刷新状态</span>
+                <span data-state={repositoryStatus?.clean ? "done" : "active"}>处理变更</span>
+                <span data-state="pending">发起评审</span>
+                <span data-state="pending">质量检查</span>
+              </div>
+              <div className="review-empty">
+                <h3>{repositoryStatus?.clean ? "可进入评审准备" : "等待审查内容"}</h3>
+                <p>{repositoryStatus ? "后续会在这里承载 Git / SVN 线上评审和质量检查模板。" : "先刷新工作区状态，随后可进入代码评审流程。"}</p>
               </div>
             </section>
           </aside>
