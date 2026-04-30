@@ -4,6 +4,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
+    time::UNIX_EPOCH,
 };
 use tauri::{AppHandle, Manager};
 
@@ -83,6 +84,25 @@ struct OperationResult {
     output: String,
     warning: Option<String>,
     missing_svn_cli: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RepositoryFileEntry {
+    name: String,
+    path: String,
+    entry_type: String,
+    size: Option<u64>,
+    modified_at: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RepositoryDirectory {
+    repository_id: i64,
+    path: String,
+    parent_path: Option<String>,
+    entries: Vec<RepositoryFileEntry>,
 }
 
 #[tauri::command]
@@ -247,6 +267,84 @@ fn update_repository(app: AppHandle, id: i64) -> Result<Vec<OperationResult>, St
     };
 
     Ok(results)
+}
+
+#[tauri::command]
+fn list_repository_files(
+    app: AppHandle,
+    id: i64,
+    relative_path: Option<String>,
+) -> Result<RepositoryDirectory, String> {
+    let connection = open_database(&app)?;
+    let repository = find_repository_by_id(&connection, id)?
+        .ok_or_else(|| "未找到需要浏览的仓库".to_string())?;
+    let root = PathBuf::from(&repository.path);
+    let directory_path = safe_repository_child_path(&root, relative_path.as_deref())?;
+
+    if !directory_path.is_dir() {
+        return Err("当前路径不是目录".to_string());
+    }
+
+    let current_path = relative_path
+        .as_deref()
+        .map(normalize_relative_path)
+        .transpose()?
+        .unwrap_or_default();
+    let parent_path = parent_relative_path(&current_path);
+    let mut entries = Vec::new();
+
+    for item in fs::read_dir(&directory_path).map_err(|error| error.to_string())? {
+        let item = item.map_err(|error| error.to_string())?;
+        let file_name = item.file_name().to_string_lossy().to_string();
+        if should_hide_repository_entry(&file_name) {
+            continue;
+        }
+
+        let metadata = item.metadata().map_err(|error| error.to_string())?;
+        let entry_type = if metadata.is_dir() {
+            "directory"
+        } else {
+            "file"
+        }
+        .to_string();
+        let entry_path = if current_path.is_empty() {
+            file_name.clone()
+        } else {
+            format!("{current_path}/{file_name}")
+        };
+        let modified_at = metadata
+            .modified()
+            .ok()
+            .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+            .map(|value| value.as_secs());
+
+        entries.push(RepositoryFileEntry {
+            name: file_name,
+            path: entry_path,
+            entry_type,
+            size: if metadata.is_file() {
+                Some(metadata.len())
+            } else {
+                None
+            },
+            modified_at,
+        });
+    }
+
+    entries.sort_by(|left, right| {
+        let left_is_directory = left.entry_type == "directory";
+        let right_is_directory = right.entry_type == "directory";
+        right_is_directory
+            .cmp(&left_is_directory)
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+    });
+
+    Ok(RepositoryDirectory {
+        repository_id: repository.id,
+        path: current_path,
+        parent_path,
+        entries,
+    })
 }
 
 #[tauri::command]
@@ -482,6 +580,62 @@ fn strip_windows_extended_path_prefix(path: &str) -> String {
     } else {
         path.to_string()
     }
+}
+
+fn safe_repository_child_path(root: &Path, relative_path: Option<&str>) -> Result<PathBuf, String> {
+    let root = root.canonicalize().map_err(|error| error.to_string())?;
+    let normalized = relative_path
+        .map(normalize_relative_path)
+        .transpose()?
+        .unwrap_or_default();
+    let candidate = if normalized.is_empty() {
+        root.clone()
+    } else {
+        root.join(normalized.replace('/', std::path::MAIN_SEPARATOR_STR))
+    };
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+
+    if canonical.starts_with(&root) {
+        Ok(canonical)
+    } else {
+        Err("路径超出仓库范围".to_string())
+    }
+}
+
+fn normalize_relative_path(path: &str) -> Result<String, String> {
+    let trimmed = path.trim().replace('\\', "/");
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut parts = Vec::new();
+    for part in trimmed.split('/') {
+        if part.is_empty() || part == "." {
+            continue;
+        }
+        if part == ".." || part.contains(':') {
+            return Err("路径包含不允许的片段".to_string());
+        }
+        parts.push(part);
+    }
+
+    Ok(parts.join("/"))
+}
+
+fn parent_relative_path(path: &str) -> Option<String> {
+    if path.is_empty() {
+        return None;
+    }
+
+    path.rsplit_once('/')
+        .map(|(parent, _)| parent.to_string())
+        .or_else(|| Some(String::new()))
+}
+
+fn should_hide_repository_entry(name: &str) -> bool {
+    matches!(name, ".git" | ".svn")
 }
 
 fn svn_info(path: &str) -> Result<String, String> {
@@ -883,6 +1037,7 @@ pub fn run() {
             add_repository,
             detect_repository,
             get_repository_status,
+            list_repository_files,
             list_repositories,
             open_svn_cli_download_page,
             refresh_repository,

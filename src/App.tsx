@@ -4,11 +4,13 @@ import {
   detectRepository,
   getRepositoryStatus,
   isTauriRuntime,
+  listRepositoryFiles,
   listRepositories,
   openSvnCliDownloadPage,
   OperationResult,
   refreshRepository,
   Repository,
+  RepositoryDirectory,
   RepositoryStatus,
   updateRepository,
   VcsType,
@@ -43,6 +45,32 @@ const changeLabels: Record<string, string> = {
   unknown: "未知",
 };
 
+function formatFileSize(size: number | null) {
+  if (size === null) return "-";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatModifiedAt(value: number | null) {
+  if (value === null) return "-";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value * 1000));
+}
+
+function fileBreadcrumbs(path: string) {
+  if (!path) return [];
+  const parts = path.split("/");
+  return parts.map((part, index) => ({
+    name: part,
+    path: parts.slice(0, index + 1).join("/"),
+  }));
+}
+
 function statusTone(vcsType: VcsType) {
   if (vcsType === "unknown") return "warning";
   if (vcsType === "mixed") return "mixed";
@@ -55,8 +83,10 @@ function App() {
   const [path, setPath] = useState("");
   const [status, setStatus] = useState("准备就绪");
   const [isLoading, setIsLoading] = useState(false);
+  const [isFileBrowserLoading, setIsFileBrowserLoading] = useState(false);
   const [repositoryStatus, setRepositoryStatus] = useState<RepositoryStatus | null>(null);
   const [operationResults, setOperationResults] = useState<OperationResult[]>([]);
+  const [repositoryFiles, setRepositoryFiles] = useState<RepositoryDirectory | null>(null);
 
   const selectedRepository = useMemo(
     () => repositories.find((repository) => repository.id === selectedId) ?? repositories[0],
@@ -198,9 +228,35 @@ function App() {
     }
   }
 
+  async function handleLoadRepositoryFiles(relativePath = "") {
+    if (!selectedRepository) {
+      setStatus("请先选择一个仓库");
+      return;
+    }
+
+    setIsFileBrowserLoading(true);
+    try {
+      const nextFiles = await listRepositoryFiles(selectedRepository.id, relativePath);
+      setRepositoryFiles(nextFiles);
+      setStatus(nextFiles.path ? `已打开 ${nextFiles.path}` : "已打开仓库根目录");
+    } catch (error) {
+      setRepositoryFiles(null);
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsFileBrowserLoading(false);
+    }
+  }
+
   useEffect(() => {
     setRepositoryStatus(null);
     setOperationResults([]);
+    setRepositoryFiles(null);
+  }, [selectedRepository?.id]);
+
+  useEffect(() => {
+    if (selectedRepository && isTauriRuntime()) {
+      void handleLoadRepositoryFiles();
+    }
   }, [selectedRepository?.id]);
 
   const currentChangeCount = repositoryStatus?.summary.total ?? 0;
@@ -209,6 +265,7 @@ function App() {
       ? "可进入评审"
       : "有待处理变更"
     : "等待检测";
+  const breadcrumbs = fileBreadcrumbs(repositoryFiles?.path ?? "");
 
   return (
     <main className="app-shell">
@@ -397,6 +454,80 @@ function App() {
                   <small>预留 Git / SVN 线上评审</small>
                 </button>
               </div>
+            </section>
+
+            <section className="panel file-browser-panel">
+              <div className="panel-title-row">
+                <div>
+                  <p className="eyebrow">Repository files</p>
+                  <h3>文件浏览</h3>
+                </div>
+                <button
+                  className="ghost-button"
+                  type="button"
+                  disabled={!selectedRepository || isFileBrowserLoading}
+                  onClick={() => handleLoadRepositoryFiles(repositoryFiles?.path ?? "")}
+                >
+                  刷新
+                </button>
+              </div>
+              <div className="file-toolbar">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={repositoryFiles?.parentPath === null || repositoryFiles?.parentPath === undefined || isFileBrowserLoading}
+                  onClick={() => handleLoadRepositoryFiles(repositoryFiles?.parentPath ?? "")}
+                >
+                  返回上级
+                </button>
+                <div className="breadcrumb" aria-label="当前路径">
+                  <button type="button" onClick={() => handleLoadRepositoryFiles("")} disabled={isFileBrowserLoading}>
+                    根目录
+                  </button>
+                  {breadcrumbs.map((breadcrumb) => (
+                    <button
+                      type="button"
+                      key={breadcrumb.path}
+                      onClick={() => handleLoadRepositoryFiles(breadcrumb.path)}
+                      disabled={isFileBrowserLoading}
+                    >
+                      {breadcrumb.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {repositoryFiles ? (
+                repositoryFiles.entries.length === 0 ? (
+                  <div className="empty-state compact">
+                    <h3>目录为空</h3>
+                    <p>当前目录下没有可展示的文件或文件夹。</p>
+                  </div>
+                ) : (
+                  <div className="file-list">
+                    {repositoryFiles.entries.map((entry) => (
+                      <button
+                        className="file-row"
+                        type="button"
+                        key={entry.path}
+                        disabled={entry.entryType !== "directory" || isFileBrowserLoading}
+                        onClick={() => handleLoadRepositoryFiles(entry.path)}
+                      >
+                        <span className={`file-icon ${entry.entryType}`} aria-hidden="true">
+                          {entry.entryType === "directory" ? "▸" : "·"}
+                        </span>
+                        <strong>{entry.name}</strong>
+                        <span>{entry.entryType === "directory" ? "文件夹" : formatFileSize(entry.size)}</span>
+                        <time>{formatModifiedAt(entry.modifiedAt)}</time>
+                      </button>
+                    ))}
+                  </div>
+                )
+              ) : (
+                <div className="empty-state compact">
+                  <h3>{selectedRepository ? "尚未加载文件" : "未选择仓库"}</h3>
+                  <p>{selectedRepository ? "点击刷新读取当前仓库目录。" : "从左侧选择一个仓库后，这里会显示文件列表。"}</p>
+                </div>
+              )}
             </section>
 
             <section className="panel status-panel">

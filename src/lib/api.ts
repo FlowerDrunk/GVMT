@@ -63,6 +63,23 @@ export interface OperationResult {
   missingSvnCli: boolean;
 }
 
+export type RepositoryFileEntryType = "directory" | "file";
+
+export interface RepositoryFileEntry {
+  name: string;
+  path: string;
+  entryType: RepositoryFileEntryType;
+  size: number | null;
+  modifiedAt: number | null;
+}
+
+export interface RepositoryDirectory {
+  repositoryId: number;
+  path: string;
+  parentPath: string | null;
+  entries: RepositoryFileEntry[];
+}
+
 export function isTauriRuntime() {
   return "__TAURI_INTERNALS__" in window;
 }
@@ -94,4 +111,8 @@ export async function openSvnCliDownloadPage(target: "tortoise" | "sliksvn"): Pr
 
 export async function updateRepository(id: number): Promise<OperationResult[]> {
   return invoke<OperationResult[]>("update_repository", { id });
+}
+
+export async function listRepositoryFiles(id: number, relativePath?: string): Promise<RepositoryDirectory> {
+  return invoke<RepositoryDirectory>("list_repository_files", { id, relativePath });
 }

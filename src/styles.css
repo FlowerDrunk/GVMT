@@ -543,6 +543,7 @@ input:focus {
 }
 
 .workflow-card,
+.file-browser-panel,
 .status-panel,
 .operation-panel,
 .detail-panel,
@@ -568,6 +569,124 @@ input:focus {
   color: var(--text);
   font-size: 17px;
   margin: 0;
+}
+
+.file-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.breadcrumb button {
+  position: relative;
+  min-height: 30px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--accent);
+  padding: 0 9px;
+  white-space: nowrap;
+}
+
+.breadcrumb button + button::before {
+  position: absolute;
+  left: -3px;
+  color: var(--subtle);
+  content: "/";
+}
+
+.file-list {
+  display: grid;
+  gap: 6px;
+  max-height: 420px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-top: 13px;
+  padding-right: 2px;
+  scrollbar-color: rgba(37, 99, 235, 0.38) transparent;
+  scrollbar-width: thin;
+}
+
+.file-list::-webkit-scrollbar {
+  width: 7px;
+}
+
+.file-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.file-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.32);
+}
+
+.file-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 94px 120px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.66);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.file-row:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.file-row:hover:not(:disabled) {
+  border-color: rgba(37, 99, 235, 0.3);
+  background: #ffffff;
+}
+
+.file-row strong {
+  overflow: hidden;
+  color: var(--text);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-row span,
+.file-row time {
+  color: var(--subtle);
+  font-size: 12px;
+  font-weight: 750;
+  text-align: right;
+}
+
+.file-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--surface-muted);
+  color: var(--subtle);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 14px;
+  text-align: center;
+}
+
+.file-icon.directory {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .step-grid {
