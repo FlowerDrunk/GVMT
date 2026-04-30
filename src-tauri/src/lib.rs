@@ -59,6 +59,22 @@ struct DiffRequest {
     status: String,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct CommitFileRequest {
+    path: String,
+    vcs_type: String,
+    status: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommitRequest {
+    message: String,
+    push: bool,
+    files: Vec<CommitFileRequest>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RepositoryDiff {
@@ -298,6 +314,57 @@ fn get_repository_diff(
         is_binary,
         warning,
     })
+}
+
+#[tauri::command]
+fn commit_repository(
+    app: AppHandle,
+    id: i64,
+    input: CommitRequest,
+) -> Result<Vec<OperationResult>, String> {
+    let message = input.message.trim();
+    if message.is_empty() {
+        return Err("请输入提交信息".to_string());
+    }
+    if input.files.is_empty() {
+        return Err("请选择需要提交的文件".to_string());
+    }
+
+    let connection = open_database(&app)?;
+    let repository = find_repository_by_id(&connection, id)?
+        .ok_or_else(|| "未找到需要提交的仓库".to_string())?;
+
+    let mut results = Vec::new();
+    let git_files = input
+        .files
+        .iter()
+        .filter(|file| file.vcs_type == "git")
+        .cloned()
+        .collect::<Vec<_>>();
+    let svn_files = input
+        .files
+        .iter()
+        .filter(|file| file.vcs_type == "svn")
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if !git_files.is_empty() {
+        results.extend(git_commit_results(
+            &repository.path,
+            message,
+            input.push,
+            &git_files,
+        ));
+    }
+    if !svn_files.is_empty() {
+        results.push(svn_commit_result(&repository.path, message, &svn_files));
+    }
+
+    if results.is_empty() {
+        return Err("当前选择的文件没有可提交的 Git / SVN 变更".to_string());
+    }
+
+    Ok(results)
 }
 
 #[tauri::command]
@@ -1010,6 +1077,166 @@ fn summarize_changes(changes: &[ChangeItem]) -> RepositoryStatusSummary {
     summary
 }
 
+fn git_commit_results(
+    root_path: &str,
+    message: &str,
+    push: bool,
+    files: &[CommitFileRequest],
+) -> Vec<OperationResult> {
+    let mut results = Vec::new();
+    let normalized_paths = match normalized_commit_paths(files) {
+        Ok(paths) => paths,
+        Err(error) => {
+            results.push(failed_operation("commit", "git", error, false));
+            return results;
+        }
+    };
+
+    let mut add_args = vec![
+        "-C".to_string(),
+        root_path.to_string(),
+        "add".to_string(),
+        "--".to_string(),
+    ];
+    add_args.extend(normalized_paths.iter().cloned());
+    if let Err(error) = run_command_args("git", &add_args) {
+        results.push(failed_operation(
+            "commit",
+            "git",
+            format!("Git add 失败：{error}"),
+            false,
+        ));
+        return results;
+    }
+
+    let mut commit_args = vec![
+        "-C".to_string(),
+        root_path.to_string(),
+        "commit".to_string(),
+        "-m".to_string(),
+        message.to_string(),
+        "--".to_string(),
+    ];
+    commit_args.extend(normalized_paths.iter().cloned());
+    match run_command_args("git", &commit_args) {
+        Ok(output) => results.push(success_operation("commit", "git", "Git 提交完成", output)),
+        Err(error) => {
+            results.push(failed_operation(
+                "commit",
+                "git",
+                format!("Git 提交失败：{error}"),
+                false,
+            ));
+            return results;
+        }
+    }
+
+    if push {
+        let push_args = vec!["-C".to_string(), root_path.to_string(), "push".to_string()];
+        match run_command_args("git", &push_args) {
+            Ok(output) => results.push(success_operation("push", "git", "Git push 完成", output)),
+            Err(error) => results.push(failed_operation(
+                "push",
+                "git",
+                format!("Git push 失败：{error}"),
+                false,
+            )),
+        }
+    }
+
+    results
+}
+
+fn svn_commit_result(
+    root_path: &str,
+    message: &str,
+    files: &[CommitFileRequest],
+) -> OperationResult {
+    let normalized_paths = match normalized_commit_paths(files) {
+        Ok(paths) => paths,
+        Err(error) => return failed_operation("commit", "svn", error, false),
+    };
+
+    for file in files.iter().filter(|file| file.status == "untracked") {
+        match svn_absolute_path(root_path, &file.path) {
+            Ok(path) => {
+                let args = vec!["add".to_string(), path];
+                if let Err(error) = run_command_args("svn", &args) {
+                    return failed_operation(
+                        "commit",
+                        "svn",
+                        format!("SVN add 失败：{error}"),
+                        false,
+                    );
+                }
+            }
+            Err(error) => return failed_operation("commit", "svn", error, false),
+        }
+    }
+
+    let mut commit_args = vec!["commit".to_string(), "-m".to_string(), message.to_string()];
+    for path in normalized_paths {
+        match svn_absolute_path(root_path, &path) {
+            Ok(path) => commit_args.push(path),
+            Err(error) => return failed_operation("commit", "svn", error, false),
+        }
+    }
+
+    match run_command_args("svn", &commit_args) {
+        Ok(output) => success_operation("commit", "svn", "SVN 提交完成", output),
+        Err(error) => failed_operation("commit", "svn", format!("SVN 提交失败：{error}"), false),
+    }
+}
+
+fn normalized_commit_paths(files: &[CommitFileRequest]) -> Result<Vec<String>, String> {
+    files
+        .iter()
+        .map(|file| normalize_relative_path(&file.path))
+        .collect::<Result<Vec<_>, _>>()
+}
+
+fn svn_absolute_path(root_path: &str, relative_path: &str) -> Result<String, String> {
+    let relative = normalize_relative_path(relative_path)?;
+    Ok(Path::new(root_path)
+        .join(relative.replace('/', std::path::MAIN_SEPARATOR_STR))
+        .to_string_lossy()
+        .to_string())
+}
+
+fn success_operation(
+    operation: &str,
+    vcs_type: &str,
+    summary: &str,
+    output: String,
+) -> OperationResult {
+    OperationResult {
+        operation: operation.to_string(),
+        vcs_type: vcs_type.to_string(),
+        success: true,
+        summary: summary.to_string(),
+        output,
+        warning: None,
+        missing_svn_cli: false,
+    }
+}
+
+fn failed_operation(
+    operation: &str,
+    vcs_type: &str,
+    warning: String,
+    missing_svn_cli: bool,
+) -> OperationResult {
+    OperationResult {
+        operation: operation.to_string(),
+        vcs_type: vcs_type.to_string(),
+        success: false,
+        summary: format!("{} 操作失败", vcs_type.to_uppercase()),
+        output: String::new(),
+        warning: Some(warning),
+        missing_svn_cli,
+    }
+}
+
 fn svn_status_warning(error: &str) -> String {
     if is_missing_svn_cli_error(error) {
         "当前环境没有可调用的 svn.exe。TortoiseSVN GUI 可用于识别工作副本，但状态检测仍需要 SVN 命令行工具。可以安装 SlikSVN，或重新安装 / 修改 TortoiseSVN 并勾选 command line client tools。".to_string()
@@ -1124,6 +1351,25 @@ fn run_command<const N: usize>(parts: [&str; N]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+fn run_command_args(program: &str, args: &[String]) -> Result<String, String> {
+    let resolved_program = resolve_program(program);
+    let output = Command::new(&resolved_program)
+        .args(args)
+        .output()
+        .map_err(|error| error.to_string())?;
+
+    if !output.status.success() {
+        let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if error.is_empty() {
+            format!("命令执行失败：{resolved_program}")
+        } else {
+            error
+        });
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 fn resolve_program(program: &str) -> String {
     if program != "svn" || !cfg!(windows) {
         return program.to_string();
@@ -1201,6 +1447,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             add_repository,
+            commit_repository,
             detect_repository,
             get_repository_diff,
             get_repository_status,

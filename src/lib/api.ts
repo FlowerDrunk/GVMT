@@ -59,6 +59,18 @@ export interface DiffRequest {
   status: ChangeStatus;
 }
 
+export interface CommitFileRequest {
+  path: string;
+  vcsType: VcsType;
+  status: ChangeStatus;
+}
+
+export interface CommitRequest {
+  message: string;
+  push: boolean;
+  files: CommitFileRequest[];
+}
+
 export interface RepositoryDiff {
   repositoryId: number;
   path: string;
@@ -132,6 +144,10 @@ export async function openSvnCliDownloadPage(target: "tortoise" | "sliksvn"): Pr
 
 export async function updateRepository(id: number): Promise<OperationResult[]> {
   return invoke<OperationResult[]>("update_repository", { id });
+}
+
+export async function commitRepository(id: number, input: CommitRequest): Promise<OperationResult[]> {
+  return invoke<OperationResult[]>("commit_repository", { id, input });
 }
 
 export async function listRepositoryFiles(id: number, relativePath?: string): Promise<RepositoryDirectory> {

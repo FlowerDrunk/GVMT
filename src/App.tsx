@@ -5,6 +5,7 @@ import {
   addRepository,
   ChangeItem,
   ChangeStatus,
+  commitRepository,
   detectRepository,
   getRepositoryDiff,
   getRepositoryStatus,
@@ -198,6 +199,14 @@ function diffLineClassName(line: string) {
   return "context";
 }
 
+function changeKey(change: Pick<ChangeItem, "path" | "vcsType">) {
+  return `${change.vcsType}:${change.path}`;
+}
+
+function isCommittableChange(change: ChangeItem) {
+  return change.status !== "conflicted" && change.status !== "unknown";
+}
+
 function App() {
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -211,6 +220,10 @@ function App() {
   const [selectedChange, setSelectedChange] = useState<ChangeItem | null>(null);
   const [diffPreview, setDiffPreview] = useState<RepositoryDiff | null>(null);
   const [isDiffLoading, setIsDiffLoading] = useState(false);
+  const [commitMessage, setCommitMessage] = useState("");
+  const [pushAfterCommit, setPushAfterCommit] = useState(true);
+  const [selectedCommitKeys, setSelectedCommitKeys] = useState<Set<string>>(new Set());
+  const [isCommitLoading, setIsCommitLoading] = useState(false);
   const [expandedFilePaths, setExpandedFilePaths] = useState<Set<string>>(new Set());
   const [loadedFilePaths, setLoadedFilePaths] = useState<Set<string>>(new Set());
   const [expandedChangePaths, setExpandedChangePaths] = useState<Set<string>>(new Set());
@@ -324,6 +337,11 @@ function App() {
       try {
         const nextStatus = await getRepositoryStatus(selectedRepository.id);
         setRepositoryStatus(nextStatus);
+        const nextCommitKeys = new Set(nextStatus.changes.map(changeKey));
+        setSelectedCommitKeys((current) => {
+          if (current.size === 0) return nextCommitKeys;
+          return new Set([...current].filter((key) => nextCommitKeys.has(key)));
+        });
         setExpandedChangePaths(new Set([""]));
         if (!silent) setStatus(nextStatus.clean ? "工作区干净" : `检测到 ${nextStatus.summary.total} 个变更`);
       } catch (error) {
@@ -468,6 +486,67 @@ function App() {
     }
   }
 
+  function toggleCommitFile(change: ChangeItem) {
+    const key = changeKey(change);
+    setSelectedCommitKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
+
+  function toggleAllCommitFiles(changes: ChangeItem[]) {
+    const keys = changes.map(changeKey);
+    setSelectedCommitKeys((current) => {
+      const allSelected = keys.length > 0 && keys.every((key) => current.has(key));
+      return allSelected ? new Set() : new Set(keys);
+    });
+  }
+
+  async function handleCommitRepository(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedRepository) {
+      setStatus("请先选择一个仓库");
+      return;
+    }
+
+    const selectedFiles = changedFiles.filter(
+      (change) => isCommittableChange(change) && selectedCommitKeys.has(changeKey(change)),
+    );
+    if (selectedFiles.length === 0) {
+      setStatus("请选择需要提交的文件");
+      return;
+    }
+    if (!commitMessage.trim()) {
+      setStatus("请输入提交信息");
+      return;
+    }
+
+    setIsCommitLoading(true);
+    try {
+      const results = await commitRepository(selectedRepository.id, {
+        message: commitMessage,
+        push: pushAfterCommit,
+        files: selectedFiles,
+      });
+      setOperationResults(results);
+      const failed = results.filter((result) => !result.success);
+      setStatus(failed.length === 0 ? "提交完成" : `${failed.length} 个提交步骤失败`);
+      if (failed.length === 0) {
+        setCommitMessage("");
+      }
+      await loadRepositoryStatus(true);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsCommitLoading(false);
+    }
+  }
+
   function toggleChangeNode(path: string) {
     setExpandedChangePaths((current) => {
       const next = new Set(current);
@@ -487,6 +566,9 @@ function App() {
     setSelectedChange(null);
     setDiffPreview(null);
     setIsDiffLoading(false);
+    setCommitMessage("");
+    setSelectedCommitKeys(new Set());
+    setIsCommitLoading(false);
     setExpandedFilePaths(new Set());
     setLoadedFilePaths(new Set());
     setExpandedChangePaths(new Set());
@@ -524,6 +606,11 @@ function App() {
     : "等待检测";
   const breadcrumbs = fileBreadcrumbs(repositoryFiles?.path ?? "");
   const changedFiles = repositoryStatus?.changes ?? [];
+  const committableFiles = changedFiles.filter(isCommittableChange);
+  const selectedCommitCount = committableFiles.filter((change) => selectedCommitKeys.has(changeKey(change))).length;
+  const hasGitCommitSelection = committableFiles.some(
+    (change) => change.vcsType === "git" && selectedCommitKeys.has(changeKey(change)),
+  );
   const changeTree = buildChangeTree(changedFiles);
   const changeTreeWithRoot: ChangeTreeNode[] =
     selectedRepository && changeTree.length > 0
@@ -851,15 +938,15 @@ function App() {
                   <strong>更新仓库</strong>
                   <small>Git pull 或 SVN update</small>
                 </button>
-                <button type="button" disabled>
+                <button type="button" disabled={!repositoryStatus || committableFiles.length === 0}>
                   <span>03</span>
                   <strong>提交变更</strong>
-                  <small>默认包含 push，可在设置关闭</small>
+                  <small>选择文件、填写信息并提交</small>
                 </button>
                 <button type="button" disabled>
                   <span>04</span>
                   <strong>发起评审</strong>
-                  <small>预留 Git / SVN 线上评审</small>
+                  <small>0 阶段后补充</small>
                 </button>
               </div>
             </section>
@@ -1005,6 +1092,65 @@ function App() {
                 </div>
               )}
             </section>
+
+            {repositoryStatus && committableFiles.length > 0 ? (
+              <section className="panel commit-panel">
+                <div className="panel-title-row">
+                  <div>
+                    <p className="eyebrow">Commit changes</p>
+                    <h3>提交变更</h3>
+                  </div>
+                  <span className="soft-chip">{selectedCommitCount} / {committableFiles.length}</span>
+                </div>
+                <form className="commit-form" onSubmit={handleCommitRepository}>
+                  <div className="commit-file-toolbar">
+                    <button type="button" className="secondary-button" onClick={() => toggleAllCommitFiles(committableFiles)}>
+                      {selectedCommitCount === committableFiles.length ? "取消全选" : "全选文件"}
+                    </button>
+                    {hasGitCommitSelection ? (
+                      <label className="commit-push-toggle">
+                        <input
+                          type="checkbox"
+                          checked={pushAfterCommit}
+                          onChange={(event) => setPushAfterCommit(event.currentTarget.checked)}
+                        />
+                        Git 提交后 push
+                      </label>
+                    ) : null}
+                  </div>
+                  <div className="commit-file-list">
+                    {committableFiles.map((change) => {
+                      const key = changeKey(change);
+                      return (
+                        <label className="commit-file-row" key={key}>
+                          <input
+                            type="checkbox"
+                            checked={selectedCommitKeys.has(key)}
+                            onChange={() => toggleCommitFile(change)}
+                          />
+                          <span className={`change-badge ${change.status}`}>{changeLabels[change.status]}</span>
+                          <strong>{change.path}</strong>
+                          <small>{vcsLabels[change.vcsType]}</small>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <textarea
+                    value={commitMessage}
+                    onChange={(event) => setCommitMessage(event.currentTarget.value)}
+                    placeholder="输入提交信息..."
+                    rows={3}
+                  />
+                  <button
+                    className="primary-button"
+                    type="submit"
+                    disabled={isCommitLoading || selectedCommitCount === 0 || !commitMessage.trim()}
+                  >
+                    {isCommitLoading ? "提交中..." : "提交选中文件"}
+                  </button>
+                </form>
+              </section>
+            ) : null}
 
             {operationResults.length > 0 ? (
               <section className="panel operation-panel">
