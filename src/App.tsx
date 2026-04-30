@@ -77,6 +77,13 @@ function statusTone(vcsType: VcsType) {
   return "ready";
 }
 
+interface VisibleSections {
+  repositories: boolean;
+  files: boolean;
+  changes: boolean;
+  review: boolean;
+}
+
 function App() {
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -87,6 +94,12 @@ function App() {
   const [repositoryStatus, setRepositoryStatus] = useState<RepositoryStatus | null>(null);
   const [operationResults, setOperationResults] = useState<OperationResult[]>([]);
   const [repositoryFiles, setRepositoryFiles] = useState<RepositoryDirectory | null>(null);
+  const [visibleSections, setVisibleSections] = useState<VisibleSections>({
+    repositories: true,
+    files: true,
+    changes: true,
+    review: true,
+  });
 
   const selectedRepository = useMemo(
     () => repositories.find((repository) => repository.id === selectedId) ?? repositories[0],
@@ -247,6 +260,13 @@ function App() {
     }
   }
 
+  function toggleSection(section: keyof VisibleSections) {
+    setVisibleSections((current) => ({
+      ...current,
+      [section]: !current[section],
+    }));
+  }
+
   useEffect(() => {
     setRepositoryStatus(null);
     setOperationResults([]);
@@ -267,25 +287,57 @@ function App() {
     : "等待检测";
   const breadcrumbs = fileBreadcrumbs(repositoryFiles?.path ?? "");
   const changedFiles = repositoryStatus?.changes ?? [];
+  const appShellClassName = `app-shell ${visibleSections.repositories ? "" : "repositories-collapsed"}`;
+  const workbenchClassName = [
+    "workbench",
+    visibleSections.changes ? "with-changes" : "",
+    visibleSections.review ? "with-review" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <main className="app-shell">
+    <main className={appShellClassName}>
       <aside className="activity-rail" aria-label="主导航">
         <div className="rail-logo">G</div>
         <nav className="rail-nav">
-          <button className="rail-button active" type="button" title="仓库">
+          <button
+            className={`rail-button ${visibleSections.repositories ? "active" : ""}`}
+            type="button"
+            title={visibleSections.repositories ? "关闭仓库管理" : "打开仓库管理"}
+            aria-pressed={visibleSections.repositories}
+            onClick={() => toggleSection("repositories")}
+          >
             <span aria-hidden="true">□</span>
             <small>仓库</small>
           </button>
-          <button className="rail-button" type="button" title="文件" disabled>
+          <button
+            className={`rail-button ${visibleSections.files ? "active" : ""}`}
+            type="button"
+            title={visibleSections.files ? "关闭文件浏览" : "打开文件浏览"}
+            aria-pressed={visibleSections.files}
+            onClick={() => toggleSection("files")}
+          >
             <span aria-hidden="true">▤</span>
             <small>文件</small>
           </button>
-          <button className="rail-button" type="button" title="变更" disabled>
+          <button
+            className={`rail-button ${visibleSections.changes ? "active" : ""}`}
+            type="button"
+            title={visibleSections.changes ? "关闭变更状态" : "打开变更状态"}
+            aria-pressed={visibleSections.changes}
+            onClick={() => toggleSection("changes")}
+          >
             <span aria-hidden="true">✓</span>
             <small>变更</small>
           </button>
-          <button className="rail-button" type="button" title="评审" disabled>
+          <button
+            className={`rail-button ${visibleSections.review ? "active" : ""}`}
+            type="button"
+            title={visibleSections.review ? "关闭评审质量" : "打开评审质量"}
+            aria-pressed={visibleSections.review}
+            onClick={() => toggleSection("review")}
+          >
             <span aria-hidden="true">◎</span>
             <small>评审</small>
           </button>
@@ -299,73 +351,75 @@ function App() {
         </div>
       </aside>
 
-      <aside className="explorer-pane">
-        <header className="pane-header">
-          <div>
-            <h1>GVMT</h1>
-            <p>版本控制工作台</p>
-          </div>
-          <button className="icon-button" type="button" onClick={refreshRepositories} disabled={isLoading} title="刷新仓库">
-            ↻
-          </button>
-        </header>
-
-        <section className="add-strip">
-          <form onSubmit={handleAddRepository}>
-            <label htmlFor="repo-path">打开本地仓库</label>
-            <div className="path-row">
-              <input
-                id="repo-path"
-                placeholder="C:\\Projects\\example"
-                value={path}
-                onChange={(event) => setPath(event.target.value)}
-              />
+      {visibleSections.repositories ? (
+        <aside className="explorer-pane">
+          <header className="pane-header">
+            <div>
+              <h1>GVMT</h1>
+              <p>版本控制工作台</p>
             </div>
-            <div className="form-actions">
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={handleDetect}
-                disabled={isLoading || !isTauriRuntime()}
-              >
-                检测
-              </button>
-              <button className="primary-button" type="submit" disabled={isLoading || !isTauriRuntime()}>
-                添加
-              </button>
-            </div>
-          </form>
-          {!isTauriRuntime() ? <p className="inline-warning">需要 Tauri 运行时访问本地仓库。</p> : null}
-        </section>
+            <button className="icon-button" type="button" onClick={refreshRepositories} disabled={isLoading} title="刷新仓库">
+              ↻
+            </button>
+          </header>
 
-        <section className="repo-section">
-          <div className="section-title">
-            <span>仓库</span>
-            <strong>{repositories.length}</strong>
-          </div>
-          <div className="repo-list">
-            {repositories.length === 0 ? (
-              <div className="empty-list">{emptyStateCopy.title}</div>
-            ) : (
-              repositories.map((repository) => (
+          <section className="add-strip">
+            <form onSubmit={handleAddRepository}>
+              <label htmlFor="repo-path">打开本地仓库</label>
+              <div className="path-row">
+                <input
+                  id="repo-path"
+                  placeholder="C:\\Projects\\example"
+                  value={path}
+                  onChange={(event) => setPath(event.target.value)}
+                />
+              </div>
+              <div className="form-actions">
                 <button
-                  className={`repo-item ${selectedRepository?.id === repository.id ? "active" : ""}`}
-                  key={repository.id}
+                  className="secondary-button"
                   type="button"
-                  onClick={() => setSelectedId(repository.id)}
+                  onClick={handleDetect}
+                  disabled={isLoading || !isTauriRuntime()}
                 >
-                  <span className={`repo-dot ${statusTone(repository.vcsType)}`} />
-                  <span className="repo-copy">
-                    <strong>{repository.name}</strong>
-                    <small>{repository.path}</small>
-                  </span>
-                  <span className="repo-type">{vcsLabels[repository.vcsType]}</span>
+                  检测
                 </button>
-              ))
-            )}
-          </div>
-        </section>
-      </aside>
+                <button className="primary-button" type="submit" disabled={isLoading || !isTauriRuntime()}>
+                  添加
+                </button>
+              </div>
+            </form>
+            {!isTauriRuntime() ? <p className="inline-warning">需要 Tauri 运行时访问本地仓库。</p> : null}
+          </section>
+
+          <section className="repo-section">
+            <div className="section-title">
+              <span>仓库</span>
+              <strong>{repositories.length}</strong>
+            </div>
+            <div className="repo-list">
+              {repositories.length === 0 ? (
+                <div className="empty-list">{emptyStateCopy.title}</div>
+              ) : (
+                repositories.map((repository) => (
+                  <button
+                    className={`repo-item ${selectedRepository?.id === repository.id ? "active" : ""}`}
+                    key={repository.id}
+                    type="button"
+                    onClick={() => setSelectedId(repository.id)}
+                  >
+                    <span className={`repo-dot ${statusTone(repository.vcsType)}`} />
+                    <span className="repo-copy">
+                      <strong>{repository.name}</strong>
+                      <small>{repository.path}</small>
+                    </span>
+                    <span className="repo-type">{vcsLabels[repository.vcsType]}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </section>
+        </aside>
+      ) : null}
 
       <section className="workspace">
         <header className="command-bar">
@@ -374,12 +428,38 @@ function App() {
             <h2>{selectedRepository?.name ?? "选择或添加仓库"}</h2>
           </div>
           <nav className="function-nav" aria-label="功能区">
-            <button className="active" type="button">
+            <button
+              className={visibleSections.repositories ? "active" : ""}
+              type="button"
+              aria-pressed={visibleSections.repositories}
+              onClick={() => toggleSection("repositories")}
+            >
               仓库
             </button>
-            <button type="button">文件</button>
-            <button type="button">变更</button>
-            <button type="button">评审</button>
+            <button
+              className={visibleSections.files ? "active" : ""}
+              type="button"
+              aria-pressed={visibleSections.files}
+              onClick={() => toggleSection("files")}
+            >
+              文件
+            </button>
+            <button
+              className={visibleSections.changes ? "active" : ""}
+              type="button"
+              aria-pressed={visibleSections.changes}
+              onClick={() => toggleSection("changes")}
+            >
+              变更
+            </button>
+            <button
+              className={visibleSections.review ? "active" : ""}
+              type="button"
+              aria-pressed={visibleSections.review}
+              onClick={() => toggleSection("review")}
+            >
+              评审
+            </button>
             <button type="button" disabled>
               设置
             </button>
@@ -412,7 +492,7 @@ function App() {
           </div>
         </header>
 
-        <div className="workbench">
+        <div className={workbenchClassName}>
           <section className="main-thread">
             <section className="hero-panel">
               <div className="hero-copy">
@@ -472,6 +552,7 @@ function App() {
               </div>
             </section>
 
+            {visibleSections.files ? (
             <section className="panel file-browser-panel">
               <div className="panel-title-row">
                 <div>
@@ -545,6 +626,7 @@ function App() {
                 </div>
               )}
             </section>
+            ) : null}
 
             <section className="panel status-panel">
               <div className="panel-title-row">
@@ -679,6 +761,7 @@ function App() {
             ) : null}
           </section>
 
+          {visibleSections.changes ? (
           <aside className="changes-pane">
             <header className="changes-header">
               <button className="changes-title" type="button">
@@ -729,7 +812,9 @@ function App() {
               </div>
             </section>
           </aside>
+          ) : null}
 
+          {visibleSections.review ? (
           <aside className="context-pane">
             <section className="context-section repository-summary">
               <div className="section-kicker">仓库信息</div>
@@ -783,6 +868,7 @@ function App() {
               </div>
             </section>
           </aside>
+          ) : null}
 
         </div>
 
