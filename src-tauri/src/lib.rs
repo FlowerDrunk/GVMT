@@ -292,9 +292,7 @@ fn list_repository_files(
         .transpose()?
         .unwrap_or_default();
     let parent_path = parent_relative_path(&current_path);
-    let mut remaining_entries = 5000;
-    let entries =
-        repository_file_entries(&directory_path, &current_path, 0, &mut remaining_entries)?;
+    let entries = repository_file_entries(&directory_path, &current_path)?;
 
     Ok(RepositoryDirectory {
         repository_id: repository.id,
@@ -594,21 +592,9 @@ fn parent_relative_path(path: &str) -> Option<String> {
 fn repository_file_entries(
     directory_path: &Path,
     current_path: &str,
-    depth: usize,
-    remaining_entries: &mut usize,
 ) -> Result<Vec<RepositoryFileEntry>, String> {
-    const MAX_TREE_DEPTH: usize = 7;
-
-    if *remaining_entries == 0 {
-        return Ok(Vec::new());
-    }
-
     let mut entries = Vec::new();
     for item in fs::read_dir(directory_path).map_err(|error| error.to_string())? {
-        if *remaining_entries == 0 {
-            break;
-        }
-
         let item = item.map_err(|error| error.to_string())?;
         let file_name = item.file_name().to_string_lossy().to_string();
         if should_hide_repository_entry(&file_name) {
@@ -631,14 +617,6 @@ fn repository_file_entries(
             .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
             .map(|value| value.as_secs());
 
-        *remaining_entries -= 1;
-        let children = if is_directory && depth < MAX_TREE_DEPTH && *remaining_entries > 0 {
-            repository_file_entries(&item.path(), &entry_path, depth + 1, remaining_entries)
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-
         entries.push(RepositoryFileEntry {
             name: file_name,
             path: entry_path,
@@ -649,7 +627,7 @@ fn repository_file_entries(
                 None
             },
             modified_at,
-            children,
+            children: Vec::new(),
         });
     }
 
@@ -665,10 +643,6 @@ fn sort_repository_entries(entries: &mut [RepositoryFileEntry]) {
             .cmp(&left_is_directory)
             .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
     });
-
-    for entry in entries {
-        sort_repository_entries(&mut entry.children);
-    }
 }
 
 fn should_hide_repository_entry(name: &str) -> bool {
@@ -827,11 +801,11 @@ fn svn_status_changes(path: &str) -> Result<Vec<ChangeItem>, String> {
     let output = run_command(["svn", "status", path])?;
     Ok(output
         .lines()
-        .filter_map(parse_svn_status_line)
+        .filter_map(|line| parse_svn_status_line(line, path))
         .collect::<Vec<_>>())
 }
 
-fn parse_svn_status_line(line: &str) -> Option<ChangeItem> {
+fn parse_svn_status_line(line: &str, root_path: &str) -> Option<ChangeItem> {
     let status_code = line.chars().next()?;
     if line.trim().is_empty() {
         return None;
@@ -843,10 +817,39 @@ fn parse_svn_status_line(line: &str) -> Option<ChangeItem> {
     }
 
     Some(ChangeItem {
-        path: path.to_string(),
+        path: repository_relative_change_path(path, root_path),
         status: svn_status_kind(status_code).to_string(),
         vcs_type: "svn".to_string(),
     })
+}
+
+fn repository_relative_change_path(path: &str, root_path: &str) -> String {
+    let normalized_path = strip_windows_extended_path_prefix(path).replace('\\', "/");
+    let normalized_root = strip_windows_extended_path_prefix(root_path).replace('\\', "/");
+    let root = normalized_root.trim_end_matches('/');
+
+    if let Some(rest) = normalized_path.strip_prefix(root) {
+        return rest.trim_start_matches('/').to_string();
+    }
+
+    let lower_path = normalized_path.to_lowercase();
+    let lower_root = root.to_lowercase();
+    if lower_path.starts_with(&lower_root) {
+        return normalized_path[root.len()..]
+            .trim_start_matches('/')
+            .to_string();
+    }
+
+    if let (Ok(root), Ok(candidate)) = (
+        Path::new(root_path).canonicalize(),
+        Path::new(path).canonicalize(),
+    ) {
+        if let Ok(relative) = candidate.strip_prefix(root) {
+            return relative.to_string_lossy().replace('\\', "/");
+        }
+    }
+
+    normalized_path
 }
 
 fn svn_status_kind(status_code: char) -> &'static str {

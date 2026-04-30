@@ -168,6 +168,24 @@ function collectChangeDirectoryPaths(nodes: ChangeTreeNode[]) {
   return paths;
 }
 
+function replaceFileTreeChildren(
+  entries: RepositoryFileEntry[],
+  targetPath: string,
+  children: RepositoryFileEntry[],
+): RepositoryFileEntry[] {
+  return entries.map((entry) => {
+    if (entry.path === targetPath) {
+      return { ...entry, children };
+    }
+
+    if (entry.children.length > 0) {
+      return { ...entry, children: replaceFileTreeChildren(entry.children, targetPath, children) };
+    }
+
+    return entry;
+  });
+}
+
 function App() {
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -179,6 +197,7 @@ function App() {
   const [operationResults, setOperationResults] = useState<OperationResult[]>([]);
   const [repositoryFiles, setRepositoryFiles] = useState<RepositoryDirectory | null>(null);
   const [expandedFilePaths, setExpandedFilePaths] = useState<Set<string>>(new Set());
+  const [loadedFilePaths, setLoadedFilePaths] = useState<Set<string>>(new Set());
   const [expandedChangePaths, setExpandedChangePaths] = useState<Set<string>>(new Set());
   const [visibleSections, setVisibleSections] = useState<VisibleSections>({
     repositories: true,
@@ -290,8 +309,7 @@ function App() {
       try {
         const nextStatus = await getRepositoryStatus(selectedRepository.id);
         setRepositoryStatus(nextStatus);
-        const nextChangeTree = buildChangeTree(nextStatus.changes);
-        setExpandedChangePaths(new Set(["", ...collectChangeDirectoryPaths(nextChangeTree)]));
+        setExpandedChangePaths(new Set([""]));
         if (!silent) setStatus(nextStatus.clean ? "工作区干净" : `检测到 ${nextStatus.summary.total} 个变更`);
       } catch (error) {
         setRepositoryStatus(null);
@@ -351,7 +369,8 @@ function App() {
     try {
       const nextFiles = await listRepositoryFiles(selectedRepository.id, relativePath);
       setRepositoryFiles(nextFiles);
-      setExpandedFilePaths(new Set(collectFileDirectoryPaths(nextFiles.entries)));
+      setExpandedFilePaths(new Set());
+      setLoadedFilePaths(new Set([nextFiles.path]));
       setStatus(nextFiles.path ? `已打开 ${nextFiles.path}` : "已打开仓库根目录");
     } catch (error) {
       setRepositoryFiles(null);
@@ -380,6 +399,38 @@ function App() {
     });
   }
 
+  async function handleExpandFileEntry(entry: RepositoryFileEntry) {
+    if (!selectedRepository || entry.entryType !== "directory") return;
+
+    if (expandedFilePaths.has(entry.path)) {
+      toggleFileNode(entry.path);
+      return;
+    }
+
+    if (!loadedFilePaths.has(entry.path)) {
+      setIsFileBrowserLoading(true);
+      try {
+        const nextDirectory = await listRepositoryFiles(selectedRepository.id, entry.path);
+        setRepositoryFiles((current) =>
+          current
+            ? {
+                ...current,
+                entries: replaceFileTreeChildren(current.entries, entry.path, nextDirectory.entries),
+              }
+            : current,
+        );
+        setLoadedFilePaths((current) => new Set(current).add(entry.path));
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : String(error));
+        return;
+      } finally {
+        setIsFileBrowserLoading(false);
+      }
+    }
+
+    setExpandedFilePaths((current) => new Set(current).add(entry.path));
+  }
+
   function toggleChangeNode(path: string) {
     setExpandedChangePaths((current) => {
       const next = new Set(current);
@@ -397,13 +448,8 @@ function App() {
     setOperationResults([]);
     setRepositoryFiles(null);
     setExpandedFilePaths(new Set());
+    setLoadedFilePaths(new Set());
     setExpandedChangePaths(new Set());
-  }, [selectedRepository?.id]);
-
-  useEffect(() => {
-    if (selectedRepository && isTauriRuntime()) {
-      void handleLoadRepositoryFiles();
-    }
   }, [selectedRepository?.id]);
 
   useEffect(() => {
@@ -411,12 +457,23 @@ function App() {
       return;
     }
 
-    void loadRepositoryStatus(true);
+    let isCancelled = false;
+    async function openRepository() {
+      await loadRepositoryStatus(true);
+      if (!isCancelled) {
+        await handleLoadRepositoryFiles();
+      }
+    }
+
+    void openRepository();
     const refreshTimer = window.setInterval(() => {
       void loadRepositoryStatus(true);
     }, 12000);
 
-    return () => window.clearInterval(refreshTimer);
+    return () => {
+      isCancelled = true;
+      window.clearInterval(refreshTimer);
+    };
   }, [selectedRepository?.id, loadRepositoryStatus]);
 
   const currentChangeCount = repositoryStatus?.summary.total ?? 0;
@@ -459,15 +516,11 @@ function App() {
             style={{ "--tree-level": level } as CSSProperties}
             onClick={() => {
               if (!isDirectory) return;
-              if (entry.children.length === 0) {
-                void handleLoadRepositoryFiles(entry.path);
-              } else {
-                toggleFileNode(entry.path);
-              }
+              void handleExpandFileEntry(entry);
             }}
           >
             <span className="tree-toggle" aria-hidden="true">
-              {isDirectory ? (isExpanded ? "⌄" : "›") : "·"}
+              {isDirectory ? (isExpanded ? "v" : ">") : "-"}
             </span>
             <img className="tree-icon" src={isDirectory ? folderIconUrl : fileIconUrl} alt="" aria-hidden="true" />
             <strong>{entry.name}</strong>
@@ -493,7 +546,7 @@ function App() {
             onClick={() => (isDirectory ? toggleChangeNode(node.path) : undefined)}
           >
             <span className="tree-toggle" aria-hidden="true">
-              {isDirectory ? (isExpanded ? "⌄" : "›") : "·"}
+              {isDirectory ? (isExpanded ? "v" : ">") : "-"}
             </span>
             <img className="tree-icon" src={isDirectory ? folderIconUrl : fileIconUrl} alt="" aria-hidden="true" />
             <strong>{node.name}</strong>
