@@ -51,6 +51,26 @@ struct ChangeItem {
     vcs_type: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DiffRequest {
+    path: String,
+    vcs_type: String,
+    status: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RepositoryDiff {
+    repository_id: i64,
+    path: String,
+    vcs_type: String,
+    status: String,
+    content: String,
+    is_binary: bool,
+    warning: Option<String>,
+}
+
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RepositoryStatusSummary {
@@ -240,6 +260,43 @@ fn get_repository_status(app: AppHandle, id: i64) -> Result<RepositoryStatus, St
         missing_svn_cli,
         summary,
         changes,
+    })
+}
+
+#[tauri::command]
+fn get_repository_diff(
+    app: AppHandle,
+    id: i64,
+    input: DiffRequest,
+) -> Result<RepositoryDiff, String> {
+    let connection = open_database(&app)?;
+    let repository = find_repository_by_id(&connection, id)?
+        .ok_or_else(|| "未找到需要查看 diff 的仓库".to_string())?;
+    let path = normalize_relative_path(&input.path)?;
+    if path.is_empty() {
+        return Err("请选择一个文件查看 diff".to_string());
+    }
+
+    let (content, is_binary, warning) = if input.status == "untracked" {
+        untracked_file_preview(&repository.path, &path)?
+    } else {
+        match input.vcs_type.as_str() {
+            "git" => (git_file_diff(&repository.path, &path)?, false, None),
+            "svn" => (svn_file_diff(&repository.path, &path)?, false, None),
+            _ => {
+                return Err("当前变更类型暂不支持 diff 预览".to_string());
+            }
+        }
+    };
+
+    Ok(RepositoryDiff {
+        repository_id: repository.id,
+        path,
+        vcs_type: input.vcs_type,
+        status: input.status,
+        content,
+        is_binary,
+        warning,
     })
 }
 
@@ -797,6 +854,75 @@ fn git_status_kind(status_code: &str) -> &'static str {
     }
 }
 
+fn git_file_diff(root_path: &str, relative_path: &str) -> Result<String, String> {
+    let diff = run_command(["git", "-C", root_path, "diff", "HEAD", "--", relative_path])
+        .or_else(|_| run_command(["git", "-C", root_path, "diff", "--", relative_path]))?;
+    Ok(if diff.trim().is_empty() {
+        "当前文件没有可展示的 Git diff，可能是仅属性变化或文件内容尚未加入跟踪。".to_string()
+    } else {
+        diff
+    })
+}
+
+fn svn_file_diff(root_path: &str, relative_path: &str) -> Result<String, String> {
+    let target_path =
+        Path::new(root_path).join(relative_path.replace('/', std::path::MAIN_SEPARATOR_STR));
+    let target = target_path.to_string_lossy().to_string();
+    let diff = run_command(["svn", "diff", &target])?;
+    Ok(if diff.trim().is_empty() {
+        "当前文件没有可展示的 SVN diff，可能是仅属性变化或文件内容尚未加入版本控制。".to_string()
+    } else {
+        diff
+    })
+}
+
+fn untracked_file_preview(
+    root_path: &str,
+    relative_path: &str,
+) -> Result<(String, bool, Option<String>), String> {
+    const MAX_PREVIEW_BYTES: usize = 160 * 1024;
+    const MAX_PREVIEW_LINES: usize = 500;
+
+    let root = Path::new(root_path)
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let candidate = root.join(relative_path.replace('/', std::path::MAIN_SEPARATOR_STR));
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    if !canonical.starts_with(&root) {
+        return Err("文件路径超出仓库范围".to_string());
+    }
+
+    let bytes = fs::read(&canonical).map_err(|error| error.to_string())?;
+    if bytes.contains(&0) {
+        return Ok((
+            "未跟踪文件疑似为二进制文件，暂不展示内容预览。".to_string(),
+            true,
+            Some("二进制文件不会展开为文本 diff。".to_string()),
+        ));
+    }
+
+    let warning = if bytes.len() > MAX_PREVIEW_BYTES {
+        Some("文件较大，仅展示前 160KB 内容。".to_string())
+    } else {
+        None
+    };
+    let slice_end = bytes.len().min(MAX_PREVIEW_BYTES);
+    let text = String::from_utf8_lossy(&bytes[..slice_end]);
+    let mut content = format!("--- /dev/null\n+++ b/{relative_path}\n@@\n");
+    for line in text.lines().take(MAX_PREVIEW_LINES) {
+        content.push('+');
+        content.push_str(line);
+        content.push('\n');
+    }
+    if text.lines().count() > MAX_PREVIEW_LINES {
+        content.push_str("+... 内容过长，已截断预览\n");
+    }
+
+    Ok((content, false, warning))
+}
+
 fn svn_status_changes(path: &str) -> Result<Vec<ChangeItem>, String> {
     let output = run_command(["svn", "status", path])?;
     Ok(output
@@ -1076,6 +1202,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             add_repository,
             detect_repository,
+            get_repository_diff,
             get_repository_status,
             list_repository_files,
             list_repositories,

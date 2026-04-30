@@ -623,6 +623,100 @@ input:focus {
   margin: 8px 0 0;
 }
 
+.diff-preview {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  border: 1px solid #dfe7f1;
+  border-radius: 10px;
+  background: #fbfdff;
+  overflow: hidden;
+}
+
+.diff-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #e3eaf3;
+  background: #ffffff;
+  padding: 10px 12px;
+}
+
+.diff-heading div {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.diff-heading strong {
+  overflow: hidden;
+  color: var(--text);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 12px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-heading small {
+  color: var(--subtle);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.diff-warning {
+  border-bottom: 1px solid #f2d7a4;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0;
+  padding: 8px 12px;
+}
+
+.diff-preview pre {
+  display: block;
+  min-height: 0;
+  overflow: auto;
+  background: #ffffff;
+  color: #1d2736;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+  padding: 10px 0;
+  white-space: pre;
+}
+
+.diff-preview pre span {
+  display: block;
+  min-width: max-content;
+  padding: 0 12px;
+}
+
+.diff-preview pre .added {
+  background: #eefaf3;
+  color: #126b3d;
+}
+
+.diff-preview pre .deleted {
+  background: #fff0f1;
+  color: #a12b35;
+}
+
+.diff-preview pre .hunk {
+  background: #eef4ff;
+  color: #285dbb;
+  font-weight: 750;
+}
+
+.diff-preview pre .meta {
+  color: #69778c;
+  font-weight: 750;
+}
+
 .changes-header {
   display: grid;
   gap: 12px;
@@ -784,6 +878,11 @@ input:focus {
   min-height: 38px;
   border-radius: 8px;
   padding: 7px 10px;
+}
+
+.change-tree-row.selected {
+  background: #eef4ff;
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .change-tree-row.directory strong {

@@ -53,6 +53,22 @@ export interface RepositoryStatus {
   changes: ChangeItem[];
 }
 
+export interface DiffRequest {
+  path: string;
+  vcsType: VcsType;
+  status: ChangeStatus;
+}
+
+export interface RepositoryDiff {
+  repositoryId: number;
+  path: string;
+  vcsType: VcsType;
+  status: ChangeStatus;
+  content: string;
+  isBinary: boolean;
+  warning: string | null;
+}
+
 export interface OperationResult {
   operation: string;
   vcsType: VcsType;
@@ -104,6 +120,10 @@ export async function refreshRepository(id: number): Promise<Repository> {
 
 export async function getRepositoryStatus(id: number): Promise<RepositoryStatus> {
   return invoke<RepositoryStatus>("get_repository_status", { id });
+}
+
+export async function getRepositoryDiff(id: number, input: DiffRequest): Promise<RepositoryDiff> {
+  return invoke<RepositoryDiff>("get_repository_diff", { id, input });
 }
 
 export async function openSvnCliDownloadPage(target: "tortoise" | "sliksvn"): Promise<void> {

@@ -3,7 +3,10 @@ import fileIconUrl from "../src-tauri/icons/file.png";
 import folderIconUrl from "../src-tauri/icons/folder.png";
 import {
   addRepository,
+  ChangeItem,
+  ChangeStatus,
   detectRepository,
+  getRepositoryDiff,
   getRepositoryStatus,
   isTauriRuntime,
   listRepositoryFiles,
@@ -13,6 +16,7 @@ import {
   refreshRepository,
   Repository,
   RepositoryDirectory,
+  RepositoryDiff,
   RepositoryFileEntry,
   RepositoryStatus,
   updateRepository,
@@ -85,7 +89,7 @@ interface ChangeTreeNode {
   path: string;
   children: ChangeTreeNode[];
   change?: {
-    status: string;
+    status: ChangeStatus;
     vcsType: VcsType;
   };
 }
@@ -97,7 +101,7 @@ interface VisibleSections {
   review: boolean;
 }
 
-function buildChangeTree(changes: { path: string; status: string; vcsType: VcsType }[]) {
+function buildChangeTree(changes: ChangeItem[]) {
   const root: ChangeTreeNode[] = [];
   const rootsByName = new Map<string, ChangeTreeNode>();
 
@@ -186,6 +190,14 @@ function replaceFileTreeChildren(
   });
 }
 
+function diffLineClassName(line: string) {
+  if (line.startsWith("+++") || line.startsWith("---")) return "meta";
+  if (line.startsWith("+")) return "added";
+  if (line.startsWith("-")) return "deleted";
+  if (line.startsWith("@@")) return "hunk";
+  return "context";
+}
+
 function App() {
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -196,6 +208,9 @@ function App() {
   const [repositoryStatus, setRepositoryStatus] = useState<RepositoryStatus | null>(null);
   const [operationResults, setOperationResults] = useState<OperationResult[]>([]);
   const [repositoryFiles, setRepositoryFiles] = useState<RepositoryDirectory | null>(null);
+  const [selectedChange, setSelectedChange] = useState<ChangeItem | null>(null);
+  const [diffPreview, setDiffPreview] = useState<RepositoryDiff | null>(null);
+  const [isDiffLoading, setIsDiffLoading] = useState(false);
   const [expandedFilePaths, setExpandedFilePaths] = useState<Set<string>>(new Set());
   const [loadedFilePaths, setLoadedFilePaths] = useState<Set<string>>(new Set());
   const [expandedChangePaths, setExpandedChangePaths] = useState<Set<string>>(new Set());
@@ -431,6 +446,28 @@ function App() {
     setExpandedFilePaths((current) => new Set(current).add(entry.path));
   }
 
+  async function handleSelectChange(path: string, change: ChangeTreeNode["change"]) {
+    if (!selectedRepository || !change) return;
+
+    const nextChange: ChangeItem = {
+      path,
+      status: change.status,
+      vcsType: change.vcsType,
+    };
+    setSelectedChange(nextChange);
+    setIsDiffLoading(true);
+    try {
+      const nextDiff = await getRepositoryDiff(selectedRepository.id, nextChange);
+      setDiffPreview(nextDiff);
+      setStatus(`已加载 diff：${path}`);
+    } catch (error) {
+      setDiffPreview(null);
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsDiffLoading(false);
+    }
+  }
+
   function toggleChangeNode(path: string) {
     setExpandedChangePaths((current) => {
       const next = new Set(current);
@@ -447,6 +484,9 @@ function App() {
     setRepositoryStatus(null);
     setOperationResults([]);
     setRepositoryFiles(null);
+    setSelectedChange(null);
+    setDiffPreview(null);
+    setIsDiffLoading(false);
     setExpandedFilePaths(new Set());
     setLoadedFilePaths(new Set());
     setExpandedChangePaths(new Set());
@@ -536,14 +576,15 @@ function App() {
       const isDirectory = node.children.length > 0;
       const isExpanded = expandedChangePaths.has(node.path);
       const status = node.change?.status ?? "unknown";
+      const isSelected = selectedChange?.path === node.path && selectedChange?.vcsType === node.change?.vcsType;
 
       return (
         <div className="tree-node" key={node.path}>
           <button
-            className={`tree-row change-tree-row ${isDirectory ? "directory" : "file"}`}
+            className={`tree-row change-tree-row ${isDirectory ? "directory" : "file"} ${isSelected ? "selected" : ""}`}
             type="button"
             style={{ "--tree-level": level } as CSSProperties}
-            onClick={() => (isDirectory ? toggleChangeNode(node.path) : undefined)}
+            onClick={() => (isDirectory ? toggleChangeNode(node.path) : void handleSelectChange(node.path, node.change))}
           >
             <span className="tree-toggle" aria-hidden="true">
               {isDirectory ? (isExpanded ? "v" : ">") : "-"}
@@ -1108,10 +1149,36 @@ function App() {
                 <span data-state="pending">发起评审</span>
                 <span data-state="pending">质量检查</span>
               </div>
-              <div className="review-empty">
-                <h3>{repositoryStatus?.clean ? "可进入评审准备" : "等待审查内容"}</h3>
-                <p>{repositoryStatus ? "后续会在这里承载 Git / SVN 线上评审和质量检查模板。" : "先刷新工作区状态，随后可进入代码评审流程。"}</p>
-              </div>
+              {selectedChange ? (
+                <div className="diff-preview">
+                  <div className="diff-heading">
+                    <div>
+                      <span className={`change-badge ${selectedChange.status}`}>{changeLabels[selectedChange.status]}</span>
+                      <strong>{selectedChange.path}</strong>
+                    </div>
+                    <small>{vcsLabels[selectedChange.vcsType]}</small>
+                  </div>
+                  {diffPreview?.warning ? <p className="diff-warning">{diffPreview.warning}</p> : null}
+                  <pre aria-busy={isDiffLoading}>
+                    {isDiffLoading
+                      ? "正在加载 diff..."
+                      : diffPreview?.content
+                        ? diffPreview.content
+                            .split("\n")
+                            .map((line, index) => (
+                              <span className={diffLineClassName(line)} key={`${index}-${line.slice(0, 16)}`}>
+                                {line || " "}
+                              </span>
+                            ))
+                        : "暂无 diff 内容"}
+                  </pre>
+                </div>
+              ) : (
+                <div className="review-empty">
+                  <h3>{repositoryStatus?.clean ? "可进入评审准备" : "等待审查内容"}</h3>
+                  <p>{repositoryStatus ? "从变更状态中选择一个文件后，这里会展示 Git / SVN diff 预览。" : "先刷新工作区状态，随后可进入代码评审流程。"}</p>
+                </div>
+              )}
             </section>
           </aside>
           ) : null}
