@@ -1,6 +1,6 @@
 import type { ChangeItem, RepositoryDiff } from "../../lib/api";
 import { VcsLabels } from "../../lib/constants";
-import { diffLineClassName } from "../../lib/utils";
+import { DiffCodeBlock } from "../shared/CodeBlock";
 import { ChangeBadge } from "../shared/ChangeBadge";
 
 interface DiffPanelProps {
@@ -41,19 +41,10 @@ export function DiffPanel({
         </button>
       </div>
       {diffPreview?.warning ? <p className="diff-warning">{diffPreview.warning}</p> : null}
-      <pre aria-busy={isDiffLoading}>
-        {isDiffLoading
-          ? "正在加载 diff..."
-          : diffPreview?.content
-            ? diffPreview.content
-                .split("\n")
-                .map((line, index) => (
-                  <span className={diffLineClassName(line)} key={`${index}-${line.slice(0, 16)}`}>
-                    {line || " "}
-                  </span>
-                ))
-            : "暂无 diff 内容"}
-      </pre>
+      <DiffCodeBlock
+        content={isDiffLoading ? "正在加载 diff..." : diffPreview?.content || "暂无 diff 内容"}
+        path={selectedChange.path}
+      />
     </section>
   );
 }

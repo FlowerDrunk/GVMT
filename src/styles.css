@@ -65,6 +65,13 @@
   --diff-hunk-bg: #eef4ff;
   --diff-hunk-fg: #285dbb;
   --diff-meta-fg: #69778c;
+  --syntax-comment: #7b8794;
+  --syntax-keyword: #7c3aed;
+  --syntax-string: #0f766e;
+  --syntax-number: #b45309;
+  --syntax-property: #2563eb;
+  --syntax-tag: #be123c;
+  --syntax-gutter: #9aa6b8;
 
   /* Scrollbar */
   --scrollbar-thumb: rgba(37, 99, 235, 0.42);
@@ -117,6 +124,13 @@
   --diff-hunk-bg: #1e2840;
   --diff-hunk-fg: #7aa2f5;
   --diff-meta-fg: #8a93ab;
+  --syntax-comment: #75809a;
+  --syntax-keyword: #c4b5fd;
+  --syntax-string: #7dd3c7;
+  --syntax-number: #f7c873;
+  --syntax-property: #93c5fd;
+  --syntax-tag: #f0a6b6;
+  --syntax-gutter: #667085;
   --scrollbar-thumb: rgba(91, 141, 239, 0.38);
   --scrollbar-track: transparent;
   --shadow: 0 12px 36px rgba(0, 0, 0, 0.25);
@@ -167,6 +181,13 @@
     --diff-hunk-bg: #1e2840;
     --diff-hunk-fg: #7aa2f5;
     --diff-meta-fg: #8a93ab;
+    --syntax-comment: #75809a;
+    --syntax-keyword: #c4b5fd;
+    --syntax-string: #7dd3c7;
+    --syntax-number: #f7c873;
+    --syntax-property: #93c5fd;
+    --syntax-tag: #f0a6b6;
+    --syntax-gutter: #667085;
     --scrollbar-thumb: rgba(91, 141, 239, 0.38);
     --scrollbar-track: transparent;
     --shadow: 0 12px 36px rgba(0, 0, 0, 0.25);
@@ -985,38 +1006,37 @@ textarea:focus {
   white-space: pre;
 }
 
-.diff-preview pre span {
-  display: block;
+.diff-preview pre .code-line {
   min-width: max-content;
   padding: 0 14px;
 }
 
-.diff-preview pre .added,
-.diff-panel pre .added {
+.diff-preview pre .code-line.added,
+.diff-panel pre .code-line.added {
   background: var(--diff-added-bg);
   color: var(--diff-added-fg);
 }
 
-.diff-preview pre .deleted,
-.diff-panel pre .deleted {
+.diff-preview pre .code-line.deleted,
+.diff-panel pre .code-line.deleted {
   background: var(--danger-hover-bg);
   color: var(--danger-fg);
 }
 
-.diff-preview pre .hunk,
-.diff-panel pre .hunk {
+.diff-preview pre .code-line.hunk,
+.diff-panel pre .code-line.hunk {
   background: var(--diff-hunk-bg);
   color: var(--diff-hunk-fg);
   font-weight: 750;
 }
 
-.diff-preview pre .meta,
-.diff-panel pre .meta {
+.diff-preview pre .code-line.meta,
+.diff-panel pre .code-line.meta {
   color: var(--diff-meta-fg);
   font-weight: 750;
 }
 
-.diff-panel pre .context {
+.diff-panel pre .code-line.context {
   color: var(--text);
 }
 
@@ -1140,7 +1160,8 @@ textarea:focus {
   padding: 8px 13px;
 }
 
-.file-preview-pane pre {
+.code-block {
+  display: block;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -1155,6 +1176,62 @@ textarea:focus {
   white-space: pre;
   scrollbar-color: rgba(97, 112, 133, 0.28) transparent;
   scrollbar-width: thin;
+}
+
+.code-block code {
+  display: block;
+  min-width: max-content;
+}
+
+.code-line {
+  display: grid;
+  grid-template-columns: 44px minmax(max-content, 1fr);
+  min-width: max-content;
+}
+
+.code-gutter {
+  user-select: none;
+  color: var(--syntax-gutter);
+  padding-right: 14px;
+  text-align: right;
+}
+
+.code-content {
+  white-space: pre;
+}
+
+.syntax-comment {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+
+.syntax-keyword {
+  color: var(--syntax-keyword);
+  font-weight: 700;
+}
+
+.syntax-string {
+  color: var(--syntax-string);
+}
+
+.syntax-number {
+  color: var(--syntax-number);
+}
+
+.syntax-property {
+  color: var(--syntax-property);
+}
+
+.syntax-tag {
+  color: var(--syntax-tag);
+  font-weight: 650;
+}
+
+.diff-prefix {
+  display: inline-block;
+  width: 14px;
+  color: currentColor;
+  font-weight: 800;
 }
 
 .change-tree {
@@ -1346,8 +1423,7 @@ textarea:focus {
   font-weight: 700;
 }
 
-.diff-panel pre span {
-  display: block;
+.diff-panel pre .code-line {
   min-width: max-content;
   padding: 0 16px;
 }

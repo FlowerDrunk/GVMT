@@ -14,7 +14,6 @@ import {
   buildFileEntryMap,
   changeTreeToViewNodes,
   ChangeTreeNode,
-  diffLineClassName,
   fileBreadcrumbs,
   formatFileSize,
   formatModifiedAt,
@@ -46,6 +45,7 @@ import { OperationPanel } from "./components/workspace/OperationPanel";
 import { StatusBar, IgnoreContextMenuOverlay } from "./components/workspace/StatusBar";
 import { TabPanel } from "./components/shared/TabPanel";
 import { Modal, ModalHeading } from "./components/shared/Modal";
+import { DiffCodeBlock } from "./components/shared/CodeBlock";
 
 function App() {
   const [status, setStatus] = useState("准备就绪");
@@ -381,17 +381,14 @@ function App() {
             </div>
           ) : null}
           {changeTree.diffPreview?.warning ? <p className="diff-warning">{changeTree.diffPreview.warning}</p> : null}
-          <pre>
-            {changeTree.isDiffLoading
-              ? "正在加载 diff..."
-              : changeTree.diffPreview?.content
-                ? changeTree.diffPreview.content.split("\n").map((line: string, index: number) => (
-                    <span className={diffLineClassName(line)} key={`${index}-${line.slice(0, 16)}`}>
-                      {line || " "}
-                    </span>
-                  ))
-                : "暂无 diff 内容"}
-          </pre>
+          <DiffCodeBlock
+            content={
+              changeTree.isDiffLoading
+                ? "正在加载 diff..."
+                : changeTree.diffPreview?.content || "暂无 diff 内容"
+            }
+            path={changeTree.selectedChange?.path}
+          />
         </section>
       </Modal>
 

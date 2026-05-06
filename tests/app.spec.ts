@@ -148,7 +148,8 @@ test("workbench layout is clear and commit/delete flows open in dialogs", async 
   await appChange.dblclick();
   const diffDialog = page.getByRole("dialog", { name: "src/App.tsx" });
   await expect(diffDialog).toBeVisible();
-  await expect(diffDialog.getByText("+new")).toBeVisible();
+  await expect(diffDialog.getByText("new", { exact: true })).toBeVisible();
+  await expect(diffDialog.locator(".syntax-keyword").first()).toBeVisible();
   await diffDialog.getByRole("button", { name: "×" }).click();
   await expect(diffDialog).toBeHidden();
 

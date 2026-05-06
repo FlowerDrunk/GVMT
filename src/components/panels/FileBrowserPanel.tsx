@@ -5,6 +5,7 @@ import { EmptyState } from "../shared/EmptyState";
 import { TreeView } from "../shared/TreeView";
 import { formatFileSize, formatModifiedAt } from "../../lib/utils";
 import { Modal, ModalHeading } from "../shared/Modal";
+import { CodeBlock } from "../shared/CodeBlock";
 
 interface FileBrowserPanelProps {
   repositoryFiles: RepositoryDirectory | null;
@@ -139,7 +140,7 @@ export function FileBrowserPanel({
               {selectedFilePreview.isBinary ? (
                 <EmptyState compact title="二进制文件" description="此文件不适合直接作为文本预览。" />
               ) : (
-                <pre>{selectedFilePreview.content || "文件为空"}</pre>
+                <CodeBlock content={selectedFilePreview.content || "文件为空"} path={selectedFilePreview.path} />
               )}
             </aside>
           </>
