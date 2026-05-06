@@ -1,15 +1,171 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
+    env,
     ffi::OsStr,
     fs,
     path::{Path, PathBuf},
     process::Command,
-    time::UNIX_EPOCH,
+    sync::{Mutex, OnceLock},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager};
 #[cfg(windows)]
+use std::os::windows::process::CommandExt;
+#[cfg(windows)]
 use windows_sys::Win32::Globalization::{GetACP, MultiByteToWideChar};
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+fn new_command(program: &str) -> Command {
+    let mut cmd = std::process::Command::new(program);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
+static STARTUP_CONTEXT: OnceLock<Mutex<Option<StartupContext>>> = OnceLock::new();
+
+#[cfg(windows)]
+fn show_message_box(title: &str, message: &str) {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_OK, MB_ICONINFORMATION, MB_ICONERROR};
+
+    let title_wide: Vec<u16> = OsStr::new(title).encode_wide().chain(Some(0)).collect();
+    let msg_wide: Vec<u16> = OsStr::new(message).encode_wide().chain(Some(0)).collect();
+    let icon = if message.contains("失败") || message.contains("错误") {
+        MB_ICONERROR
+    } else {
+        MB_ICONINFORMATION
+    };
+    unsafe {
+        MessageBoxW(std::ptr::null_mut(), msg_wide.as_ptr(), title_wide.as_ptr(), MB_OK | icon);
+    }
+}
+
+#[cfg(not(windows))]
+fn show_message_box(title: &str, message: &str) {
+    eprintln!("{title}: {message}");
+}
+
+fn database_path_fallback() -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Ok(appdata) = env::var("APPDATA") {
+            return PathBuf::from(appdata).join("com.flowerdrunk.gvmt").join("gvmt.sqlite");
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        if let Ok(home) = env::var("HOME") {
+            return PathBuf::from(home).join(".local/share/com.flowerdrunk.gvmt").join("gvmt.sqlite");
+        }
+    }
+    PathBuf::from("gvmt.sqlite")
+}
+
+fn do_update_repository(path: &str) -> Result<String, String> {
+    let detected = detect_repository(path.to_string())?;
+
+    let db_path = database_path_fallback();
+    if let Some(parent) = db_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let connection = Connection::open(&db_path).map_err(|e| e.to_string())?;
+
+    // Find or create repo
+    let mut stmt = connection
+        .prepare("SELECT id FROM repositories WHERE path = ?1")
+        .map_err(|e| e.to_string())?;
+    let existing: Option<i64> = stmt
+        .query_row(params![detected.path], |row| row.get(0))
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    let id = if let Some(id) = existing {
+        id
+    } else {
+        connection
+            .execute(
+                "INSERT INTO repositories (name, path, vcs_type, remote_url, branch_or_revision)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![detected.name, detected.path, detected.vcs_type, detected.remote_url, detected.branch_or_revision],
+            )
+            .map_err(|e| e.to_string())?;
+        connection.last_insert_rowid()
+    };
+
+    let results = match detected.vcs_type.as_str() {
+        "git" => {
+            let pull_out = run_command(["git", "-C", path, "pull", "--ff-only"])?;
+            vec![OperationResult {
+                operation: "update".to_string(), vcs_type: "git".to_string(),
+                success: true,
+                summary: if pull_out.contains("Already up to date") { "Git 已是最新".to_string() } else { "Git 更新完成".to_string() },
+                output: pull_out, warning: None, missing_svn_cli: false,
+            }]
+        }
+        "svn" => {
+            let update_out = run_command(["svn", "update", path])?;
+            vec![OperationResult {
+                operation: "update".to_string(), vcs_type: "svn".to_string(),
+                success: true, summary: "SVN 更新完成".to_string(),
+                output: update_out, warning: None, missing_svn_cli: false,
+            }]
+        }
+        _ => return Err("当前目录未识别为 Git 或 SVN 仓库".to_string()),
+    };
+
+    let failed: Vec<_> = results.iter().filter(|r| !r.success).collect();
+    if failed.is_empty() {
+        Ok("更新完成".to_string())
+    } else {
+        Ok(format!("{} 个步骤失败", failed.len()))
+    }
+}
+
+pub fn execute_background_action() -> bool {
+    let context = match parse_startup_context() {
+        Some(ctx) => ctx,
+        None => return false,
+    };
+
+    if context.action == "open" || context.action == "commit" {
+        STARTUP_CONTEXT
+            .get_or_init(|| Mutex::new(None))
+            .lock()
+            .ok()
+            .map(|mut guard| *guard = Some(context));
+        return false;
+    }
+
+    if context.action == "detect" {
+        match detect_repository(context.path.clone()) {
+            Ok(detected) => show_message_box(
+                "GVMT — 仓库检测",
+                &format!("路径：{}\n类型：{}\n名称：{}", detected.path, detected.vcs_type, detected.name),
+            ),
+            Err(error) => show_message_box("GVMT — 检测失败", &error),
+        }
+        return true;
+    }
+
+    if context.action == "update" {
+        let path = context.path.clone();
+        let result = std::thread::spawn(move || do_update_repository(&path)).join()
+            .unwrap_or_else(|_| Err("后台线程异常".to_string()));
+
+        match result {
+            Ok(summary) => show_message_box("GVMT — 更新仓库", &format!("路径：{}\n{}", context.path, summary)),
+            Err(error) => show_message_box("GVMT — 更新失败", &error),
+        }
+        return true;
+    }
+
+    false
+}
 
 fn os_str_to_string(value: &OsStr) -> String {
     value
@@ -182,6 +338,69 @@ struct OperationResult {
     output: String,
     warning: Option<String>,
     missing_svn_cli: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct StartupContext {
+    action: String,
+    path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowsContextMenuStatus {
+    supported: bool,
+    installed: bool,
+    executable_path: Option<String>,
+    warning: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy)]
+enum QualityCheckType {
+    #[serde(rename = "typescriptBuild")]
+    TypeScriptBuild,
+    #[serde(rename = "playwrightUi")]
+    PlaywrightUi,
+    #[serde(rename = "cargoCheck")]
+    CargoCheck,
+}
+
+#[derive(Debug, Clone)]
+struct QualityCheckDefinition {
+    check_type: QualityCheckType,
+    label: &'static str,
+    command: &'static str,
+    program: &'static str,
+    args: Vec<String>,
+    cwd: PathBuf,
+    unavailable_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QualityCheckTemplate {
+    check_type: String,
+    label: String,
+    command: String,
+    available: bool,
+    unavailable_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QualityCheckResult {
+    check_type: String,
+    label: String,
+    command: String,
+    status: String,
+    success: bool,
+    started_at: u64,
+    finished_at: u64,
+    duration_ms: u64,
+    summary: String,
+    output: String,
+    warning: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -510,6 +729,108 @@ fn update_repository(app: AppHandle, id: i64) -> Result<Vec<OperationResult>, St
     };
 
     Ok(results)
+}
+
+#[tauri::command]
+fn consume_startup_context() -> Result<Option<StartupContext>, String> {
+    let mutex = STARTUP_CONTEXT.get_or_init(|| Mutex::new(parse_startup_context()));
+    let mut context = mutex.lock().map_err(|error| error.to_string())?;
+    Ok(context.take())
+}
+
+#[tauri::command]
+fn get_windows_context_menu_status() -> Result<WindowsContextMenuStatus, String> {
+    if !cfg!(windows) {
+        return Ok(WindowsContextMenuStatus {
+            supported: false,
+            installed: false,
+            executable_path: None,
+            warning: Some("当前平台不支持 Windows 右键菜单。".to_string()),
+        });
+    }
+
+    let executable_path = current_executable_path()?;
+    Ok(WindowsContextMenuStatus {
+        supported: true,
+        installed: windows_context_menu_installed(),
+        executable_path: Some(executable_path),
+        warning: None,
+    })
+}
+
+#[tauri::command]
+fn install_windows_context_menu() -> Result<WindowsContextMenuStatus, String> {
+    if !cfg!(windows) {
+        return Err("当前平台不支持 Windows 右键菜单。".to_string());
+    }
+
+    let executable_path = current_executable_path()?;
+    install_context_menu_root(
+        "HKCU\\Software\\Classes\\Directory\\shell\\GVMT",
+        &executable_path,
+        "%1",
+    )?;
+    install_context_menu_root(
+        "HKCU\\Software\\Classes\\Directory\\Background\\shell\\GVMT",
+        &executable_path,
+        "%V",
+    )?;
+
+    Ok(WindowsContextMenuStatus {
+        supported: true,
+        installed: windows_context_menu_installed(),
+        executable_path: Some(executable_path),
+        warning: None,
+    })
+}
+
+#[tauri::command]
+fn uninstall_windows_context_menu() -> Result<WindowsContextMenuStatus, String> {
+    if !cfg!(windows) {
+        return Err("当前平台不支持 Windows 右键菜单。".to_string());
+    }
+
+    for root in windows_context_menu_roots() {
+        let _ = run_command_args("reg", &["delete".into(), root.to_string(), "/f".into()]);
+    }
+
+    get_windows_context_menu_status()
+}
+
+#[tauri::command]
+fn list_quality_checks(app: AppHandle, id: i64) -> Result<Vec<QualityCheckTemplate>, String> {
+    let connection = open_database(&app)?;
+    let repository = find_repository_by_id(&connection, id)?
+        .ok_or_else(|| "未找到需要检查的仓库".to_string())?;
+
+    Ok([
+        QualityCheckType::TypeScriptBuild,
+        QualityCheckType::PlaywrightUi,
+        QualityCheckType::CargoCheck,
+    ]
+    .into_iter()
+    .map(|check_type| quality_check_definition(&repository.path, check_type).into_template())
+    .collect())
+}
+
+#[tauri::command]
+async fn run_quality_check(
+    app: AppHandle,
+    id: i64,
+    check_type: QualityCheckType,
+) -> Result<QualityCheckResult, String> {
+    let connection = open_database(&app)?;
+    let repository = find_repository_by_id(&connection, id)?
+        .ok_or_else(|| "未找到需要检查的仓库".to_string())?;
+    let definition = quality_check_definition(&repository.path, check_type);
+
+    if let Some(reason) = &definition.unavailable_reason {
+        return Ok(definition.unavailable_result(reason));
+    }
+
+    tauri::async_runtime::spawn_blocking(move || definition.run())
+        .await
+        .map_err(|error| format!("质量检查任务启动失败：{error}"))
 }
 
 #[tauri::command]
@@ -1587,6 +1908,357 @@ fn svn_absolute_path(root_path: &str, relative_path: &str) -> Result<String, Str
     Ok(os_str_to_string(joined.as_os_str()))
 }
 
+impl QualityCheckType {
+    fn key(self) -> &'static str {
+        match self {
+            QualityCheckType::TypeScriptBuild => "typescriptBuild",
+            QualityCheckType::PlaywrightUi => "playwrightUi",
+            QualityCheckType::CargoCheck => "cargoCheck",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            QualityCheckType::TypeScriptBuild => "TypeScript build",
+            QualityCheckType::PlaywrightUi => "Playwright UI 测试",
+            QualityCheckType::CargoCheck => "Rust cargo check",
+        }
+    }
+}
+
+impl QualityCheckDefinition {
+    fn into_template(self) -> QualityCheckTemplate {
+        QualityCheckTemplate {
+            check_type: self.check_type.key().to_string(),
+            label: self.label.to_string(),
+            command: self.command.to_string(),
+            available: self.unavailable_reason.is_none(),
+            unavailable_reason: self.unavailable_reason,
+        }
+    }
+
+    fn unavailable_result(&self, reason: &str) -> QualityCheckResult {
+        let now = now_epoch_seconds();
+        QualityCheckResult {
+            check_type: self.check_type.key().to_string(),
+            label: self.label.to_string(),
+            command: self.command.to_string(),
+            status: "failed".to_string(),
+            success: false,
+            started_at: now,
+            finished_at: now,
+            duration_ms: 0,
+            summary: format!("{} 不可用", self.label),
+            output: reason.to_string(),
+            warning: Some(reason.to_string()),
+        }
+    }
+
+    fn run(&self) -> QualityCheckResult {
+        let started_at = now_epoch_seconds();
+        let timer = Instant::now();
+        let resolved_program = resolve_program(self.program);
+        let output = new_command(&resolved_program)
+            .current_dir(&self.cwd)
+            .args(&self.args)
+            .output();
+        let finished_at = now_epoch_seconds();
+        let duration_ms = timer.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+
+        match output {
+            Ok(output) => {
+                let stdout = decode_command_output(&output.stdout);
+                let stderr = decode_command_output(&output.stderr);
+                let combined = combine_command_streams(&stdout, &stderr);
+                let display_output = summarize_check_output(&combined);
+                let success = output.status.success();
+                let exit_code = output
+                    .status
+                    .code()
+                    .map(|code| code.to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                QualityCheckResult {
+                    check_type: self.check_type.key().to_string(),
+                    label: self.label.to_string(),
+                    command: self.command.to_string(),
+                    status: if success { "success" } else { "failed" }.to_string(),
+                    success,
+                    started_at,
+                    finished_at,
+                    duration_ms,
+                    summary: if success {
+                        format!("{} 通过，用时 {}", self.label, format_duration(duration_ms))
+                    } else {
+                        format!("{} 失败，退出码 {}", self.label, exit_code)
+                    },
+                    output: if display_output.is_empty() {
+                        "命令执行完成，没有额外输出。".to_string()
+                    } else {
+                        display_output
+                    },
+                    warning: if success {
+                        None
+                    } else {
+                        Some(format!("{} 执行失败，请查看输出摘要。", self.command))
+                    },
+                }
+            }
+            Err(error) => QualityCheckResult {
+                check_type: self.check_type.key().to_string(),
+                label: self.label.to_string(),
+                command: self.command.to_string(),
+                status: "failed".to_string(),
+                success: false,
+                started_at,
+                finished_at,
+                duration_ms,
+                summary: format!("{} 启动失败", self.label),
+                output: error.to_string(),
+                warning: Some(format!("无法启动 {}：{}", self.command, error)),
+            },
+        }
+    }
+}
+
+fn quality_check_definition(
+    root_path: &str,
+    check_type: QualityCheckType,
+) -> QualityCheckDefinition {
+    let root = PathBuf::from(root_path);
+    match check_type {
+        QualityCheckType::TypeScriptBuild => npm_script_check(
+            check_type,
+            "npm run build",
+            "build",
+            root,
+            "package.json 中没有 build 脚本，无法运行 TypeScript build。",
+        ),
+        QualityCheckType::PlaywrightUi => npm_script_check(
+            check_type,
+            "npm run test:ui",
+            "test:ui",
+            root,
+            "package.json 中没有 test:ui 脚本，无法运行 Playwright UI 测试。",
+        ),
+        QualityCheckType::CargoCheck => cargo_check_definition(check_type, root),
+    }
+}
+
+fn npm_script_check(
+    check_type: QualityCheckType,
+    command: &'static str,
+    script: &str,
+    root: PathBuf,
+    missing_script_message: &str,
+) -> QualityCheckDefinition {
+    let package_json = root.join("package.json");
+    let unavailable_reason = if !package_json.exists() {
+        Some("当前仓库没有 package.json，无法运行 npm 检查。".to_string())
+    } else if !package_json_has_script(&package_json, script) {
+        Some(missing_script_message.to_string())
+    } else {
+        None
+    };
+
+    QualityCheckDefinition {
+        check_type,
+        label: check_type.label(),
+        command,
+        program: "npm",
+        args: vec!["run".to_string(), script.to_string()],
+        cwd: root,
+        unavailable_reason,
+    }
+}
+
+fn cargo_check_definition(check_type: QualityCheckType, root: PathBuf) -> QualityCheckDefinition {
+    let src_tauri = root.join("src-tauri");
+    let cwd = if src_tauri.join("Cargo.toml").exists() {
+        src_tauri
+    } else {
+        root.clone()
+    };
+    let unavailable_reason = if cwd.join("Cargo.toml").exists() {
+        None
+    } else {
+        Some("当前仓库没有 Cargo.toml，无法运行 cargo check。".to_string())
+    };
+
+    QualityCheckDefinition {
+        check_type,
+        label: check_type.label(),
+        command: "cargo check",
+        program: "cargo",
+        args: vec!["check".to_string()],
+        cwd,
+        unavailable_reason,
+    }
+}
+
+fn package_json_has_script(package_json: &Path, script: &str) -> bool {
+    fs::read_to_string(package_json)
+        .ok()
+        .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+        .and_then(|value| {
+            value
+                .get("scripts")
+                .and_then(|scripts| scripts.get(script))
+                .cloned()
+        })
+        .is_some()
+}
+
+fn combine_command_streams(stdout: &str, stderr: &str) -> String {
+    match (stdout.trim().is_empty(), stderr.trim().is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => stdout.trim().to_string(),
+        (true, false) => stderr.trim().to_string(),
+        (false, false) => format!("{}\n\n{}", stdout.trim(), stderr.trim()),
+    }
+}
+
+fn summarize_check_output(output: &str) -> String {
+    const MAX_LINES: usize = 80;
+    const MAX_CHARS: usize = 12_000;
+
+    let lines = output.lines().collect::<Vec<_>>();
+    let tail = if lines.len() > MAX_LINES {
+        lines[lines.len() - MAX_LINES..].join("\n")
+    } else {
+        output.to_string()
+    };
+
+    let mut chars = tail.chars().collect::<Vec<_>>();
+    if chars.len() > MAX_CHARS {
+        chars = chars[chars.len() - MAX_CHARS..].to_vec();
+        format!("...{}", chars.into_iter().collect::<String>())
+    } else {
+        tail
+    }
+}
+
+fn format_duration(duration_ms: u64) -> String {
+    if duration_ms < 1_000 {
+        format!("{duration_ms}ms")
+    } else {
+        format!("{:.1}s", duration_ms as f64 / 1_000.0)
+    }
+}
+
+fn now_epoch_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default()
+}
+
+fn parse_startup_context() -> Option<StartupContext> {
+    let mut args = env::args().skip(1);
+    while let Some(arg) = args.next() {
+        let action = match arg.as_str() {
+            "--gvmt-open" => "open",
+            "--gvmt-detect" => "detect",
+            "--gvmt-update" => "update",
+            "--gvmt-commit" => "commit",
+            _ => continue,
+        };
+        let path = args.next()?.trim_matches('"').to_string();
+        if path.trim().is_empty() {
+            return None;
+        }
+
+        return Some(StartupContext {
+            action: action.to_string(),
+            path,
+        });
+    }
+
+    None
+}
+
+fn current_executable_path() -> Result<String, String> {
+    env::current_exe()
+        .map(|path| os_str_to_string(path.as_os_str()))
+        .map_err(|error| format!("无法读取当前程序路径：{error}"))
+}
+
+fn windows_context_menu_roots() -> [&'static str; 2] {
+    [
+        "HKCU\\Software\\Classes\\Directory\\shell\\GVMT",
+        "HKCU\\Software\\Classes\\Directory\\Background\\shell\\GVMT",
+    ]
+}
+
+fn windows_context_menu_installed() -> bool {
+    windows_context_menu_roots()
+        .into_iter()
+        .all(|root| run_command(["reg", "query", root]).is_ok())
+}
+
+fn install_context_menu_root(
+    root: &str,
+    executable_path: &str,
+    path_token: &str,
+) -> Result<(), String> {
+    set_registry_value(root, "MUIVerb", "GVMT")?;
+    set_registry_value(root, "Icon", executable_path)?;
+    set_registry_value(root, "SubCommands", "")?;
+
+    for (key, label, action) in [
+        ("open", "用 GVMT 打开", "--gvmt-open"),
+        ("detect", "检测仓库", "--gvmt-detect"),
+        ("update", "更新仓库", "--gvmt-update"),
+        ("commit", "提交变更", "--gvmt-commit"),
+    ] {
+        let item_key = format!("{root}\\shell\\{key}");
+        set_registry_default_value(&item_key, label)?;
+        set_registry_value(&item_key, "Icon", executable_path)?;
+        let command_key = format!("{item_key}\\command");
+        set_registry_default_value(
+            &command_key,
+            &format!("\"{executable_path}\" {action} \"{path_token}\""),
+        )?;
+    }
+
+    Ok(())
+}
+
+fn set_registry_default_value(key: &str, value: &str) -> Result<(), String> {
+    run_command_args(
+        "reg",
+        &[
+            "add".into(),
+            key.into(),
+            "/ve".into(),
+            "/t".into(),
+            "REG_SZ".into(),
+            "/d".into(),
+            value.into(),
+            "/f".into(),
+        ],
+    )
+    .map(|_| ())
+}
+
+fn set_registry_value(key: &str, name: &str, value: &str) -> Result<(), String> {
+    run_command_args(
+        "reg",
+        &[
+            "add".into(),
+            key.into(),
+            "/v".into(),
+            name.into(),
+            "/t".into(),
+            "REG_SZ".into(),
+            "/d".into(),
+            value.into(),
+            "/f".into(),
+        ],
+    )
+    .map(|_| ())
+}
+
 fn success_operation(
     operation: &str,
     vcs_type: &str,
@@ -1705,7 +2377,7 @@ fn is_missing_svn_cli_error(error: &str) -> bool {
 
 fn open_url(url: &str) -> Result<(), String> {
     if cfg!(windows) {
-        Command::new("rundll32")
+        new_command("rundll32")
             .args(["url.dll,FileProtocolHandler", url])
             .spawn()
             .map(|_| ())
@@ -1718,7 +2390,7 @@ fn open_url(url: &str) -> Result<(), String> {
 fn run_command<const N: usize>(parts: [&str; N]) -> Result<String, String> {
     let (program, args) = parts.split_first().ok_or_else(|| "命令为空".to_string())?;
     let resolved_program = resolve_program(program);
-    let output = Command::new(&resolved_program)
+    let output = new_command(&resolved_program)
         .args(args)
         .output()
         .map_err(|error| error.to_string())?;
@@ -1737,7 +2409,7 @@ fn run_command<const N: usize>(parts: [&str; N]) -> Result<String, String> {
 
 fn run_command_args(program: &str, args: &[String]) -> Result<String, String> {
     let resolved_program = resolve_program(program);
-    let output = Command::new(&resolved_program)
+    let output = new_command(&resolved_program)
         .args(args)
         .output()
         .map_err(|error| error.to_string())?;
@@ -1755,14 +2427,18 @@ fn run_command_args(program: &str, args: &[String]) -> Result<String, String> {
 }
 
 fn resolve_program(program: &str) -> String {
-    if program != "svn" || !cfg!(windows) {
+    if !cfg!(windows) {
         return program.to_string();
     }
 
-    svn_executable_candidates()
-        .into_iter()
-        .find(|candidate| Path::new(candidate).exists())
-        .unwrap_or_else(|| program.to_string())
+    match program {
+        "npm" => "npm.cmd".to_string(),
+        "svn" => svn_executable_candidates()
+            .into_iter()
+            .find(|candidate| Path::new(candidate).exists())
+            .unwrap_or_else(|| program.to_string()),
+        _ => program.to_string(),
+    }
 }
 
 fn svn_executable_candidates() -> Vec<String> {
@@ -1803,7 +2479,7 @@ fn tortoise_svn_registry_directories() -> Vec<String> {
 }
 
 fn registry_value(key: &str, value: &str) -> Option<String> {
-    let output = Command::new("reg")
+    let output = new_command("reg")
         .args(["query", key, "/v", value])
         .output()
         .ok()?;
@@ -1979,8 +2655,8 @@ struct BranchInfo {
 #[tauri::command]
 fn list_branches(app: AppHandle, id: i64) -> Result<Vec<BranchInfo>, String> {
     let connection = open_database(&app)?;
-    let repository = find_repository_by_id(&connection, id)?
-        .ok_or_else(|| "未找到仓库".to_string())?;
+    let repository =
+        find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
 
     match repository.vcs_type.as_str() {
         "git" => {
@@ -1997,16 +2673,24 @@ fn list_branches(app: AppHandle, id: i64) -> Result<Vec<BranchInfo>, String> {
                 .collect())
         }
         "svn" => {
-            let output =
-                run_command(["svn", "info", "--show-item", "relative-url", &repository.path])?;
+            let output = run_command([
+                "svn",
+                "info",
+                "--show-item",
+                "relative-url",
+                &repository.path,
+            ])?;
             let base_url = output.trim().to_string();
             // List standard SVN layout branches
             let mut branches = vec![BranchInfo {
                 name: format!("trunk ({base_url})"),
                 is_current: !base_url.contains("branches"),
             }];
-            if let Ok(list) = run_command(["svn", "ls", &format!("{}/../branches", base_url.trim_end_matches("/trunk"))])
-            {
+            if let Ok(list) = run_command([
+                "svn",
+                "ls",
+                &format!("{}/../branches", base_url.trim_end_matches("/trunk")),
+            ]) {
                 for line in list.lines() {
                     let name = line.trim().trim_end_matches('/');
                     if !name.is_empty() {
@@ -2024,19 +2708,14 @@ fn list_branches(app: AppHandle, id: i64) -> Result<Vec<BranchInfo>, String> {
 }
 
 #[tauri::command]
-fn switch_branch(
-    app: AppHandle,
-    id: i64,
-    branch: String,
-) -> Result<OperationResult, String> {
+fn switch_branch(app: AppHandle, id: i64, branch: String) -> Result<OperationResult, String> {
     let connection = open_database(&app)?;
-    let repository = find_repository_by_id(&connection, id)?
-        .ok_or_else(|| "未找到仓库".to_string())?;
+    let repository =
+        find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
 
     match repository.vcs_type.as_str() {
         "git" => {
-            let output =
-                run_command(["git", "-C", &repository.path, "checkout", &branch])?;
+            let output = run_command(["git", "-C", &repository.path, "checkout", &branch])?;
             Ok(OperationResult {
                 operation: "checkout".to_string(),
                 vcs_type: "git".to_string(),
@@ -2048,8 +2727,7 @@ fn switch_branch(
             })
         }
         "svn" => {
-            let output =
-                run_command(["svn", "switch", &branch, &repository.path])?;
+            let output = run_command(["svn", "switch", &branch, &repository.path])?;
             Ok(OperationResult {
                 operation: "switch".to_string(),
                 vcs_type: "svn".to_string(),
@@ -2071,18 +2749,24 @@ pub fn run() {
             add_ignore_rule,
             add_repository,
             commit_repository,
+            consume_startup_context,
             delete_repository,
             detect_repository,
+            get_windows_context_menu_status,
             get_ignore_rules,
             get_repository_diff,
             get_repository_status,
+            install_windows_context_menu,
             list_branches,
+            list_quality_checks,
             list_repository_files,
             list_repositories,
             open_svn_cli_download_page,
             read_repository_file,
             refresh_repository,
+            run_quality_check,
             switch_branch,
+            uninstall_windows_context_menu,
             update_gitignore,
             update_repository,
             update_svn_ignore

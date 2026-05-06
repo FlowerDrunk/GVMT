@@ -10,7 +10,9 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "PowerShell(Add-Type -AssemblyName System.Drawing; $img = [System.Drawing.Image]::FromFile\\(\"C:\\\\Users\\\\31047\\\\Desktop\\\\GVMT\\\\src-tauri\\\\icons\\\\main.png\"\\); Write-Output \"Size: $\\($img.Width\\)x$\\($img.Height\\)\"; $img.Dispose\\(\\))",
+      "Bash(npm run *)"
     ]
   }
 }

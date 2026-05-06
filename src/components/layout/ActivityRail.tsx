@@ -1,4 +1,5 @@
 import type { VisibleSections } from "../../hooks/useVisibleSections";
+import type { Translator } from "../../lib/i18n";
 
 interface ActivityRailProps {
   visibleSections: VisibleSections;
@@ -6,6 +7,7 @@ interface ActivityRailProps {
   themeMode: "light" | "dark" | "system";
   setThemeMode: (mode: "light" | "dark" | "system") => void;
   isLoading: boolean;
+  t: Translator;
   onOpenSettings: () => void;
 }
 
@@ -15,61 +17,62 @@ export function ActivityRail({
   themeMode,
   setThemeMode,
   isLoading,
+  t,
   onOpenSettings,
 }: ActivityRailProps) {
   return (
-    <aside className="activity-rail" aria-label="主导航">
+    <aside className="activity-rail" aria-label={t("activity.aria")}>
       <div className="rail-logo">G</div>
       <nav className="rail-nav">
         <button
           className={`rail-button ${visibleSections.repositories ? "active" : ""}`}
           type="button"
-          title={visibleSections.repositories ? "关闭仓库管理" : "打开仓库管理"}
+          title={visibleSections.repositories ? t("activity.closeRepositories") : t("activity.openRepositories")}
           aria-pressed={visibleSections.repositories}
           onClick={() => toggleSection("repositories")}
         >
           <span aria-hidden="true">□</span>
-          <small>仓库</small>
+          <small>{t("activity.repositories")}</small>
         </button>
         <button
           className={`rail-button ${visibleSections.files ? "active" : ""}`}
           type="button"
-          title={visibleSections.files ? "关闭文件浏览" : "打开文件浏览"}
+          title={visibleSections.files ? t("activity.closeFiles") : t("activity.openFiles")}
           aria-pressed={visibleSections.files}
           onClick={() => toggleSection("files")}
         >
           <span aria-hidden="true">▤</span>
-          <small>文件</small>
+          <small>{t("activity.files")}</small>
         </button>
         <button
           className={`rail-button ${visibleSections.changes ? "active" : ""}`}
           type="button"
-          title={visibleSections.changes ? "关闭变更状态" : "打开变更状态"}
+          title={visibleSections.changes ? t("activity.closeChanges") : t("activity.openChanges")}
           aria-pressed={visibleSections.changes}
           onClick={() => toggleSection("changes")}
         >
           <span aria-hidden="true">✓</span>
-          <small>变更</small>
+          <small>{t("activity.changes")}</small>
         </button>
         <button
           className={`rail-button ${visibleSections.review ? "active" : ""}`}
           type="button"
-          title={visibleSections.review ? "关闭评审质量" : "打开评审质量"}
+          title={visibleSections.review ? t("activity.closeReview") : t("activity.openReview")}
           aria-pressed={visibleSections.review}
           onClick={() => toggleSection("review")}
         >
           <span aria-hidden="true">◎</span>
-          <small>评审</small>
+          <small>{t("activity.review")}</small>
         </button>
-        <button className="rail-button" type="button" title="设置" onClick={onOpenSettings}>
+        <button className="rail-button" type="button" title={t("activity.settings")} onClick={onOpenSettings}>
           <span aria-hidden="true">⚙</span>
-          <small>设置</small>
+          <small>{t("activity.settings")}</small>
         </button>
         <button
           className="rail-button"
           type="button"
           title={
-            themeMode === "light" ? "浅色主题" : themeMode === "dark" ? "深色主题" : "跟随系统"
+            themeMode === "light" ? t("activity.light") : themeMode === "dark" ? t("activity.dark") : t("activity.system")
           }
           onClick={() => {
             const next =
@@ -78,10 +81,10 @@ export function ActivityRail({
           }}
         >
           <span aria-hidden="true">{themeMode === "light" ? "☀" : themeMode === "dark" ? "☾" : "⊡"}</span>
-          <small>{themeMode === "light" ? "浅色" : themeMode === "dark" ? "深色" : "系统"}</small>
+          <small>{themeMode === "light" ? t("activity.light") : themeMode === "dark" ? t("activity.dark") : t("activity.system")}</small>
         </button>
       </nav>
-      <div className="rail-status" title={isLoading ? "处理中" : "准备就绪"}>
+      <div className="rail-status" title={isLoading ? t("activity.busy") : t("activity.ready")}>
         <span className={isLoading ? "status-dot busy" : "status-dot"} />
       </div>
     </aside>

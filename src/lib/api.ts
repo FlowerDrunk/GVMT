@@ -91,6 +91,45 @@ export interface OperationResult {
   missingSvnCli: boolean;
 }
 
+export type StartupAction = "open" | "detect" | "update" | "commit";
+
+export interface StartupContext {
+  action: StartupAction;
+  path: string;
+}
+
+export interface WindowsContextMenuStatus {
+  supported: boolean;
+  installed: boolean;
+  executablePath: string | null;
+  warning: string | null;
+}
+
+export type QualityCheckType = "typescriptBuild" | "playwrightUi" | "cargoCheck";
+export type QualityCheckStatus = "idle" | "running" | "success" | "failed";
+
+export interface QualityCheckTemplate {
+  checkType: QualityCheckType;
+  label: string;
+  command: string;
+  available: boolean;
+  unavailableReason: string | null;
+}
+
+export interface QualityCheckResult {
+  checkType: QualityCheckType;
+  label: string;
+  command: string;
+  status: Exclude<QualityCheckStatus, "idle" | "running">;
+  success: boolean;
+  startedAt: number;
+  finishedAt: number;
+  durationMs: number;
+  summary: string;
+  output: string;
+  warning: string | null;
+}
+
 export type RepositoryFileEntryType = "directory" | "file";
 
 export interface RepositoryFileEntry {
@@ -159,6 +198,30 @@ export async function openSvnCliDownloadPage(target: "tortoise" | "sliksvn"): Pr
 
 export async function updateRepository(id: number): Promise<OperationResult[]> {
   return invoke<OperationResult[]>("update_repository", { id });
+}
+
+export async function consumeStartupContext(): Promise<StartupContext | null> {
+  return invoke<StartupContext | null>("consume_startup_context");
+}
+
+export async function getWindowsContextMenuStatus(): Promise<WindowsContextMenuStatus> {
+  return invoke<WindowsContextMenuStatus>("get_windows_context_menu_status");
+}
+
+export async function installWindowsContextMenu(): Promise<WindowsContextMenuStatus> {
+  return invoke<WindowsContextMenuStatus>("install_windows_context_menu");
+}
+
+export async function uninstallWindowsContextMenu(): Promise<WindowsContextMenuStatus> {
+  return invoke<WindowsContextMenuStatus>("uninstall_windows_context_menu");
+}
+
+export async function listQualityChecks(id: number): Promise<QualityCheckTemplate[]> {
+  return invoke<QualityCheckTemplate[]>("list_quality_checks", { id });
+}
+
+export async function runQualityCheck(id: number, checkType: QualityCheckType): Promise<QualityCheckResult> {
+  return invoke<QualityCheckResult>("run_quality_check", { id, checkType });
 }
 
 export async function commitRepository(id: number, input: CommitRequest): Promise<OperationResult[]> {

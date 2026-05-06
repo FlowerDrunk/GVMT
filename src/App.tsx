@@ -1,10 +1,21 @@
-import { FormEvent, MouseEvent, useEffect, useState } from "react";
+import { FormEvent, MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import fileIconUrl from "../src-tauri/icons/file.png";
 import folderIconUrl from "../src-tauri/icons/folder.png";
 import { changeKey, VcsLabels } from "./lib/constants";
 import { useTheme } from "./lib/theme";
+import { applyDocumentLanguage, createTranslator } from "./lib/i18n";
 import {
+  addRepository,
   commitRepository,
+  consumeStartupContext,
+  detectRepository,
+  getRepositoryStatus,
+  getWindowsContextMenuStatus,
+  installWindowsContextMenu,
+  isTauriRuntime,
+  type WindowsContextMenuStatus,
+  uninstallWindowsContextMenu,
+  updateRepository,
   type ChangeStatus,
   VcsType,
 } from "./lib/api";
@@ -37,6 +48,7 @@ import { useSettings } from "./hooks/useSettings";
 import { useOperationHistory } from "./hooks/useOperationHistory";
 import { useToast } from "./hooks/useToast";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { useQualityChecks } from "./hooks/useQualityChecks";
 import { ToastContainer } from "./components/workspace/ToastContainer";
 import { ActivityRail } from "./components/layout/ActivityRail";
 import { CommandBar } from "./components/layout/CommandBar";
@@ -58,10 +70,14 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isBranchSwitcherOpen, setIsBranchSwitcherOpen] = useState(false);
   const [activeSidebarTab, setActiveSidebarTab] = useState<string>("changes");
+  const [windowsContextMenuStatus, setWindowsContextMenuStatus] = useState<WindowsContextMenuStatus | null>(null);
+  const [isWindowsContextMenuLoading, setIsWindowsContextMenuLoading] = useState(false);
+  const startupContextHandledRef = useRef(false);
 
   const { visibleSections, toggleSection } = useVisibleSections();
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const { settings, updateSettings } = useSettings();
+  const t = useMemo(() => createTranslator(settings.language), [settings.language]);
   const operationHistory = useOperationHistory();
   const { toasts, showToast, removeToast } = useToast();
   const ignoreContextMenu = useContextMenu<{ path: string; vcsType: VcsType; status?: ChangeStatus }>();
@@ -83,6 +99,11 @@ function App() {
 
   const fileTree = useFileTree({ selectedRepository: repo.selectedRepository, setStatus });
   const changeTree = useChangeTree({ selectedRepository: repo.selectedRepository, setStatus });
+  const qualityChecks = useQualityChecks({
+    selectedRepository: repo.selectedRepository,
+    setStatus,
+    showToast,
+  });
 
   const ignore = useIgnoreRules({
     selectedRepository: repo.selectedRepository,
@@ -91,6 +112,21 @@ function App() {
     onCloseContextMenu: ignoreContextMenu.close,
     setStatus,
   });
+
+  useEffect(() => {
+    applyDocumentLanguage(settings.language);
+  }, [settings.language]);
+
+  useEffect(() => {
+    if (!isTauriRuntime() || startupContextHandledRef.current) return;
+    startupContextHandledRef.current = true;
+    void handleStartupContext();
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntime() || startupContextHandledRef.current) return;
+    // Lazy-load context menu status only when settings are opened
+  }, []);
 
   useEffect(() => {
     statusHook.reset();
@@ -142,6 +178,90 @@ function App() {
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
       commit.setIsCommitLoading(false);
+    }
+  }
+
+  async function handleStartupContext() {
+    try {
+      const context = await consumeStartupContext();
+      if (!context) return;
+
+      // "detect" and "update" are handled in background (Rust), never reach here
+      // Only "open" and "commit" open the full app
+      repo.setPath(context.path);
+      setIsLoading(true);
+      const repository = await addRepository({ path: context.path });
+      await repo.refreshRepositories();
+      repo.setSelectedId(repository.id);
+
+      if (visibleSections.repositories) {
+        toggleSection("repositories");
+      }
+
+      if (context.action === "commit") {
+        const nextStatus = await getRepositoryStatus(repository.id);
+        statusHook.setRepositoryStatus(nextStatus);
+        commit.syncKeys(nextStatus.changes);
+        setActiveSidebarTab("changes");
+        setTimeout(() => commit.setIsCommitDialogOpen(true), 100);
+        setStatus("已从右键菜单进入提交流程");
+      } else {
+        showToast(`已打开 ${repository.name}`, "info");
+        setStatus(`已从右键菜单打开 ${repository.name}`);
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      showToast(msg, "error");
+      setStatus(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleRefreshWindowsContextMenu(showResult = true) {
+    setIsWindowsContextMenuLoading(true);
+    try {
+      const nextStatus = await getWindowsContextMenuStatus();
+      setWindowsContextMenuStatus(nextStatus);
+      if (showResult) {
+        setStatus(nextStatus.installed ? "Windows 右键菜单已安装" : "Windows 右键菜单未安装");
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsWindowsContextMenuLoading(false);
+    }
+  }
+
+  async function handleInstallWindowsContextMenu() {
+    setIsWindowsContextMenuLoading(true);
+    try {
+      const nextStatus = await installWindowsContextMenu();
+      setWindowsContextMenuStatus(nextStatus);
+      setStatus(nextStatus.installed ? "已安装 Windows 右键菜单" : "Windows 右键菜单安装状态未知");
+      showToast("已安装 Windows 右键菜单", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(message);
+      showToast(message, "error");
+    } finally {
+      setIsWindowsContextMenuLoading(false);
+    }
+  }
+
+  async function handleUninstallWindowsContextMenu() {
+    setIsWindowsContextMenuLoading(true);
+    try {
+      const nextStatus = await uninstallWindowsContextMenu();
+      setWindowsContextMenuStatus(nextStatus);
+      setStatus("已移除 Windows 右键菜单");
+      showToast("已移除 Windows 右键菜单", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(message);
+      showToast(message, "error");
+    } finally {
+      setIsWindowsContextMenuLoading(false);
     }
   }
 
@@ -236,14 +356,15 @@ function App() {
     );
   };
 
-  useKeyboardShortcuts([
+  const shortcuts = useMemo(() => [
     { key: "r", ctrl: true, action: () => statusHook.handleLoadRepositoryStatus(), enabled: !!repo.selectedRepository },
     { key: "F", ctrl: true, shift: true, action: () => toggleSection("files") },
     { key: "D", ctrl: true, shift: true, action: () => {
       if (!visibleSections.review) toggleSection("review");
       setActiveSidebarTab("changes");
     }},
-  ]);
+  ], [repo.selectedRepository, visibleSections.review, toggleSection]);
+  useKeyboardShortcuts(shortcuts);
 
   const appShellClassName = `app-shell ${visibleSections.repositories ? "" : "repositories-collapsed"}`;
 
@@ -255,6 +376,7 @@ function App() {
         themeMode={themeMode}
         setThemeMode={setThemeMode}
         isLoading={isLoading}
+        t={t}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
@@ -289,6 +411,7 @@ function App() {
           isIgnoreLoading={ignore.isIgnoreLoading}
           canOpenCommitDialog={commit.canOpenCommitDialog}
           isCommitLoading={commit.isCommitLoading}
+          t={t}
           onRefreshSelected={repo.handleRefreshSelected}
           onLoadRepositoryStatus={statusHook.handleLoadRepositoryStatus}
           onUpdateRepository={statusHook.handleUpdateRepository}
@@ -374,6 +497,9 @@ function App() {
                     currentReviewState={currentReviewState}
                     currentChangeCount={currentChangeCount}
                     repositoryStatus={statusHook.repositoryStatus}
+                    qualityChecks={qualityChecks.checks}
+                    isQualityCheckLoading={qualityChecks.isLoadingTemplates}
+                    onRunQualityCheck={(checkType) => void qualityChecks.runCheck(checkType)}
                   />
                 ),
               },
@@ -466,6 +592,7 @@ function App() {
         pushAfterCommit={commit.pushAfterCommit}
         commitMessage={commit.commitMessage}
         isCommitLoading={commit.isCommitLoading}
+        latestQualityResult={qualityChecks.latestResult}
         vcsLabels={VcsLabels}
         onToggleAllFiles={commit.toggleAllCommitFiles}
         onToggleFile={commit.toggleCommitFile}
@@ -487,6 +614,12 @@ function App() {
         open={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
+        t={t}
+        windowsContextMenuStatus={windowsContextMenuStatus}
+        isWindowsContextMenuLoading={isWindowsContextMenuLoading}
+        onInstallWindowsContextMenu={handleInstallWindowsContextMenu}
+        onUninstallWindowsContextMenu={handleUninstallWindowsContextMenu}
+        onRefreshWindowsContextMenu={() => void handleRefreshWindowsContextMenu(true)}
         onUpdateSettings={updateSettings}
       />
     </main>

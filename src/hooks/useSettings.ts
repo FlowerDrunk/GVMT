@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { isAppLanguage, type AppLanguage } from "../lib/i18n";
 
 export type ViewModeSetting = "flat" | "tree";
 
@@ -6,6 +7,7 @@ export interface AppSettings {
   autoRefresh: boolean;
   refreshIntervalMs: number;
   defaultViewMode: ViewModeSetting;
+  language: AppLanguage;
 }
 
 const SETTINGS_KEY = "gvmt-settings";
@@ -19,12 +21,13 @@ function readStoredSettings(): AppSettings {
         autoRefresh: parsed.autoRefresh ?? true,
         refreshIntervalMs: parsed.refreshIntervalMs ?? 12000,
         defaultViewMode: parsed.defaultViewMode === "tree" ? "tree" : "flat",
+        language: isAppLanguage(parsed.language) ? parsed.language : "zh-CN",
       };
     }
   } catch {
     // ignore corrupt data
   }
-  return { autoRefresh: true, refreshIntervalMs: 12000, defaultViewMode: "flat" };
+  return { autoRefresh: true, refreshIntervalMs: 12000, defaultViewMode: "flat", language: "zh-CN" };
 }
 
 function writeSettings(settings: AppSettings) {

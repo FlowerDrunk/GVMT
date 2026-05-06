@@ -62,6 +62,29 @@ test.beforeEach(async ({ page }) => {
           switch (command) {
             case "list_repositories":
               return repositories;
+            case "consume_startup_context":
+              return null;
+            case "get_windows_context_menu_status":
+              return {
+                supported: true,
+                installed: false,
+                executablePath: "C:\\Users\\31047\\Desktop\\GVMT\\src-tauri\\target\\debug\\gvmt.exe",
+                warning: null,
+              };
+            case "install_windows_context_menu":
+              return {
+                supported: true,
+                installed: true,
+                executablePath: "C:\\Users\\31047\\Desktop\\GVMT\\src-tauri\\target\\debug\\gvmt.exe",
+                warning: null,
+              };
+            case "uninstall_windows_context_menu":
+              return {
+                supported: true,
+                installed: false,
+                executablePath: "C:\\Users\\31047\\Desktop\\GVMT\\src-tauri\\target\\debug\\gvmt.exe",
+                warning: null,
+              };
             case "get_repository_status":
               return {
                 repositoryId: args.id,
@@ -100,6 +123,44 @@ test.beforeEach(async ({ page }) => {
                 status: "modified",
                 content: "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@\n-old\n+new",
                 isBinary: false,
+                warning: null,
+              };
+            case "list_quality_checks":
+              return [
+                {
+                  checkType: "typescriptBuild",
+                  label: "TypeScript build",
+                  command: "npm run build",
+                  available: true,
+                  unavailableReason: null,
+                },
+                {
+                  checkType: "playwrightUi",
+                  label: "Playwright UI 测试",
+                  command: "npm run test:ui",
+                  available: true,
+                  unavailableReason: null,
+                },
+                {
+                  checkType: "cargoCheck",
+                  label: "Rust cargo check",
+                  command: "cargo check",
+                  available: true,
+                  unavailableReason: null,
+                },
+              ];
+            case "run_quality_check":
+              return {
+                checkType: args.checkType,
+                label: "TypeScript build",
+                command: "npm run build",
+                status: "success",
+                success: true,
+                startedAt: 1777514400,
+                finishedAt: 1777514402,
+                durationMs: 1200,
+                summary: "TypeScript build 通过，用时 1.2s",
+                output: "vite build ok",
                 warning: null,
               };
             case "delete_repository":
@@ -171,10 +232,17 @@ test("workbench layout is clear and commit/delete flows open in dialogs", async 
   await page.getByRole("button", { name: "评审与质量" }).click();
   await expect(page.getByText("http://svn.example.local/repo/选型管理/HaierSelectionAppDir")).toBeVisible();
   await expect(page.getByText("%E9%80%89%E5%9E%8B")).toHaveCount(0);
+  await expect(page.getByText("本地质量检查", { exact: true })).toBeVisible();
+  const typeScriptCheck = page.locator(".quality-check-item", { hasText: "TypeScript build" });
+  await typeScriptCheck.getByRole("button", { name: "运行" }).click();
+  await expect(typeScriptCheck.getByText("vite build ok")).toBeVisible();
+  await expect(typeScriptCheck.getByText("TypeScript build 通过，用时 1.2s")).toBeVisible();
 
   await commitButton.click();
   const commitDialog = page.getByRole("dialog", { name: "提交变更" });
   await expect(commitDialog).toBeVisible();
+  await expect(commitDialog.getByText("最近一次本地质量检查")).toBeVisible();
+  await expect(commitDialog.getByText("TypeScript build 通过，用时 1.2s")).toBeVisible();
   await expect(commitDialog.getByText("选中文件", { exact: true })).toBeVisible();
   await expect(commitDialog.getByPlaceholder("说明这次变更的目的...")).toBeVisible();
   await commitDialog.getByRole("button", { name: "取消", exact: true }).click();
@@ -185,4 +253,17 @@ test("workbench layout is clear and commit/delete flows open in dialogs", async 
   const deleteDialog = page.getByRole("dialog", { name: "删除仓库记录" });
   await expect(deleteDialog).toBeVisible();
   await expect(deleteDialog.getByText("不会删除磁盘上的仓库文件")).toBeVisible();
+  await deleteDialog.getByRole("button", { name: "取消", exact: true }).click();
+
+  await page.locator(".activity-rail").getByRole("button", { name: "设置" }).click();
+  const settingsDialog = page.getByRole("dialog", { name: "设置" });
+  await expect(settingsDialog).toBeVisible();
+  await expect(settingsDialog.getByText("Windows 右键菜单")).toBeVisible();
+  await expect(settingsDialog.getByText("未安装")).toBeVisible();
+  await settingsDialog.getByRole("button", { name: "安装右键菜单" }).click();
+  await expect(settingsDialog.getByText("已安装")).toBeVisible();
+  await settingsDialog.getByLabel("界面语言").selectOption("en-US");
+  await expect(page.locator(".activity-rail").getByRole("button", { name: "Repos" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Update", exact: true })).toBeVisible();
+  await page.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: "Done", exact: true }).click();
 });

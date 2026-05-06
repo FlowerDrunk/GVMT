@@ -1,5 +1,6 @@
 import type { Repository } from "../../lib/api";
 import { VcsLabels } from "../../lib/constants";
+import type { Translator } from "../../lib/i18n";
 
 interface CommandBarProps {
   selectedRepository: Repository | undefined;
@@ -9,6 +10,7 @@ interface CommandBarProps {
   isIgnoreLoading: boolean;
   canOpenCommitDialog: boolean;
   isCommitLoading: boolean;
+  t: Translator;
   onRefreshSelected: () => void;
   onLoadRepositoryStatus: () => void;
   onUpdateRepository: () => void;
@@ -26,6 +28,7 @@ export function CommandBar({
   isIgnoreLoading,
   canOpenCommitDialog,
   isCommitLoading,
+  t,
   onRefreshSelected,
   onLoadRepositoryStatus,
   onUpdateRepository,
@@ -39,14 +42,14 @@ export function CommandBar({
       <div className="command-info">
         <span className={`repo-dot ${selectedRepository ? (selectedRepository.vcsType === "unknown" ? "warning" : "ready") : "warning"}`} />
         <strong className="command-repo-name">
-          {selectedRepository?.name ?? "选择或添加仓库"}
+          {selectedRepository?.name ?? t("command.selectRepository")}
         </strong>
         {selectedRepository ? (
           <span className="soft-chip">{VcsLabels[selectedRepository.vcsType]}</span>
         ) : null}
         <span className="command-sep" />
         <div className="command-metrics">
-          <span>变更 <strong>{currentChangeCount}</strong></span>
+          <span>{t("command.changes")} <strong>{currentChangeCount}</strong></span>
           <span>{currentReviewState}</span>
           {selectedRepository?.branchOrRevision ? (
             <button className="command-branch" type="button" onClick={onSwitchBranch}>
@@ -62,7 +65,7 @@ export function CommandBar({
           disabled={!selectedRepository || isLoading}
           onClick={onRefreshSelected}
         >
-          重新检测
+          {t("command.redetect")}
         </button>
         <button
           className="secondary-button"
@@ -70,7 +73,7 @@ export function CommandBar({
           disabled={!selectedRepository || isLoading}
           onClick={onLoadRepositoryStatus}
         >
-          刷新状态
+          {t("command.refreshStatus")}
         </button>
         <button
           className="secondary-button"
@@ -78,7 +81,7 @@ export function CommandBar({
           disabled={!canOpenCommitDialog || isCommitLoading}
           onClick={onOpenCommitDialog}
         >
-          提交
+          {t("command.commit")}
         </button>
         <button
           className="secondary-button"
@@ -86,7 +89,7 @@ export function CommandBar({
           disabled={!selectedRepository || isIgnoreLoading}
           onClick={onOpenIgnoreDialog}
         >
-          忽略
+          {t("command.ignore")}
         </button>
         <button
           className="primary-button"
@@ -94,13 +97,13 @@ export function CommandBar({
           disabled={!selectedRepository || isLoading}
           onClick={onUpdateRepository}
         >
-          更新
+          {t("command.update")}
         </button>
         <button
           className="ghost-button"
           type="button"
           onClick={onOpenSettings}
-          title="设置"
+          title={t("activity.settings")}
         >
           ⚙
         </button>

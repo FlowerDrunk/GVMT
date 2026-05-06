@@ -122,6 +122,7 @@ export function useRepositoryStatus({
 
   return {
     repositoryStatus,
+    setRepositoryStatus,
     operationResults,
     setOperationResults,
     syncKeysRef,

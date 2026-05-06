@@ -1,5 +1,5 @@
 import { FormEvent } from "react";
-import type { ChangeItem, VcsType } from "../../lib/api";
+import type { ChangeItem, QualityCheckResult, VcsType } from "../../lib/api";
 import { Modal, ModalHeading } from "../shared/Modal";
 import { Switch } from "../shared/Switch";
 import { ChangeBadge } from "../shared/ChangeBadge";
@@ -18,6 +18,7 @@ interface CommitDialogProps {
   pushAfterCommit: boolean;
   commitMessage: string;
   isCommitLoading: boolean;
+  latestQualityResult: QualityCheckResult | null;
   vcsLabels: Record<VcsType, string>;
   onToggleAllFiles: (files: ChangeItem[]) => void;
   onToggleFile: (change: ChangeItem) => void;
@@ -36,6 +37,7 @@ export function CommitDialog({
   pushAfterCommit,
   commitMessage,
   isCommitLoading,
+  latestQualityResult,
   vcsLabels,
   onToggleAllFiles,
   onToggleFile,
@@ -66,6 +68,22 @@ export function CommitDialog({
           <span>Git push</span>
           <strong>{hasGitCommitSelection && pushAfterCommit ? "开启" : "关闭"}</strong>
         </div>
+      </div>
+      <div className="commit-quality-summary" data-state={latestQualityResult?.status ?? "idle"}>
+        <span>最近一次本地质量检查</span>
+        {latestQualityResult ? (
+          <>
+            <strong>{latestQualityResult.summary}</strong>
+            <small>
+              {latestQualityResult.label} · {latestQualityResult.command} · {formatQualityCheckTime(latestQualityResult.finishedAt)}
+            </small>
+          </>
+        ) : (
+          <>
+            <strong>尚未运行</strong>
+            <small>可以先在右侧“评审与质量”中运行 build、UI 测试或 cargo check。</small>
+          </>
+        )}
       </div>
       <form className="commit-form" onSubmit={onSubmit}>
         <div className="commit-file-toolbar">
@@ -122,4 +140,14 @@ export function CommitDialog({
       </form>
     </Modal>
   );
+}
+
+function formatQualityCheckTime(timestamp: number) {
+  if (!timestamp) return "尚未运行";
+  return new Date(timestamp * 1000).toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
