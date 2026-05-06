@@ -1153,13 +1153,16 @@ fn git_status_changes(path: &str) -> Result<Vec<ChangeItem>, String> {
 }
 
 fn parse_git_status_line(line: &str) -> Option<ChangeItem> {
-    if line.len() < 4 {
+    if line.chars().count() < 2 {
         return None;
     }
 
-    let status_code = &line[..2];
-    // Skip the status chars and the space separator to get the path
-    let raw_path = line[3..].trim();
+    let mut chars = line.chars();
+    let index_status = chars.next()?;
+    let worktree_status = chars.next()?;
+    let status_code = format!("{index_status}{worktree_status}");
+    let raw_path = status_path_after_git_status(line);
+
     // For renamed files ("R  old -> new"), take the new name
     let path = raw_path
         .rsplit(" -> ")
@@ -1174,9 +1177,24 @@ fn parse_git_status_line(line: &str) -> Option<ChangeItem> {
 
     Some(ChangeItem {
         path,
-        status: git_status_kind(status_code).to_string(),
+        status: git_status_kind(&status_code).to_string(),
         vcs_type: "git".to_string(),
     })
+}
+
+fn status_path_after_git_status(line: &str) -> &str {
+    let after_status = slice_from_char(line, 2).unwrap_or("").trim_start();
+    if let Some(after_separator) = slice_from_char(line, 3) {
+        let fixed_width = after_separator.trim_start();
+        if fixed_width.is_empty() || fixed_width == after_status {
+            return after_status;
+        }
+        if after_status.ends_with(fixed_width) && after_status.len() == fixed_width.len() + 1 {
+            return after_status;
+        }
+        return fixed_width;
+    }
+    after_status
 }
 
 fn git_status_kind(status_code: &str) -> &'static str {
@@ -1346,7 +1364,7 @@ fn parse_svn_status_line(line: &str, root_path: &str) -> Option<ChangeItem> {
         return None;
     }
 
-    let path = line.get(8..).unwrap_or("").trim();
+    let path = status_path_after_svn_status(line);
     if path.is_empty() {
         return None;
     }
@@ -1356,6 +1374,32 @@ fn parse_svn_status_line(line: &str, root_path: &str) -> Option<ChangeItem> {
         status: svn_status_kind(status_code).to_string(),
         vcs_type: "svn".to_string(),
     })
+}
+
+fn status_path_after_svn_status(line: &str) -> &str {
+    let after_status = slice_from_char(line, 1).unwrap_or("").trim_start();
+    if let Some(after_columns) = slice_from_char(line, 8) {
+        let fixed_width = after_columns.trim_start();
+        if fixed_width.is_empty() || fixed_width == after_status {
+            return after_status;
+        }
+        if after_status.ends_with(fixed_width) && after_status.len() == fixed_width.len() + 1 {
+            return after_status;
+        }
+        return fixed_width;
+    }
+    after_status
+}
+
+fn slice_from_char(value: &str, char_index: usize) -> Option<&str> {
+    if char_index == 0 {
+        return Some(value);
+    }
+
+    value
+        .char_indices()
+        .nth(char_index)
+        .map(|(index, _)| &value[index..])
 }
 
 fn repository_relative_change_path(path: &str, root_path: &str) -> String {
@@ -1925,6 +1969,101 @@ fn svn_ignore_append_rule(root_path: &str, relative_path: &str) -> Result<Operat
     })
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BranchInfo {
+    name: String,
+    is_current: bool,
+}
+
+#[tauri::command]
+fn list_branches(app: AppHandle, id: i64) -> Result<Vec<BranchInfo>, String> {
+    let connection = open_database(&app)?;
+    let repository = find_repository_by_id(&connection, id)?
+        .ok_or_else(|| "未找到仓库".to_string())?;
+
+    match repository.vcs_type.as_str() {
+        "git" => {
+            let output = run_command(["git", "-C", &repository.path, "branch"])?;
+            Ok(output
+                .lines()
+                .map(|line| {
+                    let trimmed = line.trim();
+                    BranchInfo {
+                        is_current: trimmed.starts_with('*'),
+                        name: trimmed.trim_start_matches("* ").to_string(),
+                    }
+                })
+                .collect())
+        }
+        "svn" => {
+            let output =
+                run_command(["svn", "info", "--show-item", "relative-url", &repository.path])?;
+            let base_url = output.trim().to_string();
+            // List standard SVN layout branches
+            let mut branches = vec![BranchInfo {
+                name: format!("trunk ({base_url})"),
+                is_current: !base_url.contains("branches"),
+            }];
+            if let Ok(list) = run_command(["svn", "ls", &format!("{}/../branches", base_url.trim_end_matches("/trunk"))])
+            {
+                for line in list.lines() {
+                    let name = line.trim().trim_end_matches('/');
+                    if !name.is_empty() {
+                        branches.push(BranchInfo {
+                            is_current: base_url.contains(&format!("branches/{name}")),
+                            name: name.to_string(),
+                        });
+                    }
+                }
+            }
+            Ok(branches)
+        }
+        _ => Err("当前仓库类型不支持分支操作".to_string()),
+    }
+}
+
+#[tauri::command]
+fn switch_branch(
+    app: AppHandle,
+    id: i64,
+    branch: String,
+) -> Result<OperationResult, String> {
+    let connection = open_database(&app)?;
+    let repository = find_repository_by_id(&connection, id)?
+        .ok_or_else(|| "未找到仓库".to_string())?;
+
+    match repository.vcs_type.as_str() {
+        "git" => {
+            let output =
+                run_command(["git", "-C", &repository.path, "checkout", &branch])?;
+            Ok(OperationResult {
+                operation: "checkout".to_string(),
+                vcs_type: "git".to_string(),
+                success: true,
+                summary: format!("已切换到分支 {branch}"),
+                output,
+                warning: None,
+                missing_svn_cli: false,
+            })
+        }
+        "svn" => {
+            let output =
+                run_command(["svn", "switch", &branch, &repository.path])?;
+            Ok(OperationResult {
+                operation: "switch".to_string(),
+                vcs_type: "svn".to_string(),
+                success: true,
+                summary: format!("已切换到 {branch}"),
+                output,
+                warning: None,
+                missing_svn_cli: false,
+            })
+        }
+        _ => Err("当前仓库类型不支持分支操作".to_string()),
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -1937,11 +2076,13 @@ pub fn run() {
             get_ignore_rules,
             get_repository_diff,
             get_repository_status,
+            list_branches,
             list_repository_files,
             list_repositories,
             open_svn_cli_download_page,
             read_repository_file,
             refresh_repository,
+            switch_branch,
             update_gitignore,
             update_repository,
             update_svn_ignore
