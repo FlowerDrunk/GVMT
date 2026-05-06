@@ -8,12 +8,66 @@ use std::{
     time::UNIX_EPOCH,
 };
 use tauri::{AppHandle, Manager};
+#[cfg(windows)]
+use windows_sys::Win32::Globalization::{GetACP, MultiByteToWideChar};
 
 fn os_str_to_string(value: &OsStr) -> String {
     value
         .to_str()
         .map(String::from)
         .unwrap_or_else(|| value.to_string_lossy().into_owned())
+}
+
+fn decode_command_output(bytes: &[u8]) -> String {
+    if let Ok(value) = String::from_utf8(bytes.to_vec()) {
+        return value;
+    }
+
+    #[cfg(windows)]
+    {
+        if let Some(value) = decode_windows_ansi(bytes) {
+            return value;
+        }
+    }
+
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+#[cfg(windows)]
+fn decode_windows_ansi(bytes: &[u8]) -> Option<String> {
+    if bytes.is_empty() {
+        return Some(String::new());
+    }
+
+    unsafe {
+        let code_page = GetACP();
+        let required = MultiByteToWideChar(
+            code_page,
+            0,
+            bytes.as_ptr(),
+            bytes.len() as i32,
+            std::ptr::null_mut(),
+            0,
+        );
+        if required <= 0 {
+            return None;
+        }
+
+        let mut wide = vec![0u16; required as usize];
+        let written = MultiByteToWideChar(
+            code_page,
+            0,
+            bytes.as_ptr(),
+            bytes.len() as i32,
+            wide.as_mut_ptr(),
+            wide.len() as i32,
+        );
+        if written <= 0 {
+            return None;
+        }
+        wide.truncate(written as usize);
+        Some(String::from_utf16_lossy(&wide))
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -1524,7 +1578,7 @@ fn run_command<const N: usize>(parts: [&str; N]) -> Result<String, String> {
         .map_err(|error| error.to_string())?;
 
     if !output.status.success() {
-        let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let error = decode_command_output(&output.stderr).trim().to_string();
         return Err(if error.is_empty() {
             format!("命令执行失败：{resolved_program}")
         } else {
@@ -1532,7 +1586,7 @@ fn run_command<const N: usize>(parts: [&str; N]) -> Result<String, String> {
         });
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    Ok(decode_command_output(&output.stdout).trim().to_string())
 }
 
 fn run_command_args(program: &str, args: &[String]) -> Result<String, String> {
@@ -1543,7 +1597,7 @@ fn run_command_args(program: &str, args: &[String]) -> Result<String, String> {
         .map_err(|error| error.to_string())?;
 
     if !output.status.success() {
-        let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let error = decode_command_output(&output.stderr).trim().to_string();
         return Err(if error.is_empty() {
             format!("命令执行失败：{resolved_program}")
         } else {
@@ -1551,7 +1605,7 @@ fn run_command_args(program: &str, args: &[String]) -> Result<String, String> {
         });
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    Ok(decode_command_output(&output.stdout).trim().to_string())
 }
 
 fn resolve_program(program: &str) -> String {
@@ -1612,7 +1666,7 @@ fn registry_value(key: &str, value: &str) -> Option<String> {
         return None;
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = decode_command_output(&output.stdout);
     stdout.lines().find_map(|line| {
         let trimmed = line.trim();
         if !trimmed.starts_with(value) {
