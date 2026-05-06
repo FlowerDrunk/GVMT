@@ -21,6 +21,7 @@ export function useFileTree({ selectedRepository, setStatus }: UseFileTreeOption
   const [isFileBrowserLoading, setIsFileBrowserLoading] = useState(false);
   const [selectedFilePreview, setSelectedFilePreview] = useState<RepositoryFilePreview | null>(null);
   const [isFilePreviewLoading, setIsFilePreviewLoading] = useState(false);
+  const [isFilePreviewOpen, setIsFilePreviewOpen] = useState(false);
 
   async function handleLoadRepositoryFiles(relativePath = "") {
     if (!selectedRepository) {
@@ -33,6 +34,7 @@ export function useFileTree({ selectedRepository, setStatus }: UseFileTreeOption
       const nextFiles = await listRepositoryFiles(selectedRepository.id, relativePath);
       setRepositoryFiles(nextFiles);
       setSelectedFilePreview(null);
+      setIsFilePreviewOpen(false);
       setExpandedFilePaths(new Set());
       setLoadedFilePaths(new Set([nextFiles.path]));
       setStatus(nextFiles.path ? `已打开 ${nextFiles.path}` : "已打开仓库根目录");
@@ -91,6 +93,8 @@ export function useFileTree({ selectedRepository, setStatus }: UseFileTreeOption
   async function handleSelectFileEntry(entry: RepositoryFileEntry) {
     if (!selectedRepository || entry.entryType !== "file") return;
 
+    setSelectedFilePreview(null);
+    setIsFilePreviewOpen(true);
     setIsFilePreviewLoading(true);
     try {
       const preview = await readRepositoryFile(selectedRepository.id, entry.path);
@@ -107,9 +111,14 @@ export function useFileTree({ selectedRepository, setStatus }: UseFileTreeOption
   function reset() {
     setRepositoryFiles(null);
     setSelectedFilePreview(null);
+    setIsFilePreviewOpen(false);
     setExpandedFilePaths(new Set());
     setLoadedFilePaths(new Set());
     setIsFilePreviewLoading(false);
+  }
+
+  function closeFilePreview() {
+    setIsFilePreviewOpen(false);
   }
 
   return {
@@ -119,9 +128,11 @@ export function useFileTree({ selectedRepository, setStatus }: UseFileTreeOption
     isFileBrowserLoading,
     selectedFilePreview,
     isFilePreviewLoading,
+    isFilePreviewOpen,
     handleLoadRepositoryFiles,
     handleExpandFileEntry,
     handleSelectFileEntry,
+    closeFilePreview,
     setExpandedFilePaths,
     setLoadedFilePaths,
     reset,

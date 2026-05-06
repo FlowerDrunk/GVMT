@@ -132,8 +132,13 @@ test("workbench layout is clear and commit/delete flows open in dialogs", async 
   await expect(page.getByText("Selection backup").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "文件浏览" })).toBeVisible();
   await expect(page.getByText("README.md")).toBeVisible();
-  await page.getByRole("button", { name: /README\.md/ }).click();
-  await expect(page.getByText("本地仓库文件预览")).toBeVisible();
+  await expect(page.getByText("本地仓库文件预览")).toHaveCount(0);
+  await page.getByRole("button", { name: /README\.md/ }).dblclick();
+  const filePreviewDialog = page.getByRole("dialog", { name: "README.md" });
+  await expect(filePreviewDialog).toBeVisible();
+  await expect(filePreviewDialog.getByText("本地仓库文件预览")).toBeVisible();
+  await filePreviewDialog.getByRole("button", { name: "×" }).click();
+  await expect(filePreviewDialog).toBeHidden();
   const commitButton = page.getByRole("button", { name: "提交", exact: true });
   await expect(commitButton).toBeVisible();
 

@@ -164,7 +164,7 @@ function App() {
       void fileTree.handleExpandFileEntry(entry);
     }
   };
-  const handleFileTreeSelect = (path: string) => {
+  const handleFileTreeOpen = (path: string) => {
     const entry = fileEntryMap.get(path);
     if (entry) {
       void fileTree.handleSelectFileEntry(entry);
@@ -270,11 +270,13 @@ function App() {
                 breadcrumbs={breadcrumbs}
                 fileTreeNodes={fileTreeNodes}
                 expandedFilePaths={fileTree.expandedFilePaths}
+                isFilePreviewOpen={fileTree.isFilePreviewOpen}
                 selectedFilePreview={fileTree.selectedFilePreview}
                 isFilePreviewLoading={fileTree.isFilePreviewLoading}
                 renderFileRow={renderFileRow}
                 onFileTreeToggle={handleFileTreeToggle}
-                onFileTreeSelect={handleFileTreeSelect}
+                onFileTreeOpen={handleFileTreeOpen}
+                onCloseFilePreview={fileTree.closeFilePreview}
                 onContextMenu={handleChangeRowContextMenu}
               />
             ) : null}

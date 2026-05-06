@@ -14,6 +14,7 @@ interface TreeViewProps {
   renderRow: (node: TreeViewNode, level: number, isExpanded: boolean) => ReactNode;
   onToggle: (path: string) => void;
   onSelect?: (node: TreeViewNode) => void;
+  onDoubleClick?: (node: TreeViewNode) => void;
   onContextMenu?: (node: TreeViewNode, event: MouseEvent<HTMLButtonElement>) => void;
   getRowClassName?: (node: TreeViewNode) => string;
   rowClassName?: string;
@@ -26,6 +27,7 @@ export function TreeView({
   renderRow,
   onToggle,
   onSelect,
+  onDoubleClick,
   onContextMenu,
   getRowClassName,
   rowClassName = "tree-row",
@@ -49,6 +51,9 @@ export function TreeView({
                   onSelect?.(node);
                 }
               }}
+              onDoubleClick={
+                isDirectory ? undefined : () => onDoubleClick?.(node)
+              }
               onContextMenu={
                 isDirectory ? undefined : (event) => onContextMenu?.(node, event)
               }
@@ -66,6 +71,7 @@ export function TreeView({
                 renderRow={renderRow}
                 onToggle={onToggle}
                 onSelect={onSelect}
+                onDoubleClick={onDoubleClick}
                 onContextMenu={onContextMenu}
                 getRowClassName={getRowClassName}
                 rowClassName={rowClassName}

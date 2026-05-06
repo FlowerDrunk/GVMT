@@ -1066,19 +1066,6 @@ textarea:focus {
   padding: 6px;
 }
 
-.file-browser-grid {
-  display: grid;
-  grid-template-columns: minmax(280px, 0.92fr) minmax(320px, 1.08fr);
-  gap: 14px;
-  min-height: 320px;
-  margin-top: 14px;
-}
-
-.file-browser-grid .file-tree {
-  max-height: clamp(320px, 52vh, 680px);
-  margin-top: 0;
-}
-
 .file-preview-pane {
   display: flex;
   flex-direction: column;
@@ -1088,6 +1075,15 @@ textarea:focus {
   border: 1px solid var(--line-alpha);
   border-radius: 12px;
   background: var(--surface-muted);
+}
+
+.file-preview-dialog {
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(980px, calc(100vw - 56px));
+}
+
+.file-preview-dialog .file-preview-pane {
+  min-height: min(620px, calc(100vh - 190px));
 }
 
 .file-preview-heading {
@@ -2577,11 +2573,7 @@ textarea:focus {
     padding: 16px;
   }
 
-  .file-browser-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .file-preview-pane {
+  .file-preview-dialog .file-preview-pane {
     min-height: 260px;
   }
 
