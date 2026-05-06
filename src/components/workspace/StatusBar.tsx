@@ -1,4 +1,4 @@
-import type { Repository } from "../../lib/api";
+import type { ChangeStatus, Repository, VcsType } from "../../lib/api";
 
 interface StatusBarProps {
   isLoading: boolean;
@@ -56,12 +56,14 @@ export function RepoContextMenuOverlay({
 }
 
 interface IgnoreContextMenuOverlayProps {
-  menu: ContextMenuState<{ path: string; vcsType: string }> | null;
-  onIgnoreFile: (path: string, vcsType: string) => void;
+  menu: ContextMenuState<{ path: string; vcsType: VcsType; status?: ChangeStatus }> | null;
+  onOpenDiff: (path: string, vcsType: VcsType, status?: ChangeStatus) => void;
+  onIgnoreFile: (path: string, vcsType: VcsType) => void;
 }
 
 export function IgnoreContextMenuOverlay({
   menu,
+  onOpenDiff,
   onIgnoreFile,
 }: IgnoreContextMenuOverlayProps) {
   if (!menu) return null;
@@ -72,6 +74,13 @@ export function IgnoreContextMenuOverlay({
       style={{ left: menu.x, top: menu.y }}
       onClick={(event) => event.stopPropagation()}
     >
+      <button
+        type="button"
+        disabled={!menu.data.status}
+        onClick={() => onOpenDiff(menu.data.path, menu.data.vcsType, menu.data.status)}
+      >
+        查看 diff
+      </button>
       <button
         type="button"
         onClick={() => onIgnoreFile(menu.data.path, menu.data.vcsType)}

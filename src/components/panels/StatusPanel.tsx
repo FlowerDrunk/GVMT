@@ -1,4 +1,5 @@
-import type { Repository, RepositoryStatus } from "../../lib/api";
+import type { MouseEvent } from "react";
+import type { ChangeStatus, Repository, RepositoryStatus, VcsType } from "../../lib/api";
 import { VcsLabels } from "../../lib/constants";
 import { ChangeBadge } from "../shared/ChangeBadge";
 import { EmptyState } from "../shared/EmptyState";
@@ -9,6 +10,14 @@ interface StatusPanelProps {
   isLoading: boolean;
   onLoadRepositoryStatus: () => void;
   onOpenSvnDownload: (target: "tortoise" | "sliksvn") => void;
+  onSelectChange: (path: string, change: { status: ChangeStatus; vcsType: VcsType }) => void;
+  onOpenChangeDiff: (path: string, change: { status: ChangeStatus; vcsType: VcsType }) => void;
+  onContextMenu: (
+    event: MouseEvent<HTMLButtonElement>,
+    path: string,
+    vcsType: VcsType,
+    status: ChangeStatus,
+  ) => void;
 }
 
 export function StatusPanel({
@@ -17,6 +26,9 @@ export function StatusPanel({
   isLoading,
   onLoadRepositoryStatus,
   onOpenSvnDownload,
+  onSelectChange,
+  onOpenChangeDiff,
+  onContextMenu,
 }: StatusPanelProps) {
   return (
     <section className="panel status-panel">
@@ -86,11 +98,18 @@ export function StatusPanel({
           ) : (
             <div className="change-list">
               {repositoryStatus.changes.slice(0, 80).map((change) => (
-                <div className="change-row" key={`${change.vcsType}-${change.status}-${change.path}`}>
+                <button
+                  className="change-row"
+                  key={`${change.vcsType}-${change.status}-${change.path}`}
+                  type="button"
+                  onClick={() => onSelectChange(change.path, { status: change.status, vcsType: change.vcsType })}
+                  onDoubleClick={() => onOpenChangeDiff(change.path, { status: change.status, vcsType: change.vcsType })}
+                  onContextMenu={(event) => onContextMenu(event, change.path, change.vcsType, change.status)}
+                >
                   <ChangeBadge status={change.status} />
                   <span className="change-path">{change.path}</span>
                   <span className="change-vcs">{VcsLabels[change.vcsType]}</span>
-                </div>
+                </button>
               ))}
             </div>
           )}

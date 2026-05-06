@@ -142,6 +142,22 @@ test("workbench layout is clear and commit/delete flows open in dialogs", async 
   const commitButton = page.getByRole("button", { name: "提交", exact: true });
   await expect(commitButton).toBeVisible();
 
+  const appChange = page.locator(".change-row", { hasText: "App.tsx" }).first();
+  await appChange.click();
+  await expect(page.getByRole("dialog", { name: "src/App.tsx" })).toHaveCount(0);
+  await appChange.dblclick();
+  const diffDialog = page.getByRole("dialog", { name: "src/App.tsx" });
+  await expect(diffDialog).toBeVisible();
+  await expect(diffDialog.getByText("+new")).toBeVisible();
+  await diffDialog.getByRole("button", { name: "×" }).click();
+  await expect(diffDialog).toBeHidden();
+
+  await page.locator(".change-row", { hasText: "lib.rs" }).first().click({ button: "right" });
+  await page.getByRole("button", { name: "查看 diff" }).click();
+  const contextDiffDialog = page.getByRole("dialog", { name: "src-tauri/src/lib.rs" });
+  await expect(contextDiffDialog).toBeVisible();
+  await contextDiffDialog.getByRole("button", { name: "×" }).click();
+
   const workspace = await page.locator(".workspace").boundingBox();
   const explorer = await page.locator(".explorer-pane").boundingBox();
   const changes = await page.locator(".changes-pane").boundingBox();

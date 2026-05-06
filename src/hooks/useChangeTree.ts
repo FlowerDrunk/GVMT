@@ -16,9 +16,10 @@ export function useChangeTree({ selectedRepository, setStatus }: UseChangeTreeOp
   const [selectedChange, setSelectedChange] = useState<ChangeItem | null>(null);
   const [diffPreview, setDiffPreview] = useState<RepositoryDiff | null>(null);
   const [isDiffLoading, setIsDiffLoading] = useState(false);
+  const [isDiffDialogOpen, setIsDiffDialogOpen] = useState(false);
   const [expandedChangePaths, setExpandedChangePaths] = useState<Set<string>>(new Set());
 
-  async function handleSelectChange(path: string, change: ChangeTreeNode["change"]) {
+  function selectChange(path: string, change: ChangeTreeNode["change"]) {
     if (!selectedRepository || !change) return;
 
     const nextChange: ChangeItem = {
@@ -27,6 +28,19 @@ export function useChangeTree({ selectedRepository, setStatus }: UseChangeTreeOp
       vcsType: change.vcsType,
     };
     setSelectedChange(nextChange);
+  }
+
+  async function handleOpenChangeDiff(path: string, change: ChangeTreeNode["change"]) {
+    if (!selectedRepository || !change) return;
+
+    const nextChange: ChangeItem = {
+      path,
+      status: change.status,
+      vcsType: change.vcsType,
+    };
+    setSelectedChange(nextChange);
+    setDiffPreview(null);
+    setIsDiffDialogOpen(true);
     setIsDiffLoading(true);
     try {
       const nextDiff = await getRepositoryDiff(selectedRepository.id, nextChange);
@@ -56,15 +70,23 @@ export function useChangeTree({ selectedRepository, setStatus }: UseChangeTreeOp
     setSelectedChange(null);
     setDiffPreview(null);
     setIsDiffLoading(false);
+    setIsDiffDialogOpen(false);
     setExpandedChangePaths(new Set());
+  }
+
+  function closeDiffDialog() {
+    setIsDiffDialogOpen(false);
   }
 
   return {
     selectedChange,
     diffPreview,
     isDiffLoading,
+    isDiffDialogOpen,
     expandedChangePaths,
-    handleSelectChange,
+    selectChange,
+    handleOpenChangeDiff,
+    closeDiffDialog,
     toggleChangeNode,
     setExpandedChangePaths,
     reset,

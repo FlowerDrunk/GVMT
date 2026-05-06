@@ -5,6 +5,7 @@ import { changeKey, VcsLabels } from "./lib/constants";
 import { useTheme } from "./lib/theme";
 import {
   commitRepository,
+  type ChangeStatus,
   VcsType,
 } from "./lib/api";
 import {
@@ -44,6 +45,7 @@ import { ReviewPane } from "./components/panels/ReviewPane";
 import { OperationPanel } from "./components/workspace/OperationPanel";
 import { StatusBar, IgnoreContextMenuOverlay } from "./components/workspace/StatusBar";
 import { TabPanel } from "./components/shared/TabPanel";
+import { Modal, ModalHeading } from "./components/shared/Modal";
 
 function App() {
   const [status, setStatus] = useState("准备就绪");
@@ -54,7 +56,7 @@ function App() {
   const { visibleSections, toggleSection } = useVisibleSections();
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const { settings, updateSettings } = useSettings();
-  const ignoreContextMenu = useContextMenu<{ path: string; vcsType: VcsType }>();
+  const ignoreContextMenu = useContextMenu<{ path: string; vcsType: VcsType; status?: ChangeStatus }>();
 
   const repo = useRepositories({ setStatus, setIsLoading });
 
@@ -137,9 +139,22 @@ function App() {
     event: MouseEvent<HTMLButtonElement>,
     path: string,
     vcsType: VcsType,
+    status?: ChangeStatus,
   ) {
     event.preventDefault();
-    ignoreContextMenu.open({ path, vcsType }, event.clientX, event.clientY);
+    ignoreContextMenu.open({ path, vcsType, status }, event.clientX, event.clientY);
+  }
+
+  function handleOpenDiffFromContextMenu(path: string, vcsType: VcsType, status?: ChangeStatus) {
+    const resolvedStatus =
+      status ?? changedFiles.find((file) => file.path === path && file.vcsType === vcsType)?.status;
+    if (!resolvedStatus) {
+      setStatus("未找到可查看的 diff 信息");
+      return;
+    }
+
+    void changeTree.handleOpenChangeDiff(path, { status: resolvedStatus, vcsType });
+    ignoreContextMenu.close();
   }
 
   const currentChangeCount = statusHook.repositoryStatus?.summary.total ?? 0;
@@ -281,37 +296,15 @@ function App() {
               />
             ) : null}
 
-            {changeTree.selectedChange ? (
-              <section className="panel diff-panel">
-                <div className="panel-title-row">
-                  <div className="diff-panel-heading">
-                    <ChangeBadge status={changeTree.selectedChange.status} />
-                    <strong title={changeTree.selectedChange.path}>{changeTree.selectedChange.path}</strong>
-                    <span className="soft-chip">{VcsLabels[changeTree.selectedChange.vcsType]}</span>
-                  </div>
-                  <button className="icon-button" type="button" onClick={() => changeTree.reset()} title="关闭 diff">×</button>
-                </div>
-                {changeTree.diffPreview?.warning ? <p className="diff-warning">{changeTree.diffPreview.warning}</p> : null}
-                <pre>
-                  {changeTree.isDiffLoading
-                    ? "正在加载 diff..."
-                    : changeTree.diffPreview?.content
-                      ? changeTree.diffPreview.content.split("\n").map((line: string, index: number) => (
-                          <span className={diffLineClassName(line)} key={`${index}-${line.slice(0, 16)}`}>
-                            {line || " "}
-                          </span>
-                        ))
-                      : "暂无 diff 内容"}
-                </pre>
-              </section>
-            ) : null}
-
             <StatusPanel
               repositoryStatus={statusHook.repositoryStatus}
               selectedRepository={repo.selectedRepository}
               isLoading={isLoading}
               onLoadRepositoryStatus={statusHook.handleLoadRepositoryStatus}
               onOpenSvnDownload={statusHook.handleOpenSvnDownload}
+              onSelectChange={changeTree.selectChange}
+              onOpenChangeDiff={(path, ch) => void changeTree.handleOpenChangeDiff(path, ch)}
+              onContextMenu={handleChangeRowContextMenu}
             />
 
             <OperationPanel
@@ -337,7 +330,8 @@ function App() {
                     onToggleChangeNode={changeTree.toggleChangeNode}
                     changeNodeMap={changeNodeMap}
                     selectedChange={changeTree.selectedChange}
-                    onSelectChange={(path, ch) => void changeTree.handleSelectChange(path, ch)}
+                    onSelectChange={changeTree.selectChange}
+                    onOpenChangeDiff={(path, ch) => void changeTree.handleOpenChangeDiff(path, ch)}
                     onContextMenu={handleChangeRowContextMenu}
                     repositoryStatus={statusHook.repositoryStatus}
                     repositoryStats={repo.repositoryStats}
@@ -364,9 +358,47 @@ function App() {
         <StatusBar isLoading={isLoading} status={status} />
       </section>
 
+      <Modal
+        open={changeTree.isDiffDialogOpen}
+        onClose={changeTree.closeDiffDialog}
+        labelledBy="diff-preview-title"
+        className="diff-dialog"
+      >
+        <ModalHeading
+          eyebrow="Diff view"
+          title={changeTree.selectedChange?.path ?? "变更详情"}
+          titleId="diff-preview-title"
+          onClose={changeTree.closeDiffDialog}
+        />
+        <section className="diff-panel diff-dialog-body">
+          {changeTree.selectedChange ? (
+            <div className="panel-title-row">
+              <div className="diff-panel-heading">
+                <ChangeBadge status={changeTree.selectedChange.status} />
+                <strong title={changeTree.selectedChange.path}>{changeTree.selectedChange.path}</strong>
+                <span className="soft-chip">{VcsLabels[changeTree.selectedChange.vcsType]}</span>
+              </div>
+            </div>
+          ) : null}
+          {changeTree.diffPreview?.warning ? <p className="diff-warning">{changeTree.diffPreview.warning}</p> : null}
+          <pre>
+            {changeTree.isDiffLoading
+              ? "正在加载 diff..."
+              : changeTree.diffPreview?.content
+                ? changeTree.diffPreview.content.split("\n").map((line: string, index: number) => (
+                    <span className={diffLineClassName(line)} key={`${index}-${line.slice(0, 16)}`}>
+                      {line || " "}
+                    </span>
+                  ))
+                : "暂无 diff 内容"}
+          </pre>
+        </section>
+      </Modal>
+
       <IgnoreContextMenuOverlay
         menu={ignoreContextMenu.menu}
-        onIgnoreFile={(path, vcsType) => ignore.handleAddIgnoreRule(path, vcsType as VcsType)}
+        onOpenDiff={handleOpenDiffFromContextMenu}
+        onIgnoreFile={(path, vcsType) => ignore.handleAddIgnoreRule(path, vcsType)}
       />
 
       <DeleteConfirmDialog

@@ -14,7 +14,13 @@ interface ChangesPaneProps {
   changeNodeMap: Map<string, ChangeTreeNode>;
   selectedChange: ChangeItem | null;
   onSelectChange: (path: string, change: NonNullable<ChangeTreeNode["change"]>) => void;
-  onContextMenu: (event: MouseEvent<HTMLButtonElement>, path: string, vcsType: VcsType) => void;
+  onOpenChangeDiff: (path: string, change: NonNullable<ChangeTreeNode["change"]>) => void;
+  onContextMenu: (
+    event: MouseEvent<HTMLButtonElement>,
+    path: string,
+    vcsType: VcsType,
+    status: ChangeStatus,
+  ) => void;
   repositoryStatus: RepositoryStatus | null;
   repositoryStats: { total: number; git: number; svn: number; unknown: number };
 }
@@ -92,6 +98,7 @@ export function ChangesPane({
   changeNodeMap,
   selectedChange,
   onSelectChange,
+  onOpenChangeDiff,
   onContextMenu,
   repositoryStatus,
   repositoryStats,
@@ -175,8 +182,9 @@ export function ChangesPane({
                       key={`${file.vcsType}-${file.status}-${file.path}`}
                       type="button"
                       onClick={() => onSelectChange(file.path, { status: file.status, vcsType: file.vcsType })}
+                      onDoubleClick={() => onOpenChangeDiff(file.path, { status: file.status, vcsType: file.vcsType })}
                       onContextMenu={(event) => {
-                        onContextMenu(event, file.path, file.vcsType);
+                        onContextMenu(event, file.path, file.vcsType, file.status);
                       }}
                     >
                       <ChangeBadge status={file.status} />
@@ -206,10 +214,16 @@ export function ChangesPane({
                     onSelectChange(node.path, changeNode.change);
                   }
                 }}
+                onDoubleClick={(node) => {
+                  const changeNode = changeNodeMap.get(node.path);
+                  if (changeNode?.change) {
+                    onOpenChangeDiff(node.path, changeNode.change);
+                  }
+                }}
                 onContextMenu={(node, event) => {
                   const changeNode = changeNodeMap.get(node.path);
                   if (changeNode?.change) {
-                    onContextMenu(event, node.path, changeNode.change.vcsType);
+                    onContextMenu(event, node.path, changeNode.change.vcsType, changeNode.change.status);
                   }
                 }}
                 getRowClassName={(node) => {
