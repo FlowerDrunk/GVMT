@@ -45,6 +45,16 @@ export function statusTone(vcsType: VcsType) {
   return "ready";
 }
 
+export function formatRemoteUrlForDisplay(remoteUrl: string | null) {
+  if (!remoteUrl) return "未检测到";
+
+  try {
+    return decodeURI(remoteUrl);
+  } catch {
+    return remoteUrl;
+  }
+}
+
 export interface ChangeTreeNode {
   name: string;
   path: string;

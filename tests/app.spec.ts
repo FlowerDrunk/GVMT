@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
         name: "Selection backup",
         path: "D:\\project\\Selection backup",
         vcsType: "svn",
-        remoteUrl: "http://svn.example.local/repo/SelectionClient_Code",
+        remoteUrl: "http://svn.example.local/repo/%E9%80%89%E5%9E%8B%E7%AE%A1%E7%90%86/HaierSelectionAppDir",
         branchOrRevision: "101",
         createdAt: "2026-04-30 10:00:00",
         updatedAt: "2026-04-30 10:00:00",
@@ -118,7 +118,7 @@ test("workbench layout is clear and commit/delete flows open in dialogs", async 
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "GVMT" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "当前仓库会话" })).toBeVisible();
+  await expect(page.getByText("Selection backup").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "文件浏览" })).toBeVisible();
   const commitButton = page.getByRole("button", { name: "提交", exact: true });
   await expect(commitButton).toBeVisible();
@@ -132,6 +132,10 @@ test("workbench layout is clear and commit/delete flows open in dialogs", async 
   expect(explorer!.x + explorer!.width).toBeLessThanOrEqual(workspace!.x + 2);
   expect(changes!.width).toBeGreaterThan(260);
 
+  await page.getByRole("button", { name: "评审与质量" }).click();
+  await expect(page.getByText("http://svn.example.local/repo/选型管理/HaierSelectionAppDir")).toBeVisible();
+  await expect(page.getByText("%E9%80%89%E5%9E%8B")).toHaveCount(0);
+
   await commitButton.click();
   const commitDialog = page.getByRole("dialog", { name: "提交变更" });
   await expect(commitDialog).toBeVisible();
@@ -141,7 +145,7 @@ test("workbench layout is clear and commit/delete flows open in dialogs", async 
   await expect(commitDialog).toBeHidden();
 
   await page.locator(".repo-list").getByRole("button", { name: /Selection backup/ }).click({ button: "right" });
-  await page.getByRole("button", { name: "删除仓库记录" }).click();
+  await page.getByRole("menuitem", { name: "删除仓库记录" }).click();
   const deleteDialog = page.getByRole("dialog", { name: "删除仓库记录" });
   await expect(deleteDialog).toBeVisible();
   await expect(deleteDialog.getByText("不会删除磁盘上的仓库文件")).toBeVisible();

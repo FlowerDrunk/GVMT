@@ -480,8 +480,8 @@ fn list_repository_files(
 #[tauri::command]
 fn get_ignore_rules(app: AppHandle, id: i64) -> Result<IgnoreRules, String> {
     let connection = open_database(&app)?;
-    let repository = find_repository_by_id(&connection, id)?
-        .ok_or_else(|| "未找到仓库".to_string())?;
+    let repository =
+        find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
 
     let mut gitignore_path = None;
     let mut gitignore_content = None;
@@ -521,8 +521,8 @@ fn add_ignore_rule(
     input: AddIgnoreRuleRequest,
 ) -> Result<OperationResult, String> {
     let connection = open_database(&app)?;
-    let repository = find_repository_by_id(&connection, id)?
-        .ok_or_else(|| "未找到仓库".to_string())?;
+    let repository =
+        find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
     let normalized_path = normalize_relative_path(&input.path)?;
 
     match input.vcs_type.as_str() {
@@ -539,8 +539,8 @@ fn update_gitignore(
     input: UpdateGitignoreRequest,
 ) -> Result<OperationResult, String> {
     let connection = open_database(&app)?;
-    let repository = find_repository_by_id(&connection, id)?
-        .ok_or_else(|| "未找到仓库".to_string())?;
+    let repository =
+        find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
 
     let gitignore = Path::new(&repository.path).join(".gitignore");
     fs::write(&gitignore, input.content.as_bytes()).map_err(|error| error.to_string())?;
@@ -564,23 +564,42 @@ fn update_svn_ignore(
     rules: Vec<String>,
 ) -> Result<OperationResult, String> {
     let connection = open_database(&app)?;
-    let repository = find_repository_by_id(&connection, id)?
-        .ok_or_else(|| "未找到仓库".to_string())?;
+    let repository =
+        find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
 
     let dir_path = safe_repository_child_path(
         Path::new(&repository.path),
-        if directory.is_empty() { None } else { Some(&directory) },
+        if directory.is_empty() {
+            None
+        } else {
+            Some(&directory)
+        },
     )?;
     let dir_str = os_str_to_string(dir_path.as_os_str());
     let value = rules.join("\n");
 
-    run_command_args("svn", &["propset".into(), "svn:ignore".into(), value.clone(), dir_str])?;
+    run_command_args(
+        "svn",
+        &[
+            "propset".into(),
+            "svn:ignore".into(),
+            value.clone(),
+            dir_str,
+        ],
+    )?;
 
     Ok(OperationResult {
         operation: "ignore".to_string(),
         vcs_type: "svn".to_string(),
         success: true,
-        summary: format!("已更新 svn:ignore — {}", if directory.is_empty() { "仓库根目录" } else { &directory }),
+        summary: format!(
+            "已更新 svn:ignore — {}",
+            if directory.is_empty() {
+                "仓库根目录"
+            } else {
+                &directory
+            }
+        ),
         output: String::new(),
         warning: None,
         missing_svn_cli: false,
@@ -1364,8 +1383,7 @@ fn normalized_commit_paths(files: &[CommitFileRequest]) -> Result<Vec<String>, S
 
 fn svn_absolute_path(root_path: &str, relative_path: &str) -> Result<String, String> {
     let relative = normalize_relative_path(relative_path)?;
-    let joined = Path::new(root_path)
-        .join(relative.replace('/', std::path::MAIN_SEPARATOR_STR));
+    let joined = Path::new(root_path).join(relative.replace('/', std::path::MAIN_SEPARATOR_STR));
     Ok(os_str_to_string(joined.as_os_str()))
 }
 
@@ -1642,7 +1660,10 @@ fn parse_svn_ignore_recursive(output: &str) -> Vec<SvnIgnoreEntry> {
 
     if let Some(dir) = current_dir {
         if !current_rules.is_empty() {
-            entries.push(SvnIgnoreEntry { directory: dir, rules: current_rules });
+            entries.push(SvnIgnoreEntry {
+                directory: dir,
+                rules: current_rules,
+            });
         }
     }
 

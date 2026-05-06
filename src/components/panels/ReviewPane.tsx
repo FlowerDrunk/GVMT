@@ -1,6 +1,6 @@
 import type { Repository, RepositoryStatus } from "../../lib/api";
 import { VcsLabels } from "../../lib/constants";
-import { emptyStateCopy, statusTone, vcsDescriptions } from "../../lib/utils";
+import { emptyStateCopy, formatRemoteUrlForDisplay, statusTone, vcsDescriptions } from "../../lib/utils";
 
 interface ReviewPaneProps {
   selectedRepository: Repository | undefined;
@@ -36,7 +36,9 @@ export function ReviewPane({
               </div>
               <div>
                 <dt>远端</dt>
-                <dd>{selectedRepository.remoteUrl ?? "未检测到"}</dd>
+                <dd className="remote-url-value" title={selectedRepository.remoteUrl ?? undefined}>
+                  {formatRemoteUrlForDisplay(selectedRepository.remoteUrl)}
+                </dd>
               </div>
               <div>
                 <dt>分支 / Revision</dt>
