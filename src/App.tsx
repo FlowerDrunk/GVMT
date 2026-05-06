@@ -164,6 +164,17 @@ function App() {
       void fileTree.handleExpandFileEntry(entry);
     }
   };
+  const handleFileTreeSelect = (path: string) => {
+    const entry = fileEntryMap.get(path);
+    if (entry) {
+      void fileTree.handleSelectFileEntry(entry);
+    }
+  };
+
+  useEffect(() => {
+    if (!repo.selectedRepository || !visibleSections.files) return;
+    void fileTree.handleLoadRepositoryFiles("");
+  }, [repo.selectedRepository?.id, visibleSections.files]);
 
   const renderFileRow = (node: TreeViewNode, _level: number, _isExpanded: boolean) => {
     const entry = fileEntryMap.get(node.path);
@@ -259,8 +270,11 @@ function App() {
                 breadcrumbs={breadcrumbs}
                 fileTreeNodes={fileTreeNodes}
                 expandedFilePaths={fileTree.expandedFilePaths}
+                selectedFilePreview={fileTree.selectedFilePreview}
+                isFilePreviewLoading={fileTree.isFilePreviewLoading}
                 renderFileRow={renderFileRow}
                 onFileTreeToggle={handleFileTreeToggle}
+                onFileTreeSelect={handleFileTreeSelect}
                 onContextMenu={handleChangeRowContextMenu}
               />
             ) : null}

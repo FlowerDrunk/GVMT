@@ -206,6 +206,19 @@ struct RepositoryDirectory {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct RepositoryFilePreview {
+    repository_id: i64,
+    path: String,
+    name: String,
+    size: u64,
+    modified_at: Option<u64>,
+    content: String,
+    is_binary: bool,
+    warning: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct IgnoreRules {
     vcs_type: String,
     gitignore_path: Option<String>,
@@ -529,6 +542,29 @@ fn list_repository_files(
         parent_path,
         entries,
     })
+}
+
+#[tauri::command]
+fn read_repository_file(
+    app: AppHandle,
+    id: i64,
+    relative_path: String,
+) -> Result<RepositoryFilePreview, String> {
+    let connection = open_database(&app)?;
+    let repository = find_repository_by_id(&connection, id)?
+        .ok_or_else(|| "未找到需要预览的仓库".to_string())?;
+    let normalized_path = normalize_relative_path(&relative_path)?;
+    if normalized_path.is_empty() {
+        return Err("请选择一个文件进行预览".to_string());
+    }
+
+    let root = PathBuf::from(&repository.path);
+    let file_path = safe_repository_child_path(&root, Some(&normalized_path))?;
+    if !file_path.is_file() {
+        return Err("当前路径不是可预览的文件".to_string());
+    }
+
+    repository_file_preview(repository.id, &file_path, &normalized_path)
 }
 
 #[tauri::command]
@@ -1230,6 +1266,72 @@ fn untracked_file_preview(
     Ok((content, false, warning))
 }
 
+fn repository_file_preview(
+    repository_id: i64,
+    file_path: &Path,
+    relative_path: &str,
+) -> Result<RepositoryFilePreview, String> {
+    const MAX_PREVIEW_BYTES: usize = 256 * 1024;
+    const MAX_PREVIEW_LINES: usize = 1200;
+
+    let metadata = file_path.metadata().map_err(|error| error.to_string())?;
+    let modified_at = metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|value| value.as_secs());
+    let name = file_path
+        .file_name()
+        .map(os_str_to_string)
+        .unwrap_or_else(|| relative_path.to_string());
+    let bytes = fs::read(file_path).map_err(|error| error.to_string())?;
+
+    if bytes.contains(&0) {
+        return Ok(RepositoryFilePreview {
+            repository_id,
+            path: relative_path.to_string(),
+            name,
+            size: metadata.len(),
+            modified_at,
+            content: String::new(),
+            is_binary: true,
+            warning: Some("二进制文件暂不展示内容预览。".to_string()),
+        });
+    }
+
+    let slice_end = bytes.len().min(MAX_PREVIEW_BYTES);
+    let mut content = decode_command_output(&bytes[..slice_end]);
+    let mut warning = if bytes.len() > MAX_PREVIEW_BYTES {
+        Some("文件较大，仅展示前 256KB 内容。".to_string())
+    } else {
+        None
+    };
+
+    let line_count = content.lines().count();
+    if line_count > MAX_PREVIEW_LINES {
+        content = content
+            .lines()
+            .take(MAX_PREVIEW_LINES)
+            .collect::<Vec<_>>()
+            .join("\n");
+        warning = Some(match warning {
+            Some(value) => format!("{value} 同时仅展示前 {MAX_PREVIEW_LINES} 行。"),
+            None => format!("文件行数较多，仅展示前 {MAX_PREVIEW_LINES} 行。"),
+        });
+    }
+
+    Ok(RepositoryFilePreview {
+        repository_id,
+        path: relative_path.to_string(),
+        name,
+        size: metadata.len(),
+        modified_at,
+        content,
+        is_binary: false,
+        warning,
+    })
+}
+
 fn svn_status_changes(path: &str) -> Result<Vec<ChangeItem>, String> {
     let output = run_command(["svn", "status", path])?;
     Ok(output
@@ -1838,6 +1940,7 @@ pub fn run() {
             list_repository_files,
             list_repositories,
             open_svn_cli_download_page,
+            read_repository_file,
             refresh_repository,
             update_gitignore,
             update_repository,

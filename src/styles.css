@@ -1066,6 +1066,101 @@ textarea:focus {
   padding: 6px;
 }
 
+.file-browser-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.92fr) minmax(320px, 1.08fr);
+  gap: 14px;
+  min-height: 320px;
+  margin-top: 14px;
+}
+
+.file-browser-grid .file-tree {
+  max-height: clamp(320px, 52vh, 680px);
+  margin-top: 0;
+}
+
+.file-preview-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-alpha);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+
+.file-preview-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line-alpha);
+  background: var(--surface-strong);
+  padding: 11px 13px;
+}
+
+.file-preview-heading div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.file-preview-heading strong,
+.file-preview-heading span,
+.file-preview-heading small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-preview-heading strong {
+  color: var(--text);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.file-preview-heading span,
+.file-preview-heading small {
+  color: var(--subtle);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.file-preview-heading small {
+  flex: 0 0 auto;
+  max-width: 150px;
+  text-align: right;
+}
+
+.file-preview-warning {
+  border-bottom: 1px solid var(--line-alpha);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0;
+  padding: 8px 13px;
+}
+
+.file-preview-pane pre {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--surface-strong);
+  color: var(--text);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  margin: 0;
+  padding: 12px 14px;
+  white-space: pre;
+  scrollbar-color: rgba(97, 112, 133, 0.28) transparent;
+  scrollbar-width: thin;
+}
+
 .change-tree {
   display: block;
   min-width: 520px;
@@ -2480,6 +2575,14 @@ textarea:focus {
 
   .main-thread {
     padding: 16px;
+  }
+
+  .file-browser-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .file-preview-pane {
+    min-height: 260px;
   }
 
   .file-tree-row {

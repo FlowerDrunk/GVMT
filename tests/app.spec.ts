@@ -81,6 +81,17 @@ test.beforeEach(async ({ page }) => {
               };
             case "list_repository_files":
               return repositoryFiles;
+            case "read_repository_file":
+              return {
+                repositoryId: args.id,
+                path: args.relativePath,
+                name: "README.md",
+                size: 3200,
+                modifiedAt: 1777514400,
+                content: "# GVMT\n\n本地仓库文件预览",
+                isBinary: false,
+                warning: null,
+              };
             case "get_repository_diff":
               return {
                 repositoryId: args.id,
@@ -120,6 +131,9 @@ test("workbench layout is clear and commit/delete flows open in dialogs", async 
   await expect(page.getByRole("heading", { name: "GVMT" })).toBeVisible();
   await expect(page.getByText("Selection backup").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "文件浏览" })).toBeVisible();
+  await expect(page.getByText("README.md")).toBeVisible();
+  await page.getByRole("button", { name: /README\.md/ }).click();
+  await expect(page.getByText("本地仓库文件预览")).toBeVisible();
   const commitButton = page.getByRole("button", { name: "提交", exact: true });
   await expect(commitButton).toBeVisible();
 

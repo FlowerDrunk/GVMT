@@ -109,6 +109,17 @@ export interface RepositoryDirectory {
   entries: RepositoryFileEntry[];
 }
 
+export interface RepositoryFilePreview {
+  repositoryId: number;
+  path: string;
+  name: string;
+  size: number;
+  modifiedAt: number | null;
+  content: string;
+  isBinary: boolean;
+  warning: string | null;
+}
+
 export function isTauriRuntime() {
   return "__TAURI_INTERNALS__" in window;
 }
@@ -156,6 +167,10 @@ export async function commitRepository(id: number, input: CommitRequest): Promis
 
 export async function listRepositoryFiles(id: number, relativePath?: string): Promise<RepositoryDirectory> {
   return invoke<RepositoryDirectory>("list_repository_files", { id, relativePath });
+}
+
+export async function readRepositoryFile(id: number, relativePath: string): Promise<RepositoryFilePreview> {
+  return invoke<RepositoryFilePreview>("read_repository_file", { id, relativePath });
 }
 
 export interface SvnIgnoreEntry {
