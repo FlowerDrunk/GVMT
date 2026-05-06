@@ -1,4 +1,4 @@
-import { FormEvent } from "react";
+import { FormEvent, useState } from "react";
 import type { Repository } from "../../lib/api";
 import { isTauriRuntime } from "../../lib/api";
 import { emptyStateCopy, statusTone } from "../../lib/utils";
@@ -16,6 +16,7 @@ interface ExplorerPaneProps {
   onDetect: () => void;
   onDeleteRepository: (repository: Repository) => void;
   onRefreshRepositories: () => void;
+  onDropPath: (path: string) => void;
 }
 
 export function ExplorerPane({
@@ -29,9 +30,36 @@ export function ExplorerPane({
   onDetect,
   onDeleteRepository,
   onRefreshRepositories,
+  onDropPath,
 }: ExplorerPaneProps) {
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  function handleDragOver(event: React.DragEvent) {
+    event.preventDefault();
+    setIsDragOver(true);
+  }
+
+  function handleDragLeave() {
+    setIsDragOver(false);
+  }
+
+  function handleDrop(event: React.DragEvent) {
+    event.preventDefault();
+    setIsDragOver(false);
+
+    const file = event.dataTransfer.files[0] as (File & { path?: string }) | undefined;
+    if (file?.path) {
+      onDropPath(file.path);
+    }
+  }
+
   return (
-    <aside className="explorer-pane">
+    <aside
+      className={`explorer-pane${isDragOver ? " drag-over" : ""}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <header className="pane-header">
         <div>
           <h1>GVMT</h1>

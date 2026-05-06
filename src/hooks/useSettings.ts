@@ -1,8 +1,11 @@
 import { useCallback, useState } from "react";
 
+export type ViewModeSetting = "flat" | "tree";
+
 export interface AppSettings {
   autoRefresh: boolean;
   refreshIntervalMs: number;
+  defaultViewMode: ViewModeSetting;
 }
 
 const SETTINGS_KEY = "gvmt-settings";
@@ -15,12 +18,13 @@ function readStoredSettings(): AppSettings {
       return {
         autoRefresh: parsed.autoRefresh ?? true,
         refreshIntervalMs: parsed.refreshIntervalMs ?? 12000,
+        defaultViewMode: parsed.defaultViewMode === "tree" ? "tree" : "flat",
       };
     }
   } catch {
     // ignore corrupt data
   }
-  return { autoRefresh: true, refreshIntervalMs: 12000 };
+  return { autoRefresh: true, refreshIntervalMs: 12000, defaultViewMode: "flat" };
 }
 
 function writeSettings(settings: AppSettings) {

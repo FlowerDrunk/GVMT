@@ -23,6 +23,7 @@ interface ChangesPaneProps {
   ) => void;
   repositoryStatus: RepositoryStatus | null;
   repositoryStats: { total: number; git: number; svn: number; unknown: number };
+  defaultViewMode?: ViewMode;
 }
 
 function filterTreeNodes(nodes: TreeViewNode[], query: string): TreeViewNode[] {
@@ -102,9 +103,10 @@ export function ChangesPane({
   onContextMenu,
   repositoryStatus,
   repositoryStats,
+  defaultViewMode = "flat",
 }: ChangesPaneProps) {
   const [filterText, setFilterText] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>("flat");
+  const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
 
   const flatGroups = useMemo(() => buildFlatGroups(changedFiles), [changedFiles]);
 

@@ -34,6 +34,10 @@ import { useFileTree } from "./hooks/useFileTree";
 import { useChangeTree } from "./hooks/useChangeTree";
 import { useIgnoreRules } from "./hooks/useIgnoreRules";
 import { useSettings } from "./hooks/useSettings";
+import { useOperationHistory } from "./hooks/useOperationHistory";
+import { useToast } from "./hooks/useToast";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { ToastContainer } from "./components/workspace/ToastContainer";
 import { ActivityRail } from "./components/layout/ActivityRail";
 import { CommandBar } from "./components/layout/CommandBar";
 import { ExplorerPane } from "./components/panels/ExplorerPane";
@@ -42,6 +46,7 @@ import { StatusPanel } from "./components/panels/StatusPanel";
 import { ChangesPane } from "./components/panels/ChangesPane";
 import { ReviewPane } from "./components/panels/ReviewPane";
 import { OperationPanel } from "./components/workspace/OperationPanel";
+import { BranchSwitcher } from "./components/workspace/BranchSwitcher";
 import { StatusBar, IgnoreContextMenuOverlay } from "./components/workspace/StatusBar";
 import { TabPanel } from "./components/shared/TabPanel";
 import { Modal, ModalHeading } from "./components/shared/Modal";
@@ -51,11 +56,14 @@ function App() {
   const [status, setStatus] = useState("准备就绪");
   const [isLoading, setIsLoading] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isBranchSwitcherOpen, setIsBranchSwitcherOpen] = useState(false);
   const [activeSidebarTab, setActiveSidebarTab] = useState<string>("changes");
 
   const { visibleSections, toggleSection } = useVisibleSections();
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const { settings, updateSettings } = useSettings();
+  const operationHistory = useOperationHistory();
+  const { toasts, showToast, removeToast } = useToast();
   const ignoreContextMenu = useContextMenu<{ path: string; vcsType: VcsType; status?: ChangeStatus }>();
 
   const repo = useRepositories({ setStatus, setIsLoading });
@@ -121,11 +129,13 @@ function App() {
         files: selectedFiles,
       });
       statusHook.setOperationResults(results);
+      operationHistory.addEntry(results);
       const failed = results.filter((result) => !result.success);
       setStatus(failed.length === 0 ? "提交完成" : `${failed.length} 个提交步骤失败`);
       if (failed.length === 0) {
         commit.setCommitMessage("");
         commit.setIsCommitDialogOpen(false);
+        showToast("提交完成", "success");
       }
       await statusHook.loadRepositoryStatus(true);
     } catch (error) {
@@ -226,6 +236,15 @@ function App() {
     );
   };
 
+  useKeyboardShortcuts([
+    { key: "r", ctrl: true, action: () => statusHook.handleLoadRepositoryStatus(), enabled: !!repo.selectedRepository },
+    { key: "F", ctrl: true, shift: true, action: () => toggleSection("files") },
+    { key: "D", ctrl: true, shift: true, action: () => {
+      if (!visibleSections.review) toggleSection("review");
+      setActiveSidebarTab("changes");
+    }},
+  ]);
+
   const appShellClassName = `app-shell ${visibleSections.repositories ? "" : "repositories-collapsed"}`;
 
   return (
@@ -254,6 +273,10 @@ function App() {
             repo.setRepositoryPendingDelete(r);
           }}
           onRefreshRepositories={repo.refreshRepositories}
+          onDropPath={(droppedPath) => {
+            repo.setPath(droppedPath);
+            showToast(`已识别路径：${droppedPath}`, "info");
+          }}
         />
       ) : null}
 
@@ -272,6 +295,7 @@ function App() {
           onOpenIgnoreDialog={ignore.handleOpenIgnoreDialog}
           onOpenCommitDialog={() => commit.setIsCommitDialogOpen(true)}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onSwitchBranch={() => setIsBranchSwitcherOpen(true)}
         />
 
         <div className="workbench">
@@ -309,6 +333,7 @@ function App() {
 
             <OperationPanel
               operationResults={statusHook.operationResults}
+              history={operationHistory.history}
               onOpenSvnDownload={statusHook.handleOpenSvnDownload}
             />
           </section>
@@ -335,6 +360,7 @@ function App() {
                     onContextMenu={handleChangeRowContextMenu}
                     repositoryStatus={statusHook.repositoryStatus}
                     repositoryStats={repo.repositoryStats}
+                    defaultViewMode={settings.defaultViewMode}
                   />
                 ),
               },
@@ -447,6 +473,15 @@ function App() {
         onCommitMessageChange={commit.setCommitMessage}
         onSubmit={handleCommitRepository}
       />
+
+      <BranchSwitcher
+        open={isBranchSwitcherOpen}
+        onClose={() => setIsBranchSwitcherOpen(false)}
+        repository={repo.selectedRepository}
+        onSwitched={(summary) => setStatus(summary)}
+      />
+
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
 
       <SettingsDialog
         open={isSettingsOpen}

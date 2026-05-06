@@ -173,6 +173,19 @@ export async function readRepositoryFile(id: number, relativePath: string): Prom
   return invoke<RepositoryFilePreview>("read_repository_file", { id, relativePath });
 }
 
+export interface BranchInfo {
+  name: string;
+  isCurrent: boolean;
+}
+
+export async function listBranches(id: number): Promise<BranchInfo[]> {
+  return invoke<BranchInfo[]>("list_branches", { id });
+}
+
+export async function switchBranch(id: number, branch: string): Promise<OperationResult> {
+  return invoke<OperationResult>("switch_branch", { id, branch });
+}
+
 export interface SvnIgnoreEntry {
   directory: string;
   rules: string[];

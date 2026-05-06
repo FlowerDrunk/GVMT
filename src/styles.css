@@ -2413,8 +2413,29 @@ textarea:focus {
 
 .operation-list {
   display: grid;
-  gap: 12px;
-  margin-top: 14px;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.history-toggle {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.history-list {
+  margin-top: 8px;
+}
+
+.history-group {
+  display: grid;
+  gap: 6px;
+}
+
+.history-time {
+  color: var(--subtle);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 0;
 }
 
 .operation-card {
@@ -2846,4 +2867,136 @@ textarea:focus {
 
 .settings-dialog .modal-actions {
   margin-top: 8px;
+}
+
+/* ---- Branch Switcher ---- */
+
+.branch-switcher-dialog {
+  width: min(480px, calc(100vw - 48px));
+}
+
+.branch-list {
+  display: grid;
+  gap: 6px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.branch-loading {
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+  padding: 24px;
+}
+
+.branch-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  padding: 8px 14px;
+  text-align: left;
+}
+
+.branch-item:hover:not(:disabled) {
+  background: var(--surface-muted);
+}
+
+.branch-item.current {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "Cascadia Code", "Consolas", monospace;
+}
+
+.command-branch {
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 12px;
+  color: var(--muted);
+  border: none;
+  background: transparent;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.command-branch:hover {
+  background: var(--surface-muted);
+  color: var(--accent);
+}
+
+/* ---- Toast ---- */
+
+.toast-container {
+  position: fixed;
+  bottom: 48px;
+  right: 24px;
+  z-index: 120;
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  min-width: 200px;
+  max-width: 420px;
+  border: 1px solid var(--line-alpha);
+  border-radius: 10px;
+  background: var(--surface-glass-strong);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(14px);
+  padding: 10px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  pointer-events: auto;
+  animation: toast-in 220ms ease;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.toast-success {
+  border-left: 3px solid var(--success);
+}
+
+.toast-error {
+  border-left: 3px solid var(--danger-fg);
+}
+
+.toast-info {
+  border-left: 3px solid var(--accent);
+}
+
+/* ---- Drag-Drop ---- */
+
+.explorer-pane.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+}
+
+.explorer-pane.drag-over .add-strip {
+  background: var(--accent-soft);
+  border-radius: 8px;
+  transition: background-color 120ms ease;
 }

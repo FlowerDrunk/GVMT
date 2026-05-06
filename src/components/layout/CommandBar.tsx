@@ -15,6 +15,7 @@ interface CommandBarProps {
   onOpenIgnoreDialog: () => void;
   onOpenCommitDialog: () => void;
   onOpenSettings: () => void;
+  onSwitchBranch: () => void;
 }
 
 export function CommandBar({
@@ -31,6 +32,7 @@ export function CommandBar({
   onOpenIgnoreDialog,
   onOpenCommitDialog,
   onOpenSettings,
+  onSwitchBranch,
 }: CommandBarProps) {
   return (
     <header className="command-bar">
@@ -47,7 +49,9 @@ export function CommandBar({
           <span>变更 <strong>{currentChangeCount}</strong></span>
           <span>{currentReviewState}</span>
           {selectedRepository?.branchOrRevision ? (
-            <span className="command-branch">{selectedRepository.branchOrRevision}</span>
+            <button className="command-branch" type="button" onClick={onSwitchBranch}>
+              {selectedRepository.branchOrRevision}
+            </button>
           ) : null}
         </div>
       </div>

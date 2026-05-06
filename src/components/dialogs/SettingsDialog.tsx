@@ -54,6 +54,23 @@ export function SettingsDialog({
             </label>
           ) : null}
         </section>
+
+        <section className="settings-section">
+          <h4>变更列表</h4>
+          <p>变更面板默认使用的展示方式。</p>
+          <label className="settings-field">
+            <span>默认视图</span>
+            <select
+              value={settings.defaultViewMode}
+              onChange={(event) =>
+                onUpdateSettings({ defaultViewMode: event.currentTarget.value as "flat" | "tree" })
+              }
+            >
+              <option value="flat">路径分组</option>
+              <option value="tree">树形展开</option>
+            </select>
+          </label>
+        </section>
       </div>
 
       <div className="modal-actions">
