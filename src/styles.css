@@ -1523,6 +1523,21 @@ textarea:focus {
   white-space: nowrap;
 }
 
+.file-tree-row strong,
+.change-tree-row strong,
+.changed-file-row strong,
+.commit-file-row strong,
+.diff-heading strong,
+.diff-panel-heading strong,
+.file-preview-heading strong,
+.file-preview-heading span,
+.repo-copy strong,
+.repo-copy small,
+.change-path,
+.command-branch {
+  padding-left: 3px;
+}
+
 .file-tree-row {
   grid-template-columns: 20px 26px minmax(160px, 1fr) 88px 96px;
   gap: 8px;
@@ -1677,11 +1692,13 @@ textarea:focus {
 }
 
 .commit-file-row strong {
+  min-width: 0;
   overflow: hidden;
   color: var(--text);
   font-family: "Cascadia Code", "Consolas", monospace;
   font-size: 12px;
   font-weight: 700;
+  padding-left: 3px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
