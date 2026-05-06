@@ -157,6 +157,7 @@ export function toFileTreeNodes(entries: RepositoryFileEntry[]): TreeViewNode[] 
     name: entry.name,
     path: entry.path,
     children: toFileTreeNodes(entry.children),
+    isDirectory: entry.entryType === "directory",
   }));
 }
 
@@ -172,11 +173,16 @@ export function buildFileEntryMap(entries: RepositoryFileEntry[]): Map<string, R
 }
 
 export function changeTreeToViewNodes(nodes: ChangeTreeNode[]): TreeViewNode[] {
-  return nodes.map((node) => ({
-    name: node.name,
-    path: node.path,
-    children: changeTreeToViewNodes(node.children),
-  }));
+  return nodes.map((node) => {
+    const hasChildren = node.children.length > 0;
+    const isFile = !!node.change;
+    return {
+      name: node.name,
+      path: node.path,
+      children: changeTreeToViewNodes(node.children),
+      isDirectory: hasChildren && !isFile,
+    };
+  });
 }
 
 export function buildChangeNodeMap(nodes: ChangeTreeNode[]): Map<string, ChangeTreeNode> {

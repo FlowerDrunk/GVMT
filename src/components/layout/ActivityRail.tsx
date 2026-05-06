@@ -6,6 +6,7 @@ interface ActivityRailProps {
   themeMode: "light" | "dark" | "system";
   setThemeMode: (mode: "light" | "dark" | "system") => void;
   isLoading: boolean;
+  onOpenSettings: () => void;
 }
 
 export function ActivityRail({
@@ -14,6 +15,7 @@ export function ActivityRail({
   themeMode,
   setThemeMode,
   isLoading,
+  onOpenSettings,
 }: ActivityRailProps) {
   return (
     <aside className="activity-rail" aria-label="主导航">
@@ -59,7 +61,7 @@ export function ActivityRail({
           <span aria-hidden="true">◎</span>
           <small>评审</small>
         </button>
-        <button className="rail-button" type="button" title="设置" disabled>
+        <button className="rail-button" type="button" title="设置" onClick={onOpenSettings}>
           <span aria-hidden="true">⚙</span>
           <small>设置</small>
         </button>

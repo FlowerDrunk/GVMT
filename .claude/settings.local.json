@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check *)",
+      "Bash(npx tsc *)",
+      "Bash(npx vite *)",
+      "Bash(cargo build *)",
+      "Bash(grep -nE '#[0-9a-fA-F]{3,8}|rgba?\\\\\\([0-9]' src/styles.css)",
+      "Bash(grep -nE ':\\\\s*\\(rgba?\\\\\\([^\\)]+\\\\\\)|#[0-9a-fA-F]{3,8}\\)' src/styles.css)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(npm install *)"
+    ]
+  }
+}

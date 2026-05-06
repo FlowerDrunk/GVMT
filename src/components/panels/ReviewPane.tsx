@@ -1,16 +1,12 @@
-import type { ChangeItem, Repository, RepositoryDiff, RepositoryStatus } from "../../lib/api";
+import type { Repository, RepositoryStatus } from "../../lib/api";
 import { VcsLabels } from "../../lib/constants";
-import { diffLineClassName, emptyStateCopy, statusTone, vcsDescriptions } from "../../lib/utils";
-import { ChangeBadge } from "../shared/ChangeBadge";
+import { emptyStateCopy, statusTone, vcsDescriptions } from "../../lib/utils";
 
 interface ReviewPaneProps {
   selectedRepository: Repository | undefined;
   currentReviewState: string;
   currentChangeCount: number;
   repositoryStatus: RepositoryStatus | null;
-  selectedChange: ChangeItem | null;
-  diffPreview: RepositoryDiff | null;
-  isDiffLoading: boolean;
 }
 
 export function ReviewPane({
@@ -18,9 +14,6 @@ export function ReviewPane({
   currentReviewState,
   currentChangeCount,
   repositoryStatus,
-  selectedChange,
-  diffPreview,
-  isDiffLoading,
 }: ReviewPaneProps) {
   return (
     <aside className="context-pane">
@@ -70,36 +63,6 @@ export function ReviewPane({
           <span data-state="pending">发起评审</span>
           <span data-state="pending">质量检查</span>
         </div>
-        {selectedChange ? (
-          <div className="diff-preview">
-            <div className="diff-heading">
-              <div>
-                <ChangeBadge status={selectedChange.status} />
-                <strong>{selectedChange.path}</strong>
-              </div>
-              <small>{VcsLabels[selectedChange.vcsType]}</small>
-            </div>
-            {diffPreview?.warning ? <p className="diff-warning">{diffPreview.warning}</p> : null}
-            <pre aria-busy={isDiffLoading}>
-              {isDiffLoading
-                ? "正在加载 diff..."
-                : diffPreview?.content
-                  ? diffPreview.content
-                      .split("\n")
-                      .map((line, index) => (
-                        <span className={diffLineClassName(line)} key={`${index}-${line.slice(0, 16)}`}>
-                          {line || " "}
-                        </span>
-                      ))
-                  : "暂无 diff 内容"}
-            </pre>
-          </div>
-        ) : (
-          <div className="review-empty">
-            <h3>{repositoryStatus?.clean ? "可进入评审准备" : "等待审查内容"}</h3>
-            <p>{repositoryStatus ? "从变更状态中选择一个文件后，这里会展示 Git / SVN diff 预览。" : "先刷新工作区状态，随后可进入代码评审流程。"}</p>
-          </div>
-        )}
       </section>
     </aside>
   );

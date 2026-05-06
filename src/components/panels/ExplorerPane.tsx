@@ -1,8 +1,9 @@
-import { FormEvent, MouseEvent } from "react";
-import type { Repository, VcsType } from "../../lib/api";
+import { FormEvent } from "react";
+import type { Repository } from "../../lib/api";
 import { isTauriRuntime } from "../../lib/api";
 import { emptyStateCopy, statusTone } from "../../lib/utils";
 import { VcsLabels } from "../../lib/constants";
+import { ContextMenu, ContextMenuItem } from "../shared/ContextMenu";
 
 interface ExplorerPaneProps {
   path: string;
@@ -13,7 +14,7 @@ interface ExplorerPaneProps {
   onSelectRepository: (id: number) => void;
   onAddRepository: (event: FormEvent<HTMLFormElement>) => void;
   onDetect: () => void;
-  onRepositoryContextMenu: (event: MouseEvent<HTMLButtonElement>, repository: Repository) => void;
+  onDeleteRepository: (repository: Repository) => void;
   onRefreshRepositories: () => void;
 }
 
@@ -26,7 +27,7 @@ export function ExplorerPane({
   onSelectRepository,
   onAddRepository,
   onDetect,
-  onRepositoryContextMenu,
+  onDeleteRepository,
   onRefreshRepositories,
 }: ExplorerPaneProps) {
   return (
@@ -79,20 +80,30 @@ export function ExplorerPane({
             <div className="empty-list">{emptyStateCopy.title}</div>
           ) : (
             repositories.map((repository) => (
-              <button
-                className={`repo-item ${selectedRepository?.id === repository.id ? "active" : ""}`}
+              <ContextMenu
                 key={repository.id}
-                type="button"
-                onClick={() => onSelectRepository(repository.id)}
-                onContextMenu={(event) => onRepositoryContextMenu(event, repository)}
+                trigger={
+                  <button
+                    className={`repo-item ${selectedRepository?.id === repository.id ? "active" : ""}`}
+                    type="button"
+                    onClick={() => onSelectRepository(repository.id)}
+                  >
+                    <span className={`repo-dot ${statusTone(repository.vcsType)}`} />
+                    <span className="repo-copy">
+                      <strong>{repository.name}</strong>
+                      <small>{repository.path}</small>
+                    </span>
+                    <span className="repo-type">{VcsLabels[repository.vcsType]}</span>
+                  </button>
+                }
               >
-                <span className={`repo-dot ${statusTone(repository.vcsType)}`} />
-                <span className="repo-copy">
-                  <strong>{repository.name}</strong>
-                  <small>{repository.path}</small>
-                </span>
-                <span className="repo-type">{VcsLabels[repository.vcsType]}</span>
-              </button>
+                <ContextMenuItem
+                  className="danger"
+                  onSelect={() => onDeleteRepository(repository)}
+                >
+                  删除仓库记录
+                </ContextMenuItem>
+              </ContextMenu>
             ))
           )}
         </div>

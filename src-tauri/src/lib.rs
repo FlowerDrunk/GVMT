@@ -1,12 +1,20 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
+    ffi::OsStr,
     fs,
     path::{Path, PathBuf},
     process::Command,
     time::UNIX_EPOCH,
 };
 use tauri::{AppHandle, Manager};
+
+fn os_str_to_string(value: &OsStr) -> String {
+    value
+        .to_str()
+        .map(String::from)
+        .unwrap_or_else(|| value.to_string_lossy().into_owned())
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -563,7 +571,7 @@ fn update_svn_ignore(
         Path::new(&repository.path),
         if directory.is_empty() { None } else { Some(&directory) },
     )?;
-    let dir_str = dir_path.to_string_lossy().to_string();
+    let dir_str = os_str_to_string(dir_path.as_os_str());
     let value = rules.join("\n");
 
     run_command_args("svn", &["propset".into(), "svn:ignore".into(), value.clone(), dir_str])?;
@@ -873,7 +881,7 @@ fn repository_file_entries(
     let mut entries = Vec::new();
     for item in fs::read_dir(directory_path).map_err(|error| error.to_string())? {
         let item = item.map_err(|error| error.to_string())?;
-        let file_name = item.file_name().to_string_lossy().to_string();
+        let file_name = os_str_to_string(&item.file_name());
         if should_hide_repository_entry(&file_name) {
             continue;
         }
@@ -1041,13 +1049,19 @@ fn parse_git_status_line(line: &str) -> Option<ChangeItem> {
     }
 
     let status_code = &line[..2];
+    // Skip the status chars and the space separator to get the path
     let raw_path = line[3..].trim();
+    // For renamed files ("R  old -> new"), take the new name
     let path = raw_path
         .rsplit(" -> ")
         .next()
         .unwrap_or(raw_path)
         .trim_matches('"')
         .to_string();
+
+    if path.is_empty() {
+        return None;
+    }
 
     Some(ChangeItem {
         path,
@@ -1087,7 +1101,7 @@ fn git_file_diff(root_path: &str, relative_path: &str) -> Result<String, String>
 fn svn_file_diff(root_path: &str, relative_path: &str) -> Result<String, String> {
     let target_path =
         Path::new(root_path).join(relative_path.replace('/', std::path::MAIN_SEPARATOR_STR));
-    let target = target_path.to_string_lossy().to_string();
+    let target = os_str_to_string(target_path.as_os_str());
     let diff = run_command(["svn", "diff", &target])?;
     Ok(if diff.trim().is_empty() {
         "当前文件没有可展示的 SVN diff，可能是仅属性变化或文件内容尚未加入版本控制。".to_string()
@@ -1191,7 +1205,7 @@ fn repository_relative_change_path(path: &str, root_path: &str) -> String {
         Path::new(path).canonicalize(),
     ) {
         if let Ok(relative) = candidate.strip_prefix(root) {
-            return relative.to_string_lossy().replace('\\', "/");
+            return os_str_to_string(relative.as_os_str()).replace('\\', "/");
         }
     }
 
@@ -1350,10 +1364,9 @@ fn normalized_commit_paths(files: &[CommitFileRequest]) -> Result<Vec<String>, S
 
 fn svn_absolute_path(root_path: &str, relative_path: &str) -> Result<String, String> {
     let relative = normalize_relative_path(relative_path)?;
-    Ok(Path::new(root_path)
-        .join(relative.replace('/', std::path::MAIN_SEPARATOR_STR))
-        .to_string_lossy()
-        .to_string())
+    let joined = Path::new(root_path)
+        .join(relative.replace('/', std::path::MAIN_SEPARATOR_STR));
+    Ok(os_str_to_string(joined.as_os_str()))
 }
 
 fn success_operation(
@@ -1692,7 +1705,7 @@ fn svn_ignore_append_rule(root_path: &str, relative_path: &str) -> Result<Operat
     } else {
         root.join(parent_dir.replace('/', std::path::MAIN_SEPARATOR_STR))
     };
-    let dir_str = dir_path.to_string_lossy().to_string();
+    let dir_str = os_str_to_string(dir_path.as_os_str());
 
     let mut existing = Vec::new();
     if let Ok(output) = run_command(["svn", "propget", "svn:ignore", &dir_str]) {

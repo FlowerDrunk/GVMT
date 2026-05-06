@@ -4,6 +4,7 @@ export interface TreeViewNode {
   name: string;
   path: string;
   children: TreeViewNode[];
+  isDirectory?: boolean;
 }
 
 interface TreeViewProps {
@@ -32,7 +33,7 @@ export function TreeView({
   return (
     <>
       {nodes.map((node) => {
-        const isDirectory = node.children.length > 0;
+        const isDirectory = node.isDirectory ?? node.children.length > 0;
         const isExpanded = expandedPaths.has(node.path);
 
         return (

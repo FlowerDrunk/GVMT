@@ -1,10 +1,10 @@
 import type { Repository } from "../../lib/api";
-import type { VisibleSections } from "../../hooks/useVisibleSections";
+import { VcsLabels } from "../../lib/constants";
 
 interface CommandBarProps {
-  visibleSections: VisibleSections;
-  toggleSection: (section: keyof VisibleSections) => void;
   selectedRepository: Repository | undefined;
+  currentChangeCount: number;
+  currentReviewState: string;
   isLoading: boolean;
   isIgnoreLoading: boolean;
   canOpenCommitDialog: boolean;
@@ -14,12 +14,13 @@ interface CommandBarProps {
   onUpdateRepository: () => void;
   onOpenIgnoreDialog: () => void;
   onOpenCommitDialog: () => void;
+  onOpenSettings: () => void;
 }
 
 export function CommandBar({
-  visibleSections,
-  toggleSection,
   selectedRepository,
+  currentChangeCount,
+  currentReviewState,
   isLoading,
   isIgnoreLoading,
   canOpenCommitDialog,
@@ -29,50 +30,27 @@ export function CommandBar({
   onUpdateRepository,
   onOpenIgnoreDialog,
   onOpenCommitDialog,
+  onOpenSettings,
 }: CommandBarProps) {
   return (
     <header className="command-bar">
-      <div className="command-title">
-        <p className="eyebrow">当前仓库</p>
-        <h2>{selectedRepository?.name ?? "选择或添加仓库"}</h2>
+      <div className="command-info">
+        <span className={`repo-dot ${selectedRepository ? (selectedRepository.vcsType === "unknown" ? "warning" : "ready") : "warning"}`} />
+        <strong className="command-repo-name">
+          {selectedRepository?.name ?? "选择或添加仓库"}
+        </strong>
+        {selectedRepository ? (
+          <span className="soft-chip">{VcsLabels[selectedRepository.vcsType]}</span>
+        ) : null}
+        <span className="command-sep" />
+        <div className="command-metrics">
+          <span>变更 <strong>{currentChangeCount}</strong></span>
+          <span>{currentReviewState}</span>
+          {selectedRepository?.branchOrRevision ? (
+            <span className="command-branch">{selectedRepository.branchOrRevision}</span>
+          ) : null}
+        </div>
       </div>
-      <nav className="function-nav" aria-label="功能区">
-        <button
-          className={visibleSections.repositories ? "active" : ""}
-          type="button"
-          aria-pressed={visibleSections.repositories}
-          onClick={() => toggleSection("repositories")}
-        >
-          仓库
-        </button>
-        <button
-          className={visibleSections.files ? "active" : ""}
-          type="button"
-          aria-pressed={visibleSections.files}
-          onClick={() => toggleSection("files")}
-        >
-          文件
-        </button>
-        <button
-          className={visibleSections.changes ? "active" : ""}
-          type="button"
-          aria-pressed={visibleSections.changes}
-          onClick={() => toggleSection("changes")}
-        >
-          变更
-        </button>
-        <button
-          className={visibleSections.review ? "active" : ""}
-          type="button"
-          aria-pressed={visibleSections.review}
-          onClick={() => toggleSection("review")}
-        >
-          评审
-        </button>
-        <button type="button" disabled>
-          设置
-        </button>
-      </nav>
       <div className="command-actions">
         <button
           className="secondary-button"
@@ -113,6 +91,14 @@ export function CommandBar({
           onClick={onUpdateRepository}
         >
           更新
+        </button>
+        <button
+          className="ghost-button"
+          type="button"
+          onClick={onOpenSettings}
+          title="设置"
+        >
+          ⚙
         </button>
       </div>
     </header>

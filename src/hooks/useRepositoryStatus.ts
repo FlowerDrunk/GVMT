@@ -12,12 +12,16 @@ import {
 
 interface UseRepositoryStatusOptions {
   selectedRepository: Repository | undefined;
+  autoRefresh: boolean;
+  refreshIntervalMs: number;
   setStatus: (value: string) => void;
   setIsLoading: (value: boolean) => void;
 }
 
 export function useRepositoryStatus({
   selectedRepository,
+  autoRefresh,
+  refreshIntervalMs,
   setStatus,
   setIsLoading,
 }: UseRepositoryStatusOptions) {
@@ -95,15 +99,21 @@ export function useRepositoryStatus({
 
     void loadRepositoryStatus(true);
 
+    if (!autoRefresh) {
+      return () => {
+        isCancelled = true;
+      };
+    }
+
     const refreshTimer = window.setInterval(() => {
       void loadRepositoryStatus(true);
-    }, 12000);
+    }, refreshIntervalMs);
 
     return () => {
       isCancelled = true;
       window.clearInterval(refreshTimer);
     };
-  }, [selectedRepository?.id, loadRepositoryStatus]);
+  }, [selectedRepository?.id, loadRepositoryStatus, autoRefresh, refreshIntervalMs]);
 
   function reset() {
     setRepositoryStatus(null);
