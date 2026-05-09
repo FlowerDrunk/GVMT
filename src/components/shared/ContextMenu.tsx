@@ -1,5 +1,10 @@
-import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
 import { type ReactNode } from "react";
+import {
+  ContextMenu as ShadcnContextMenu,
+  ContextMenuContent,
+  ContextMenuItem as ShadcnContextMenuItem,
+  ContextMenuTrigger,
+} from "../ui/context-menu";
 
 interface ContextMenuProps {
   trigger: ReactNode;
@@ -8,16 +13,10 @@ interface ContextMenuProps {
 
 export function ContextMenu({ trigger, children }: ContextMenuProps) {
   return (
-    <ContextMenuPrimitive.Root>
-      <ContextMenuPrimitive.Trigger asChild>
-        {trigger}
-      </ContextMenuPrimitive.Trigger>
-      <ContextMenuPrimitive.Portal>
-        <ContextMenuPrimitive.Content className="context-menu">
-          {children}
-        </ContextMenuPrimitive.Content>
-      </ContextMenuPrimitive.Portal>
-    </ContextMenuPrimitive.Root>
+    <ShadcnContextMenu>
+      <ContextMenuTrigger asChild>{trigger}</ContextMenuTrigger>
+      <ContextMenuContent>{children}</ContextMenuContent>
+    </ShadcnContextMenu>
   );
 }
 
@@ -31,11 +30,8 @@ export function ContextMenuItem({
   children: ReactNode;
 }) {
   return (
-    <ContextMenuPrimitive.Item
-      className={className}
-      onSelect={onSelect}
-    >
+    <ShadcnContextMenuItem className={className} onSelect={onSelect}>
       {children}
-    </ContextMenuPrimitive.Item>
+    </ShadcnContextMenuItem>
   );
 }

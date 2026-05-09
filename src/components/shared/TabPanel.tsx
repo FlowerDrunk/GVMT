@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 
 export interface TabDef {
   key: string;
@@ -20,9 +21,9 @@ export function TabPanel({
   tabs,
   activeTab: controlledTab,
   onActiveTabChange,
-  defaultWidth = 360,
-  minWidth = 280,
-  maxWidth = 600,
+  defaultWidth = 320,
+  minWidth = 300,
+  maxWidth = 520,
 }: TabPanelProps) {
   const visibleTabs = tabs.filter((t) => t.visible);
   const [internalTab, setInternalTab] = useState<string>("");
@@ -100,22 +101,24 @@ export function TabPanel({
       <div className="tab-resize-handle" onMouseDown={onMouseDown}>
         <span className="resize-grip" />
       </div>
-      {visibleTabs.length > 1 ? (
-        <div className="tab-bar">
-          {visibleTabs.map((tab) => (
-            <button
-              key={tab.key}
-              className={`tab-item ${resolvedTab === tab.key ? "active" : ""}`}
-              onClick={() => setActiveTab(tab.key)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      <div className="tab-content">
-        {activeContent}
-      </div>
+      <Tabs value={resolvedTab} onValueChange={setActiveTab} className="tab-panel-tabs">
+        {visibleTabs.length > 1 ? (
+          <TabsList className="tab-bar h-auto rounded-none bg-transparent p-0">
+            {visibleTabs.map((tab) => (
+              <TabsTrigger
+                key={tab.key}
+                value={tab.key}
+                className={`tab-item ${resolvedTab === tab.key ? "active" : ""} data-[state=active]:bg-transparent data-[state=active]:shadow-none`}
+              >
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        ) : null}
+        <TabsContent value={resolvedTab} className="tab-content mt-0">
+          {activeContent}
+        </TabsContent>
+      </Tabs>
     </aside>
   );
 }

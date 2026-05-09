@@ -1,4 +1,5 @@
 import type { ChangeStatus } from "../../lib/api";
+import type { Translator } from "../../lib/i18n";
 
 const changeLabels: Record<string, string> = {
   added: "新增",

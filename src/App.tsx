@@ -2,10 +2,10 @@ import { FormEvent, MouseEvent, useEffect, useMemo, useRef, useState } from "rea
 import fileIconUrl from "../src-tauri/icons/file.png";
 import folderIconUrl from "../src-tauri/icons/folder.png";
 import { changeKey, VcsLabels } from "./lib/constants";
-import { useTheme } from "./lib/theme";
 import { applyDocumentLanguage, createTranslator } from "./lib/i18n";
 import {
   addRepository,
+  checkRemoteUpdates,
   commitRepository,
   consumeStartupContext,
   detectRepository,
@@ -13,6 +13,7 @@ import {
   getWindowsContextMenuStatus,
   installWindowsContextMenu,
   isTauriRuntime,
+  type RemoteUpdateStatus,
   type WindowsContextMenuStatus,
   uninstallWindowsContextMenu,
   updateRepository,
@@ -49,40 +50,56 @@ import { useOperationHistory } from "./hooks/useOperationHistory";
 import { useToast } from "./hooks/useToast";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useQualityChecks } from "./hooks/useQualityChecks";
+import { useCardOrder } from "./hooks/useCardOrder";
 import { ToastContainer } from "./components/workspace/ToastContainer";
 import { ActivityRail } from "./components/layout/ActivityRail";
 import { CommandBar } from "./components/layout/CommandBar";
 import { ExplorerPane } from "./components/panels/ExplorerPane";
 import { FileBrowserPanel } from "./components/panels/FileBrowserPanel";
+import { RepositorySummaryPanel } from "./components/panels/RepositorySummaryPanel";
 import { StatusPanel } from "./components/panels/StatusPanel";
 import { ChangesPane } from "./components/panels/ChangesPane";
 import { ReviewPane } from "./components/panels/ReviewPane";
+import { ThemeDialog } from "./components/panels/ThemePane";
 import { OperationPanel } from "./components/workspace/OperationPanel";
 import { BranchSwitcher } from "./components/workspace/BranchSwitcher";
 import { StatusBar, IgnoreContextMenuOverlay } from "./components/workspace/StatusBar";
 import { TabPanel } from "./components/shared/TabPanel";
+import { DraggableCard } from "./components/shared/DraggableCard";
 import { Modal, ModalHeading } from "./components/shared/Modal";
 import { DiffCodeBlock } from "./components/shared/CodeBlock";
+import { WorkspaceProvider, useWorkspace } from "./lib/WorkspaceContext";
 
-function App() {
-  const [status, setStatus] = useState("准备就绪");
-  const [isLoading, setIsLoading] = useState(false);
+function AppContent() {
+  const { t, settings, updateSettings, showToast, toasts, removeToast } = useWorkspace();
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasInitialized, setHasInitialized] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isThemeOpen, setIsThemeOpen] = useState(false);
   const [isBranchSwitcherOpen, setIsBranchSwitcherOpen] = useState(false);
   const [activeSidebarTab, setActiveSidebarTab] = useState<string>("changes");
   const [windowsContextMenuStatus, setWindowsContextMenuStatus] = useState<WindowsContextMenuStatus | null>(null);
   const [isWindowsContextMenuLoading, setIsWindowsContextMenuLoading] = useState(false);
+  const [status, setStatus] = useState("正在启动...");
   const startupContextHandledRef = useRef(false);
 
   const { visibleSections, toggleSection } = useVisibleSections();
-  const { mode: themeMode, setMode: setThemeMode } = useTheme();
-  const { settings, updateSettings } = useSettings();
-  const t = useMemo(() => createTranslator(settings.language), [settings.language]);
-  const operationHistory = useOperationHistory();
-  const { toasts, showToast, removeToast } = useToast();
   const ignoreContextMenu = useContextMenu<{ path: string; vcsType: VcsType; status?: ChangeStatus }>();
 
   const repo = useRepositories({ setStatus, setIsLoading });
+
+  // Track initial load completion
+  useEffect(() => {
+    if (!isLoading && !hasInitialized && repo.repositories.length >= 0) {
+      setHasInitialized(true);
+      if (repo.repositories.length === 0) {
+        setStatus("准备就绪 — 请添加仓库");
+      }
+    }
+  }, [isLoading, hasInitialized, repo.repositories.length]);
+
+  const operationHistory = useOperationHistory(repo.selectedRepository?.id);
 
   const statusHook = useRepositoryStatus({
     selectedRepository: repo.selectedRepository,
@@ -112,6 +129,8 @@ function App() {
     onCloseContextMenu: ignoreContextMenu.close,
     setStatus,
   });
+
+  const cardOrder = useCardOrder();
 
   useEffect(() => {
     applyDocumentLanguage(settings.language);
@@ -186,8 +205,6 @@ function App() {
       const context = await consumeStartupContext();
       if (!context) return;
 
-      // "detect" and "update" are handled in background (Rust), never reach here
-      // Only "open" and "commit" open the full app
       repo.setPath(context.path);
       setIsLoading(true);
       const repository = await addRepository({ path: context.path });
@@ -264,6 +281,32 @@ function App() {
       setIsWindowsContextMenuLoading(false);
     }
   }
+
+  const [remoteUpdateStatus, setRemoteUpdateStatus] = useState<RemoteUpdateStatus | null>(null);
+
+  // Remote update detection: run periodically (every Nth auto-refresh cycle)
+  const remoteCheckCountRef = useRef(0);
+  useEffect(() => {
+    if (!repo.selectedRepository || !settings.autoRefresh) return;
+    remoteCheckCountRef.current = 0;
+
+    const timer = setInterval(async () => {
+      remoteCheckCountRef.current += 1;
+      if (remoteCheckCountRef.current % 5 !== 0) return;
+      try {
+        const status = await checkRemoteUpdates(repo.selectedRepository!.id);
+        setRemoteUpdateStatus(status);
+        if (status.hasUpdates) {
+          setStatus(status.details ?? "远端有更新可用");
+          showToast(status.details ?? "远端有更新可用", "info");
+        }
+      } catch {
+        // Remote check failed silently
+      }
+    }, settings.refreshIntervalMs * 5);
+
+    return () => clearInterval(timer);
+  }, [repo.selectedRepository?.id, settings.autoRefresh, settings.refreshIntervalMs]);
 
   function handleChangeRowContextMenu(
     event: MouseEvent<HTMLButtonElement>,
@@ -368,39 +411,58 @@ function App() {
 
   const appShellClassName = `app-shell ${visibleSections.repositories ? "" : "repositories-collapsed"}`;
 
+  // Startup loading screen — shown until first data load completes
+  if (!hasInitialized && isLoading) {
+    return (
+      <div className="startup-loader">
+        <div className="startup-loader-content">
+          <div className="startup-loader-logo">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+              <rect width="48" height="48" rx="12" fill="var(--accent)" />
+              <text x="24" y="32" textAnchor="middle" fill="white" fontSize="22" fontWeight="800" fontFamily="system-ui, sans-serif">G</text>
+            </svg>
+          </div>
+          <div className="startup-loader-spinner" />
+          <p className="startup-loader-status">{status}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <main className={appShellClassName}>
       <ActivityRail
         visibleSections={visibleSections}
         toggleSection={toggleSection}
-        themeMode={themeMode}
-        setThemeMode={setThemeMode}
         isLoading={isLoading}
         t={t}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenThemeSettings={() => setIsThemeOpen(true)}
       />
 
-      {visibleSections.repositories ? (
-        <ExplorerPane
-          path={repo.path}
-          onPathChange={repo.setPath}
-          isLoading={isLoading}
-          repositories={repo.repositories}
-          selectedRepository={repo.selectedRepository}
-          onSelectRepository={repo.setSelectedId}
-          onAddRepository={repo.handleAddRepository}
-          onDetect={repo.handleDetect}
-          onDeleteRepository={(r) => {
-            repo.setSelectedId(r.id);
-            repo.setRepositoryPendingDelete(r);
-          }}
-          onRefreshRepositories={repo.refreshRepositories}
-          onDropPath={(droppedPath) => {
-            repo.setPath(droppedPath);
-            showToast(`已识别路径：${droppedPath}`, "info");
-          }}
-        />
-      ) : null}
+      <div className="sidebar-panels">
+        {visibleSections.repositories ? (
+          <ExplorerPane
+            path={repo.path}
+            onPathChange={repo.setPath}
+            isLoading={isLoading}
+            repositories={repo.repositories}
+            selectedRepository={repo.selectedRepository}
+            onSelectRepository={repo.setSelectedId}
+            onRepositoriesChanged={repo.refreshRepositories}
+            onDeleteRepository={(r) => {
+              repo.setSelectedId(r.id);
+              repo.setRepositoryPendingDelete(r);
+            }}
+            onRefreshRepositories={repo.refreshRepositories}
+            onDropPath={(droppedPath) => {
+              repo.setPath(droppedPath);
+              showToast(`已识别路径：${droppedPath}`, "info");
+            }}
+            onSetStatus={setStatus}
+          />
+        ) : null}
+      </div>
 
       <section className="workspace">
         <CommandBar
@@ -423,42 +485,89 @@ function App() {
 
         <div className="workbench">
           <section className="main-thread">
-            {visibleSections.files ? (
-              <FileBrowserPanel
-                repositoryFiles={fileTree.repositoryFiles}
-                selectedRepository={repo.selectedRepository}
-                isFileBrowserLoading={fileTree.isFileBrowserLoading}
-                onLoadRepositoryFiles={fileTree.handleLoadRepositoryFiles}
-                breadcrumbs={breadcrumbs}
-                fileTreeNodes={fileTreeNodes}
-                expandedFilePaths={fileTree.expandedFilePaths}
-                isFilePreviewOpen={fileTree.isFilePreviewOpen}
-                selectedFilePreview={fileTree.selectedFilePreview}
-                isFilePreviewLoading={fileTree.isFilePreviewLoading}
-                renderFileRow={renderFileRow}
-                onFileTreeToggle={handleFileTreeToggle}
-                onFileTreeOpen={handleFileTreeOpen}
-                onCloseFilePreview={fileTree.closeFilePreview}
-                onContextMenu={handleChangeRowContextMenu}
-              />
-            ) : null}
+            {cardOrder.order.map((cardId, index) => {
+              const isDragging = cardOrder.dragId === cardId;
+              const isDropTarget = cardOrder.dropIndex === index;
 
-            <StatusPanel
-              repositoryStatus={statusHook.repositoryStatus}
-              selectedRepository={repo.selectedRepository}
-              isLoading={isLoading}
-              onLoadRepositoryStatus={statusHook.handleLoadRepositoryStatus}
-              onOpenSvnDownload={statusHook.handleOpenSvnDownload}
-              onSelectChange={changeTree.selectChange}
-              onOpenChangeDiff={(path, ch) => void changeTree.handleOpenChangeDiff(path, ch)}
-              onContextMenu={handleChangeRowContextMenu}
-            />
+              const content = (() => {
+                switch (cardId) {
+                  case "repo-summary":
+                    return (
+                      <RepositorySummaryPanel
+                        selectedRepository={repo.selectedRepository}
+                        currentReviewState={currentReviewState}
+                        currentChangeCount={currentChangeCount}
+                        t={t}
+                      />
+                    );
+                  case "file-browser":
+                    if (!visibleSections.files) return null;
+                    return (
+                      <FileBrowserPanel
+                        repositoryFiles={fileTree.repositoryFiles}
+                        selectedRepository={repo.selectedRepository}
+                        isFileBrowserLoading={fileTree.isFileBrowserLoading}
+                        t={t}
+                        onLoadRepositoryFiles={fileTree.handleLoadRepositoryFiles}
+                        breadcrumbs={breadcrumbs}
+                        fileTreeNodes={fileTreeNodes}
+                        expandedFilePaths={fileTree.expandedFilePaths}
+                        isFilePreviewOpen={fileTree.isFilePreviewOpen}
+                        selectedFilePreview={fileTree.selectedFilePreview}
+                        isFilePreviewLoading={fileTree.isFilePreviewLoading}
+                        renderFileRow={renderFileRow}
+                        onFileTreeToggle={handleFileTreeToggle}
+                        onFileTreeOpen={handleFileTreeOpen}
+                        onCloseFilePreview={fileTree.closeFilePreview}
+                        onContextMenu={handleChangeRowContextMenu}
+                      />
+                    );
+                  case "status":
+                    return (
+                      <StatusPanel
+                        repositoryStatus={statusHook.repositoryStatus}
+                        selectedRepository={repo.selectedRepository}
+                        isLoading={isLoading}
+                        t={t}
+                        onLoadRepositoryStatus={statusHook.handleLoadRepositoryStatus}
+                        onOpenSvnDownload={statusHook.handleOpenSvnDownload}
+                        onSelectChange={changeTree.selectChange}
+                        onOpenChangeDiff={(path, ch) => void changeTree.handleOpenChangeDiff(path, ch)}
+                        onContextMenu={handleChangeRowContextMenu}
+                      />
+                    );
+                  case "operation":
+                    return (
+                      <OperationPanel
+                        operationResults={statusHook.operationResults}
+                        history={operationHistory.history}
+                        persistedLogs={operationHistory.persistedLogs}
+                        t={t}
+                        onOpenSvnDownload={statusHook.handleOpenSvnDownload}
+                        onClearHistory={operationHistory.clearHistory}
+                      />
+                    );
+                  default:
+                    return null;
+                }
+              })();
 
-            <OperationPanel
-              operationResults={statusHook.operationResults}
-              history={operationHistory.history}
-              onOpenSvnDownload={statusHook.handleOpenSvnDownload}
-            />
+              if (!content) return null;
+
+              return (
+                <DraggableCard
+                  key={cardId}
+                  cardId={cardId}
+                  index={index}
+                  isDragging={isDragging}
+                  isDropTarget={isDropTarget}
+                  registerCardRef={cardOrder.registerCardRef}
+                  onMouseDown={cardOrder.handleMouseDown}
+                >
+                  {content}
+                </DraggableCard>
+              );
+            })}
           </section>
 
           <TabPanel
@@ -474,6 +583,7 @@ function App() {
                     changedFiles={changedFiles}
                     changeTreeViewNodes={changeTreeViewNodes}
                     expandedChangePaths={changeTree.expandedChangePaths}
+                    t={t}
                     renderChangeRow={renderChangeRow}
                     onToggleChangeNode={changeTree.toggleChangeNode}
                     changeNodeMap={changeNodeMap}
@@ -497,6 +607,7 @@ function App() {
                     currentReviewState={currentReviewState}
                     currentChangeCount={currentChangeCount}
                     repositoryStatus={statusHook.repositoryStatus}
+                    t={t}
                     qualityChecks={qualityChecks.checks}
                     isQualityCheckLoading={qualityChecks.isLoadingTemplates}
                     onRunQualityCheck={(checkType) => void qualityChecks.runCheck(checkType)}
@@ -546,6 +657,7 @@ function App() {
 
       <IgnoreContextMenuOverlay
         menu={ignoreContextMenu.menu}
+        t={t}
         onOpenDiff={handleOpenDiffFromContextMenu}
         onIgnoreFile={(path, vcsType) => ignore.handleAddIgnoreRule(path, vcsType)}
       />
@@ -553,6 +665,7 @@ function App() {
       <DeleteConfirmDialog
         repository={repo.repositoryPendingDelete}
         isLoading={isLoading}
+        t={t}
         onClose={() => repo.setRepositoryPendingDelete(null)}
         onConfirm={repo.handleDeleteRepositoryRecord}
       />
@@ -562,6 +675,7 @@ function App() {
         onClose={() => ignore.setIsIgnoreDialogOpen(false)}
         ignoreRules={ignore.ignoreRules}
         isIgnoreLoading={ignore.isIgnoreLoading}
+        t={t}
         onSaveGitignore={ignore.handleSaveGitignore}
         onSaveSvnIgnore={ignore.handleSaveSvnIgnore}
         onGitignoreContentChange={(content) =>
@@ -585,6 +699,7 @@ function App() {
       <CommitDialog
         open={commit.isCommitDialogOpen}
         onClose={() => commit.setIsCommitDialogOpen(false)}
+        t={t}
         committableFiles={commit.committableFiles}
         selectedCommitKeys={commit.selectedCommitKeys}
         selectedCommitCount={commit.selectedCommitCount}
@@ -605,6 +720,7 @@ function App() {
         open={isBranchSwitcherOpen}
         onClose={() => setIsBranchSwitcherOpen(false)}
         repository={repo.selectedRepository}
+        t={t}
         onSwitched={(summary) => setStatus(summary)}
       />
 
@@ -622,7 +738,26 @@ function App() {
         onRefreshWindowsContextMenu={() => void handleRefreshWindowsContextMenu(true)}
         onUpdateSettings={updateSettings}
       />
+
+      <ThemeDialog
+        open={isThemeOpen}
+        onClose={() => setIsThemeOpen(false)}
+        t={t}
+        settings={settings}
+        onUpdateSettings={updateSettings}
+      />
     </main>
+  );
+}
+
+function App() {
+  const [status, setStatus] = useState("正在启动...");
+  const [isLoading, setIsLoading] = useState(true);
+
+  return (
+    <WorkspaceProvider isLoading={isLoading} setIsLoading={setIsLoading} status={status} setStatus={setStatus}>
+      <AppContent />
+    </WorkspaceProvider>
   );
 }
 

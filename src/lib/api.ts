@@ -249,6 +249,219 @@ export async function switchBranch(id: number, branch: string): Promise<Operatio
   return invoke<OperationResult>("switch_branch", { id, branch });
 }
 
+// ── Operation Logs ─────────────────────────────────────────────────────────
+
+export interface OperationLog {
+  id: number;
+  repositoryId: number | null;
+  operation: string;
+  vcsType: VcsType;
+  success: boolean;
+  summary: string;
+  output: string;
+  warning: string | null;
+  createdAt: string;
+}
+
+export async function logOperation(params: {
+  repositoryId: number | null;
+  operation: string;
+  vcsType: VcsType;
+  success: boolean;
+  summary: string;
+  output?: string;
+  warning?: string | null;
+}): Promise<number> {
+  return invoke<number>("log_operation", {
+    repositoryId: params.repositoryId,
+    operation: params.operation,
+    vcsType: params.vcsType,
+    success: params.success,
+    summary: params.summary,
+    output: params.output ?? "",
+    warning: params.warning,
+  });
+}
+
+export async function listOperationLogs(
+  repositoryId?: number,
+  limit?: number,
+  offset?: number,
+): Promise<OperationLog[]> {
+  return invoke<OperationLog[]>("list_operation_logs", {
+    repositoryId: repositoryId ?? null,
+    limit: limit ?? null,
+    offset: offset ?? null,
+  });
+}
+
+export async function clearOperationLogs(beforeDays?: number): Promise<number> {
+  return invoke<number>("clear_operation_logs", {
+    beforeDays: beforeDays ?? null,
+  });
+}
+
+// ── GitHub / gh Integration ───────────────────────────────────────────────
+
+export interface GhStatus {
+  installed: boolean;
+  authenticated: boolean;
+  authUser: string | null;
+  error: string | null;
+}
+
+export interface GhOwnerRepo {
+  owner: string;
+  name: string;
+}
+
+export interface GhRepoInfo {
+  owner: string;
+  name: string;
+  description: string | null;
+  url: string;
+  defaultBranch: string;
+  primaryLanguage: string | null;
+  isPrivate: boolean;
+}
+
+export interface GitHubEntry {
+  name: string;
+  path: string;
+  entryType: "file" | "directory";
+  size: number | null;
+}
+
+export interface GitHubDirectory {
+  entries: GitHubEntry[];
+}
+
+export interface GitHubFileContent {
+  name: string;
+  path: string;
+  content: string;
+  size: number;
+  isBinary: boolean;
+}
+
+export interface GitHubPr {
+  number: number;
+  title: string;
+  state: string;
+  author: string | null;
+  createdAt: string;
+  headRef: string;
+  baseRef: string;
+  url: string;
+}
+
+export interface GitHubPrList {
+  prs: GitHubPr[];
+}
+
+export interface GitHubRun {
+  name: string;
+  headBranch: string;
+  status: string;
+  conclusion: string | null;
+  createdAt: string;
+  url: string;
+}
+
+export interface GitHubRunList {
+  runs: GitHubRun[];
+}
+
+export async function checkGhStatus(): Promise<GhStatus> {
+  return invoke<GhStatus>("check_gh_status");
+}
+
+export async function getGhRepoInfo(remoteUrl: string): Promise<GhRepoInfo> {
+  return invoke<GhRepoInfo>("get_gh_repo_info", { remoteUrl });
+}
+
+export async function ghListDirectory(
+  remoteUrl: string,
+  path: string,
+  reference?: string,
+): Promise<GitHubDirectory> {
+  return invoke<GitHubDirectory>("gh_list_directory", {
+    remoteUrl,
+    path,
+    reference: reference ?? null,
+  });
+}
+
+export async function ghReadFile(
+  remoteUrl: string,
+  path: string,
+  reference?: string,
+): Promise<GitHubFileContent> {
+  return invoke<GitHubFileContent>("gh_read_file", {
+    remoteUrl,
+    path,
+    reference: reference ?? null,
+  });
+}
+
+export async function ghListPrs(
+  remoteUrl: string,
+  state?: string,
+): Promise<GitHubPrList> {
+  return invoke<GitHubPrList>("gh_list_prs", {
+    remoteUrl,
+    state: state ?? null,
+  });
+}
+
+export async function ghListActions(remoteUrl: string): Promise<GitHubRunList> {
+  return invoke<GitHubRunList>("gh_list_actions", { remoteUrl });
+}
+
+export async function ghOpenBrowser(remoteUrl: string, page: string): Promise<void> {
+  return invoke<void>("gh_open_browser", { remoteUrl, page });
+}
+
+export async function parseRemoteOwnerRepo(remoteUrl: string): Promise<GhOwnerRepo | null> {
+  return invoke<GhOwnerRepo | null>("parse_remote_owner_repo", { remoteUrl });
+}
+
+// ── SVN Remote File Browsing ──────────────────────────────────────────────
+
+export interface SvnRemoteEntry {
+  name: string;
+  entryType: "file" | "directory";
+}
+
+export interface SvnRemoteDirectory {
+  entries: SvnRemoteEntry[];
+  path: string;
+  parentPath: string | null;
+}
+
+export async function svnRemoteList(url: string): Promise<SvnRemoteDirectory> {
+  return invoke<SvnRemoteDirectory>("svn_remote_list", { url });
+}
+
+export async function pickFolder(): Promise<string | null> {
+  return invoke<string | null>("pick_folder");
+}
+
+export async function svnRemoteCat(url: string): Promise<string> {
+  return invoke<string>("svn_remote_cat", { url });
+}
+
+// ── Remote Update Detection ──────────────────────────────────────────────
+
+export interface RemoteUpdateStatus {
+  hasUpdates: boolean;
+  details: string | null;
+}
+
+export async function checkRemoteUpdates(id: number): Promise<RemoteUpdateStatus> {
+  return invoke<RemoteUpdateStatus>("check_remote_updates", { id });
+}
+
 export interface SvnIgnoreEntry {
   directory: string;
   rules: string[];

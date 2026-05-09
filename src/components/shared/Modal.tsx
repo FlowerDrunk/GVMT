@@ -1,4 +1,6 @@
-import { useEffect, type ReactNode } from "react";
+import { type ReactNode } from "react";
+import { Button } from "../ui/button";
+import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 
 interface ModalProps {
   open: boolean;
@@ -9,33 +11,14 @@ interface ModalProps {
 }
 
 export function Modal({ open, onClose, labelledBy, className, children }: ModalProps) {
-  useEffect(() => {
-    if (!open) return;
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <section
-        className={`modal-card${className ? ` ${className}` : ""}`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={labelledBy}
-        onClick={(event) => event.stopPropagation()}
-      >
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen) onClose();
+    }}>
+      <DialogContent className={className} aria-labelledby={labelledBy}>
         {children}
-      </section>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -54,11 +37,16 @@ export function ModalHeading({
     <div className="modal-heading">
       <div>
         <p className="eyebrow">{eyebrow}</p>
-        <h3 id={titleId}>{title}</h3>
+        <DialogTitle asChild>
+          <h3 id={titleId}>{title}</h3>
+        </DialogTitle>
       </div>
-      <button className="icon-button" type="button" onClick={onClose} title="关闭">
-        ×
-      </button>
+      <Button variant="icon" onClick={onClose} title="关闭">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M18 6 6 18" />
+          <path d="m6 6 12 12" />
+        </svg>
+      </Button>
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import { Switch as ShadcnSwitch } from "../ui/switch";
+
 interface SwitchProps {
   id?: string;
   checked: boolean;
@@ -7,16 +9,7 @@ interface SwitchProps {
 
 export function Switch({ id, checked, onCheckedChange, label }: SwitchProps) {
   const inner = (
-    <button
-      className={`radix-switch${checked ? " checked" : ""}`}
-      id={id}
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onCheckedChange(!checked)}
-    >
-      <span className="radix-switch-thumb" />
-    </button>
+    <ShadcnSwitch id={id} checked={checked} onCheckedChange={onCheckedChange} />
   );
 
   if (!label) return inner;

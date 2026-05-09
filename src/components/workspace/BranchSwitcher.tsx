@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { BranchInfo, Repository } from "../../lib/api";
+import type { Translator } from "../../lib/i18n";
 import { listBranches, switchBranch } from "../../lib/api";
 import { Modal, ModalHeading } from "../shared/Modal";
 
@@ -7,10 +8,11 @@ interface BranchSwitcherProps {
   open: boolean;
   onClose: () => void;
   repository: Repository | undefined;
+  t: Translator;
   onSwitched: (summary: string) => void;
 }
 
-export function BranchSwitcher({ open, onClose, repository, onSwitched }: BranchSwitcherProps) {
+export function BranchSwitcher({ open, onClose, repository, t, onSwitched }: BranchSwitcherProps) {
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [switchingBranch, setSwitchingBranch] = useState<string | null>(null);
@@ -44,15 +46,15 @@ export function BranchSwitcher({ open, onClose, repository, onSwitched }: Branch
     <Modal open={open} onClose={onClose} labelledBy="branch-switcher-title" className="branch-switcher-dialog">
       <ModalHeading
         eyebrow={repository?.vcsType === "git" ? "Git branch" : "SVN switch"}
-        title="分支切换"
+        title={t("branch.title")}
         titleId="branch-switcher-title"
         onClose={onClose}
       />
       <div className="branch-list">
         {isLoading ? (
-          <p className="branch-loading">正在加载分支列表...</p>
+          <p className="branch-loading">{t("branch.loading")}</p>
         ) : branches.length === 0 ? (
-          <p className="branch-loading">暂无分支信息</p>
+          <p className="branch-loading">{t("branch.noInfo")}</p>
         ) : (
           branches.map((b) => (
             <button
@@ -63,8 +65,8 @@ export function BranchSwitcher({ open, onClose, repository, onSwitched }: Branch
               onClick={() => handleSwitch(b.name)}
             >
               <span className="branch-name">{b.name}</span>
-              {b.isCurrent ? <span className="soft-chip">当前</span> : null}
-              {switchingBranch === b.name ? <span>切换中...</span> : null}
+              {b.isCurrent ? <span className="soft-chip">{t("branch.current")}</span> : null}
+              {switchingBranch === b.name ? <span>{t("branch.switching")}</span> : null}
             </button>
           ))
         )}

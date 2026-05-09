@@ -1,4 +1,5 @@
 import type { ChangeStatus, Repository, VcsType } from "../../lib/api";
+import type { Translator } from "../../lib/i18n";
 
 interface StatusBarProps {
   isLoading: boolean;
@@ -9,6 +10,7 @@ export function StatusBar({ isLoading, status }: StatusBarProps) {
   return (
     <footer className="statusbar">
       <span className={isLoading ? "status-dot busy" : "status-dot"} />
+      {isLoading ? <span className="inline-spinner" /> : null}
       <span>{status}</span>
     </footer>
   );
@@ -24,12 +26,14 @@ interface ContextMenuState<T> {
 
 interface RepoContextMenuOverlayProps {
   menu: ContextMenuState<Repository> | null;
+  t: Translator;
   onDeleteRequest: (repository: Repository) => void;
   onClose: () => void;
 }
 
 export function RepoContextMenuOverlay({
   menu,
+  t,
   onDeleteRequest,
   onClose,
 }: RepoContextMenuOverlayProps) {
@@ -49,7 +53,7 @@ export function RepoContextMenuOverlay({
           onClose();
         }}
       >
-        删除仓库记录
+        {t("menu.deleteRecord")}
       </button>
     </div>
   );
@@ -57,12 +61,14 @@ export function RepoContextMenuOverlay({
 
 interface IgnoreContextMenuOverlayProps {
   menu: ContextMenuState<{ path: string; vcsType: VcsType; status?: ChangeStatus }> | null;
+  t: Translator;
   onOpenDiff: (path: string, vcsType: VcsType, status?: ChangeStatus) => void;
   onIgnoreFile: (path: string, vcsType: VcsType) => void;
 }
 
 export function IgnoreContextMenuOverlay({
   menu,
+  t,
   onOpenDiff,
   onIgnoreFile,
 }: IgnoreContextMenuOverlayProps) {
@@ -79,13 +85,13 @@ export function IgnoreContextMenuOverlay({
         disabled={!menu.data.status}
         onClick={() => onOpenDiff(menu.data.path, menu.data.vcsType, menu.data.status)}
       >
-        查看 diff
+        {t("menu.viewDiff")}
       </button>
       <button
         type="button"
         onClick={() => onIgnoreFile(menu.data.path, menu.data.vcsType)}
       >
-        忽略此文件
+        {t("menu.ignoreFile")}
       </button>
     </div>
   );

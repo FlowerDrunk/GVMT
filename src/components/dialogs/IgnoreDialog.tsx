@@ -1,12 +1,15 @@
 import type { IgnoreRules, SvnIgnoreEntry } from "../../lib/api";
+import type { Translator } from "../../lib/i18n";
 import { Modal, ModalHeading } from "../shared/Modal";
 import { EmptyState } from "../shared/EmptyState";
+import { Button } from "../ui/button";
 
 interface IgnoreDialogProps {
   open: boolean;
   onClose: () => void;
   ignoreRules: IgnoreRules | null;
   isIgnoreLoading: boolean;
+  t: Translator;
   onSaveGitignore: () => void;
   onSaveSvnIgnore: (entry: SvnIgnoreEntry) => void;
   onGitignoreContentChange: (content: string) => void;
@@ -18,6 +21,7 @@ export function IgnoreDialog({
   onClose,
   ignoreRules,
   isIgnoreLoading,
+  t,
   onSaveGitignore,
   onSaveSvnIgnore,
   onGitignoreContentChange,
@@ -29,7 +33,7 @@ export function IgnoreDialog({
     <Modal open={open} onClose={onClose} labelledBy={titleId} className="ignore-dialog">
       <ModalHeading
         eyebrow="Ignore management"
-        title="忽略管理"
+        title={t("ignore.title")}
         titleId={titleId}
         onClose={onClose}
       />
@@ -49,14 +53,9 @@ export function IgnoreDialog({
                 placeholder="# 输入忽略规则，每行一条…"
                 rows={8}
               />
-              <button
-                className="primary-button"
-                type="button"
-                disabled={isIgnoreLoading}
-                onClick={onSaveGitignore}
-              >
-                保存 .gitignore
-              </button>
+              <Button variant="default" disabled={isIgnoreLoading} onClick={onSaveGitignore}>
+                {isIgnoreLoading ? t("ignore.saving") : t("ignore.save")} .gitignore
+              </Button>
             </section>
           ) : null}
 
@@ -89,14 +88,9 @@ export function IgnoreDialog({
                       }
                       rows={4}
                     />
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      disabled={isIgnoreLoading}
-                      onClick={() => onSaveSvnIgnore(entry)}
-                    >
-                      保存
-                    </button>
+                    <Button variant="secondary" disabled={isIgnoreLoading} onClick={() => onSaveSvnIgnore(entry)}>
+                      {isIgnoreLoading ? t("ignore.saving") : t("ignore.save")}
+                    </Button>
                   </div>
                 ))
               )}
@@ -104,7 +98,7 @@ export function IgnoreDialog({
           ) : null}
         </div>
       ) : (
-        <EmptyState compact title="正在加载…" description="" />
+        <EmptyState compact title={t("general.loading")} description="" />
       )}
     </Modal>
   );

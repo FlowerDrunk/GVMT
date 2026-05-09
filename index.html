@@ -4,6 +4,57 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GVMT</title>
+    <style>
+      /* Inline critical styles — shown before JS bundle loads */
+      html, body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+      body {
+        background: #f6f7f9;
+        font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        body { background: #121212; }
+        .splash-title { color: #f8f9fa !important; }
+      }
+      .splash {
+        display: grid;
+        place-items: center;
+        height: 100vh;
+      }
+      .splash-inner {
+        display: grid;
+        justify-items: center;
+        gap: 20px;
+      }
+      .splash-logo {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        background: #2563eb;
+        display: grid;
+        place-items: center;
+        color: #fff;
+        font-size: 22px;
+        font-weight: 800;
+      }
+      .splash-spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid #e5e7eb;
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: spin 700ms linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .splash-title {
+        color: #6c757d;
+        font-size: 13px;
+        margin: 0;
+      }
+    </style>
     <script>
       (function () {
         var theme = localStorage.getItem("gvmt-theme") || "system";
@@ -14,12 +65,23 @@
             ? "dark"
             : "light";
         document.documentElement.setAttribute("data-theme-resolved", resolved);
+        if (resolved === "dark") {
+          document.body.style.background = "#121212";
+        }
       })();
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Splash screen visible before React mounts -->
+    <div id="root">
+      <div class="splash">
+        <div class="splash-inner">
+          <div class="splash-logo">G</div>
+          <div class="splash-spinner"></div>
+          <p class="splash-title">正在启动...</p>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

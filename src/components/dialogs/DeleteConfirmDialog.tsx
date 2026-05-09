@@ -1,4 +1,6 @@
+import type { Translator } from "../../lib/i18n";
 import { Modal, ModalHeading } from "../shared/Modal";
+import { Button } from "../ui/button";
 
 interface DeleteConfirmDialogProps {
   repository: {
@@ -6,6 +8,7 @@ interface DeleteConfirmDialogProps {
     path: string;
   } | null;
   isLoading: boolean;
+  t: Translator;
   onClose: () => void;
   onConfirm: () => void;
 }
@@ -13,6 +16,7 @@ interface DeleteConfirmDialogProps {
 export function DeleteConfirmDialog({
   repository,
   isLoading,
+  t,
   onClose,
   onConfirm,
 }: DeleteConfirmDialogProps) {
@@ -24,26 +28,26 @@ export function DeleteConfirmDialog({
     <Modal open onClose={onClose} labelledBy={titleId} className="confirm-dialog">
       <ModalHeading
         eyebrow="Repository record"
-        title="删除仓库记录"
+        title={t("delete.title")}
         titleId={titleId}
         onClose={onClose}
       />
       <p>
-        将从 GVMT 的本地列表中移除 <strong>{repository.name}</strong>，不会删除磁盘上的仓库文件。
+        {t("delete.body")} <strong>{repository.name}</strong>
       </p>
       <dl className="metadata compact">
         <div>
-          <dt>路径</dt>
+          <dt>{t("delete.path")}</dt>
           <dd>{repository.path}</dd>
         </div>
       </dl>
       <div className="modal-actions">
-        <button className="secondary-button" type="button" onClick={onClose}>
-          取消
-        </button>
-        <button className="danger-button" type="button" disabled={isLoading} onClick={onConfirm}>
-          删除记录
-        </button>
+        <Button variant="secondary" onClick={onClose}>
+          {t("delete.cancel")}
+        </Button>
+        <Button variant="destructive" disabled={isLoading} onClick={onConfirm}>
+          {t("delete.confirm")}
+        </Button>
       </div>
     </Modal>
   );

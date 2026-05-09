@@ -1,5 +1,6 @@
 import { MouseEvent, useMemo, useState } from "react";
 import type { ChangeItem, ChangeStatus, RepositoryStatus, VcsType } from "../../lib/api";
+import type { Translator } from "../../lib/i18n";
 import type { ChangeTreeNode } from "../../lib/utils";
 import type { TreeViewNode } from "../shared/TreeView";
 import { TreeView } from "../shared/TreeView";
@@ -9,6 +10,7 @@ interface ChangesPaneProps {
   changedFiles: ChangeItem[];
   changeTreeViewNodes: TreeViewNode[];
   expandedChangePaths: Set<string>;
+  t: Translator;
   renderChangeRow: (node: TreeViewNode, level: number, isExpanded: boolean) => React.ReactNode;
   onToggleChangeNode: (path: string) => void;
   changeNodeMap: Map<string, ChangeTreeNode>;
@@ -90,10 +92,37 @@ function buildFlatGroups(changes: ChangeItem[]): FlatGroup[] {
 
 type ViewMode = "tree" | "flat";
 
+function FlatViewIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M8 6h13" />
+      <path d="M8 12h13" />
+      <path d="M8 18h13" />
+      <path d="M3 6h.01" />
+      <path d="M3 12h.01" />
+      <path d="M3 18h.01" />
+    </svg>
+  );
+}
+
+function TreeViewIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 5h6" />
+      <path d="M4 12h6" />
+      <path d="M4 19h6" />
+      <path d="M14 12h6" />
+      <path d="M10 5v14" />
+      <path d="M10 12h4" />
+    </svg>
+  );
+}
+
 export function ChangesPane({
   changedFiles,
   changeTreeViewNodes,
   expandedChangePaths,
+  t,
   renderChangeRow,
   onToggleChangeNode,
   changeNodeMap,
@@ -137,31 +166,31 @@ export function ChangesPane({
 
   return (
     <aside className="changes-pane">
-      <header className="changes-header" style={{ display: "grid", gap: "8px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <header className="changes-header">
+        <div className="changes-header-row">
           <button className="changes-title" type="button">
-            变更状态
+            {t("changes.title")}
           </button>
-          <div className="view-toggle" style={{ display: "flex", gap: "2px" }}>
+          <div className="view-toggle">
             <button
               className={`view-toggle-btn ${viewMode === "flat" ? "active" : ""}`}
               onClick={() => setViewMode("flat")}
-              title="路径分组"
+              title={t("changes.flatView")}
             >
-              ▤
+              <FlatViewIcon />
             </button>
             <button
               className={`view-toggle-btn ${viewMode === "tree" ? "active" : ""}`}
               onClick={() => setViewMode("tree")}
-              title="树形展开"
+              title={t("changes.treeView")}
             >
-              ☰
+              <TreeViewIcon />
             </button>
           </div>
         </div>
         <input
-          placeholder="筛选文件..."
-          aria-label="筛选文件"
+          placeholder={t("changes.filter")}
+          aria-label={t("changes.filter")}
           value={filterText}
           onChange={(event) => setFilterText(event.currentTarget.value)}
         />
@@ -199,7 +228,7 @@ export function ChangesPane({
             </div>
           ) : (
             <div className="changes-empty">
-              <p>{filterText.trim() ? "没有匹配的文件" : "没有匹配的文件"}</p>
+              <p>{filterText.trim() ? t("changes.noMatch") : t("changes.noMatch")}</p>
             </div>
           )
         ) : (
@@ -239,19 +268,19 @@ export function ChangesPane({
             </div>
           ) : (
             <div className="changes-empty">
-              <p>{filterText.trim() ? "没有匹配的文件" : "没有匹配的文件"}</p>
+              <p>{filterText.trim() ? t("changes.noMatch") : t("changes.noMatch")}</p>
             </div>
           )
         )
       ) : (
         <div className="changes-empty">
-          <p>{repositoryStatus ? "没有匹配的文件" : "尚未刷新状态"}</p>
+          <p>{repositoryStatus ? t("changes.noMatch") : t("changes.notRefreshed")}</p>
         </div>
       )}
 
       <section className="changes-stats">
         <div>
-          <span>总仓库</span>
+          <span>{t("changes.totalRepos")}</span>
           <strong>{repositoryStats.total}</strong>
         </div>
         <div>
@@ -263,17 +292,17 @@ export function ChangesPane({
           <strong>{repositoryStats.svn}</strong>
         </div>
         <div>
-          <span>待确认</span>
+          <span>{t("changes.pending")}</span>
           <strong>{repositoryStats.unknown}</strong>
         </div>
       </section>
 
       <section className="changes-roadmap">
-        <h3>当前阶段</h3>
+        <h3>{t("changes.currentStage")}</h3>
         <div className="task-list compact">
-          <span data-state="done">仓库文件浏览</span>
-          <span data-state="completed">组件拆分 + Hook 提取</span>
-          <span data-state="active">功能完善</span>
+          <span data-state="done">{t("changes.stageBrowse")}</span>
+          <span data-state="completed">{t("changes.stageRefactor")}</span>
+          <span data-state="active">{t("changes.stageFeatures")}</span>
         </div>
       </section>
     </aside>

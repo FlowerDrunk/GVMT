@@ -1,13 +1,19 @@
+import { useState } from "react";
 import type { MouseEvent } from "react";
 import type { ChangeStatus, Repository, RepositoryStatus, VcsType } from "../../lib/api";
+import type { Translator } from "../../lib/i18n";
 import { VcsLabels } from "../../lib/constants";
 import { ChangeBadge } from "../shared/ChangeBadge";
 import { EmptyState } from "../shared/EmptyState";
+import { Button } from "../ui/button";
+
+const DEFAULT_LIMIT = 80;
 
 interface StatusPanelProps {
   repositoryStatus: RepositoryStatus | null;
   selectedRepository: Repository | undefined;
   isLoading: boolean;
+  t: Translator;
   onLoadRepositoryStatus: () => void;
   onOpenSvnDownload: (target: "tortoise" | "sliksvn") => void;
   onSelectChange: (path: string, change: { status: ChangeStatus; vcsType: VcsType }) => void;
@@ -24,45 +30,46 @@ export function StatusPanel({
   repositoryStatus,
   selectedRepository,
   isLoading,
+  t,
   onLoadRepositoryStatus,
   onOpenSvnDownload,
   onSelectChange,
   onOpenChangeDiff,
   onContextMenu,
 }: StatusPanelProps) {
+  const [showAll, setShowAll] = useState(false);
+  const changes = repositoryStatus?.changes ?? [];
+  const totalChanges = changes.length;
+  const isTruncated = totalChanges > DEFAULT_LIMIT;
+  const displayedChanges = showAll || !isTruncated ? changes : changes.slice(0, DEFAULT_LIMIT);
   return (
     <section className="panel status-panel">
       <div className="panel-title-row">
         <div>
           <p className="eyebrow">Workspace status</p>
-          <h3>工作区状态</h3>
+          <h3>{t("status.workspaceStatus")}</h3>
         </div>
-        <button
-          className="ghost-button"
-          type="button"
-          disabled={!selectedRepository || isLoading}
-          onClick={onLoadRepositoryStatus}
-        >
-          刷新
-        </button>
+        <Button variant="ghost" disabled={!selectedRepository || isLoading} onClick={onLoadRepositoryStatus}>
+          {t("status.refresh")}
+        </Button>
       </div>
       {repositoryStatus ? (
         <>
-          <div className="change-summary" aria-label="变更统计">
+          <div className="change-summary" aria-label={t("status.workspaceStatus")}>
             <div>
-              <span>总变更</span>
+              <span>{t("status.totalChanges")}</span>
               <strong>{repositoryStatus.summary.total}</strong>
             </div>
             <div>
-              <span>新增</span>
+              <span>{t("status.added")}</span>
               <strong>{repositoryStatus.summary.added}</strong>
             </div>
             <div>
-              <span>修改</span>
+              <span>{t("status.modified")}</span>
               <strong>{repositoryStatus.summary.modified}</strong>
             </div>
             <div>
-              <span>未跟踪</span>
+              <span>{t("status.untracked")}</span>
               <strong>{repositoryStatus.summary.untracked}</strong>
             </div>
           </div>
@@ -71,20 +78,12 @@ export function StatusPanel({
               <p>{repositoryStatus.warning}</p>
               {repositoryStatus.missingSvnCli ? (
                 <div className="hint-actions">
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={() => onOpenSvnDownload("tortoise")}
-                  >
-                    下载 / 修改 TortoiseSVN
-                  </button>
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={() => onOpenSvnDownload("sliksvn")}
-                  >
-                    下载 SlikSVN
-                  </button>
+                  <Button variant="secondary" onClick={() => onOpenSvnDownload("tortoise")}>
+                    {t("status.downloadTortoise")}
+                  </Button>
+                  <Button variant="secondary" onClick={() => onOpenSvnDownload("sliksvn")}>
+                    {t("status.downloadSlikSvn")}
+                  </Button>
                 </div>
               ) : null}
             </div>
@@ -92,12 +91,12 @@ export function StatusPanel({
           {repositoryStatus.changes.length === 0 ? (
             <EmptyState
               compact
-              title={repositoryStatus.warning ? "暂无可展示变更" : "工作区干净"}
-              description={repositoryStatus.warning ?? "没有检测到新增、修改、删除或冲突文件。"}
+              title={repositoryStatus.warning ? t("status.notRefreshed") : t("status.clean")}
+              description={repositoryStatus.warning ?? t("status.noChanges")}
             />
           ) : (
             <div className="change-list">
-              {repositoryStatus.changes.slice(0, 80).map((change) => (
+              {displayedChanges.map((change) => (
                 <button
                   className="change-row"
                   key={`${change.vcsType}-${change.status}-${change.path}`}
@@ -111,14 +110,23 @@ export function StatusPanel({
                   <span className="change-vcs">{VcsLabels[change.vcsType]}</span>
                 </button>
               ))}
+              {isTruncated && (
+                <button
+                  className="change-show-more"
+                  type="button"
+                  onClick={() => setShowAll((prev) => !prev)}
+                >
+                  {showAll ? t("status.showLess") : `${t("status.showAll")} (${totalChanges})`}
+                </button>
+              )}
             </div>
           )}
         </>
       ) : (
         <EmptyState
           compact
-          title="尚未刷新状态"
-          description="选择仓库后点击刷新状态，这里会显示 Git / SVN 的变更摘要和文件列表。"
+          title={isLoading ? "加载中..." : t("status.notRefreshed")}
+          description={isLoading ? "正在获取仓库状态" : t("status.notRefreshedDesc")}
         />
       )}
     </section>

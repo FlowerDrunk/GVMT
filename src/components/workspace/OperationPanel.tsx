@@ -1,12 +1,17 @@
 import { useState } from "react";
-import type { OperationResult } from "../../lib/api";
+import type { OperationResult, OperationLog } from "../../lib/api";
+import type { Translator } from "../../lib/i18n";
 import type { HistoryEntry } from "../../hooks/useOperationHistory";
 import { VcsLabels } from "../../lib/constants";
+import { Button } from "../ui/button";
 
 interface OperationPanelProps {
   operationResults: OperationResult[];
   history: HistoryEntry[];
+  persistedLogs: OperationLog[];
+  t: Translator;
   onOpenSvnDownload: (target: "tortoise" | "sliksvn") => void;
+  onClearHistory: () => void;
 }
 
 function formatTimestamp(ts: number) {
@@ -16,6 +21,20 @@ function formatTimestamp(ts: number) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(ts));
+}
+
+function formatPersistedTimestamp(dateStr: string) {
+  try {
+    const date = new Date(dateStr);
+    return new Intl.DateTimeFormat("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date);
+  } catch {
+    return dateStr;
+  }
 }
 
 function ResultCard({ result, onOpenSvnDownload }: { result: OperationResult; onOpenSvnDownload: (target: "tortoise" | "sliksvn") => void }) {
@@ -30,12 +49,12 @@ function ResultCard({ result, onOpenSvnDownload }: { result: OperationResult; on
           <p>{result.warning}</p>
           {result.missingSvnCli ? (
             <div className="hint-actions">
-              <button className="secondary-button" type="button" onClick={() => onOpenSvnDownload("tortoise")}>
+              <Button variant="secondary" onClick={() => onOpenSvnDownload("tortoise")}>
                 下载 / 修改 TortoiseSVN
-              </button>
-              <button className="secondary-button" type="button" onClick={() => onOpenSvnDownload("sliksvn")}>
+              </Button>
+              <Button variant="secondary" onClick={() => onOpenSvnDownload("sliksvn")}>
                 下载 SlikSVN
-              </button>
+              </Button>
             </div>
           ) : null}
         </div>
@@ -45,21 +64,47 @@ function ResultCard({ result, onOpenSvnDownload }: { result: OperationResult; on
   );
 }
 
-export function OperationPanel({ operationResults, history, onOpenSvnDownload }: OperationPanelProps) {
+function PersistedResultCard({ log }: { log: OperationLog }) {
+  return (
+    <div className={`operation-card ${log.success ? "success" : "failed"}`}>
+      <div className="operation-heading">
+        <strong>{VcsLabels[log.vcsType as keyof typeof VcsLabels] ?? log.vcsType}</strong>
+        <span>{log.summary}</span>
+      </div>
+      {log.warning ? (
+        <div className="operation-warning">
+          <p>{log.warning}</p>
+        </div>
+      ) : null}
+      {log.output ? <pre>{log.output}</pre> : null}
+    </div>
+  );
+}
+
+export function OperationPanel({ operationResults, history, persistedLogs, t, onOpenSvnDownload, onClearHistory }: OperationPanelProps) {
   const [showHistory, setShowHistory] = useState(false);
+  const [showPersisted, setShowPersisted] = useState(false);
   const hasCurrent = operationResults.length > 0;
   const hasHistory = history.length > 0;
+  const hasPersisted = persistedLogs.length > 0;
 
-  if (!hasCurrent && !hasHistory) return null;
+  if (!hasCurrent && !hasHistory && !hasPersisted) return null;
 
   return (
     <section className="panel operation-panel">
       <div className="panel-title-row">
         <div>
           <p className="eyebrow">Operation result</p>
-          <h3>{hasCurrent ? "最近操作" : "操作记录"}</h3>
+          <h3>{hasCurrent ? t("operation.recent") : t("operation.history")}</h3>
         </div>
-        <span className="soft-chip">{hasCurrent ? "本次" : `${history.length} 条`}</span>
+        <div className="panel-title-row-actions">
+          <span className="soft-chip">{hasCurrent ? t("operation.current") : `${history.length} ${t("operation.entryCount")}`}</span>
+          {(hasHistory || hasPersisted) ? (
+            <Button variant="ghost" onClick={onClearHistory} title="清除历史">
+              ✕
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {hasCurrent ? (
@@ -72,13 +117,9 @@ export function OperationPanel({ operationResults, history, onOpenSvnDownload }:
 
       {hasHistory ? (
         <>
-          <button
-            className="ghost-button history-toggle"
-            type="button"
-            onClick={() => setShowHistory(!showHistory)}
-          >
-            {showHistory ? "收起历史记录" : `查看历史记录 (${history.length})`}
-          </button>
+          <Button variant="ghost" className="history-toggle" onClick={() => setShowHistory(!showHistory)}>
+            {showHistory ? t("operation.hideHistory") : `${t("operation.showHistory")} (${history.length})`}
+          </Button>
           {showHistory ? (
             <div className="operation-list history-list">
               {history.map((entry) => (
@@ -87,6 +128,24 @@ export function OperationPanel({ operationResults, history, onOpenSvnDownload }:
                   {entry.results.map((result, i) => (
                     <ResultCard key={i} result={result} onOpenSvnDownload={onOpenSvnDownload} />
                   ))}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {hasPersisted ? (
+        <>
+          <Button variant="ghost" className="history-toggle" onClick={() => setShowPersisted(!showPersisted)}>
+            {showPersisted ? "收起历史记录" : `查看历史记录 (${persistedLogs.length} 条)`}
+          </Button>
+          {showPersisted ? (
+            <div className="operation-list history-list">
+              {persistedLogs.map((log) => (
+                <div className="history-group" key={log.id}>
+                  <time className="history-time">{formatPersistedTimestamp(log.createdAt)}</time>
+                  <PersistedResultCard log={log} />
                 </div>
               ))}
             </div>

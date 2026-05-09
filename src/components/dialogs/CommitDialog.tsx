@@ -1,16 +1,16 @@
 import { FormEvent } from "react";
 import type { ChangeItem, QualityCheckResult, VcsType } from "../../lib/api";
+import type { Translator } from "../../lib/i18n";
+import { changeKey } from "../../lib/constants";
 import { Modal, ModalHeading } from "../shared/Modal";
-import { Switch } from "../shared/Switch";
+import { Switch } from "../ui/switch";
 import { ChangeBadge } from "../shared/ChangeBadge";
-
-function changeKey(change: Pick<ChangeItem, "path" | "vcsType">) {
-  return `${change.vcsType}:${change.path}`;
-}
+import { Button } from "../ui/button";
 
 interface CommitDialogProps {
   open: boolean;
   onClose: () => void;
+  t: Translator;
   committableFiles: ChangeItem[];
   selectedCommitKeys: Set<string>;
   selectedCommitCount: number;
@@ -30,6 +30,7 @@ interface CommitDialogProps {
 export function CommitDialog({
   open,
   onClose,
+  t,
   committableFiles,
   selectedCommitKeys,
   selectedCommitCount,
@@ -51,26 +52,26 @@ export function CommitDialog({
     <Modal open={open} onClose={onClose} labelledBy={titleId} className="commit-dialog">
       <ModalHeading
         eyebrow="Commit changes"
-        title="提交变更"
+        title={t("commit.title")}
         titleId={titleId}
         onClose={onClose}
       />
       <div className="commit-dialog-summary">
         <div>
-          <span>选中文件</span>
+          <span>{t("commit.selectedFiles")}</span>
           <strong>{selectedCommitCount}</strong>
         </div>
         <div>
-          <span>可提交</span>
+          <span>{t("commit.committable")}</span>
           <strong>{committableFiles.length}</strong>
         </div>
         <div>
           <span>Git push</span>
-          <strong>{hasGitCommitSelection && pushAfterCommit ? "开启" : "关闭"}</strong>
+          <strong>{hasGitCommitSelection && pushAfterCommit ? t("commit.on") : t("commit.off")}</strong>
         </div>
       </div>
       <div className="commit-quality-summary" data-state={latestQualityResult?.status ?? "idle"}>
-        <span>最近一次本地质量检查</span>
+        <span>{t("commit.qualityCheck")}</span>
         {latestQualityResult ? (
           <>
             <strong>{latestQualityResult.summary}</strong>
@@ -80,23 +81,25 @@ export function CommitDialog({
           </>
         ) : (
           <>
-            <strong>尚未运行</strong>
-            <small>可以先在右侧“评审与质量”中运行 build、UI 测试或 cargo check。</small>
+            <strong>{t("commit.notRun")}</strong>
+            <small>{t("commit.notRunDesc")}</small>
           </>
         )}
       </div>
       <form className="commit-form" onSubmit={onSubmit}>
         <div className="commit-file-toolbar">
-          <button type="button" className="secondary-button" onClick={() => onToggleAllFiles(committableFiles)}>
-            {selectedCommitCount === committableFiles.length ? "取消全选" : "全选文件"}
-          </button>
+          <Button variant="secondary" onClick={() => onToggleAllFiles(committableFiles)}>
+            {selectedCommitCount === committableFiles.length ? t("commit.deselectAll") : t("commit.selectAll")}
+          </Button>
           {hasGitCommitSelection ? (
-            <Switch
-              id="commit-push-toggle"
-              checked={pushAfterCommit}
-              onCheckedChange={onPushToggle}
-              label="Git 提交后 push"
-            />
+            <label className="radix-switch-label">
+              <Switch
+                id="commit-push-toggle"
+                checked={pushAfterCommit}
+                onCheckedChange={onPushToggle}
+              />
+              <span>{t("commit.pushAfterCommit")}</span>
+            </label>
           ) : null}
         </div>
         <div className="commit-file-list">
@@ -117,25 +120,21 @@ export function CommitDialog({
           })}
         </div>
         <label className="commit-message-field">
-          <span>提交信息</span>
+          <span>{t("commit.message")}</span>
           <textarea
             value={commitMessage}
             onChange={(event) => onCommitMessageChange(event.currentTarget.value)}
-            placeholder="说明这次变更的目的..."
+            placeholder={t("commit.placeholder")}
             rows={4}
           />
         </label>
         <div className="modal-actions">
-          <button className="secondary-button" type="button" onClick={onClose}>
-            取消
-          </button>
-          <button
-            className="primary-button"
-            type="submit"
-            disabled={isCommitLoading || selectedCommitCount === 0 || !commitMessage.trim()}
-          >
-            {isCommitLoading ? "提交中..." : "提交选中文件"}
-          </button>
+          <Button variant="secondary" onClick={onClose}>
+            {t("commit.cancel")}
+          </Button>
+          <Button variant="default" type="submit" disabled={isCommitLoading || selectedCommitCount === 0 || !commitMessage.trim()}>
+            {isCommitLoading ? t("commit.submitting") : t("commit.submit")}
+          </Button>
         </div>
       </form>
     </Modal>

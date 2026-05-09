@@ -25,6 +25,7 @@ export function useRepositoryStatus({
   setStatus,
   setIsLoading,
 }: UseRepositoryStatusOptions) {
+  const abortRef = useRef(false);
   const syncKeysRef = useRef<(changes: ChangeItem[]) => void>(() => {});
   const [repositoryStatus, setRepositoryStatus] = useState<RepositoryStatus | null>(null);
   const [operationResults, setOperationResults] = useState<OperationResult[]>([]);
@@ -39,10 +40,12 @@ export function useRepositoryStatus({
       if (!silent) setIsLoading(true);
       try {
         const nextStatus = await getRepositoryStatus(selectedRepository.id);
+        if (abortRef.current) return;
         setRepositoryStatus(nextStatus);
         syncKeysRef.current(nextStatus.changes);
         if (!silent) setStatus(nextStatus.clean ? "工作区干净" : `检测到 ${nextStatus.summary.total} 个变更`);
       } catch (error) {
+        if (abortRef.current) return;
         setRepositoryStatus(null);
         if (!silent) setStatus(error instanceof Error ? error.message : String(error));
       } finally {
@@ -95,13 +98,17 @@ export function useRepositoryStatus({
       return;
     }
 
+    abortRef.current = false;
     let isCancelled = false;
 
-    void loadRepositoryStatus(true);
+    void loadRepositoryStatus(true).then(() => {
+      if (isCancelled) return;
+    });
 
     if (!autoRefresh) {
       return () => {
         isCancelled = true;
+        abortRef.current = true;
       };
     }
 
@@ -111,6 +118,7 @@ export function useRepositoryStatus({
 
     return () => {
       isCancelled = true;
+      abortRef.current = true;
       window.clearInterval(refreshTimer);
     };
   }, [selectedRepository?.id, loadRepositoryStatus, autoRefresh, refreshIntervalMs]);
