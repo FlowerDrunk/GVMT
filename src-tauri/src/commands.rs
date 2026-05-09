@@ -559,6 +559,17 @@ pub async fn uninstall_windows_context_menu() -> Result<WindowsContextMenuStatus
     run_blocking(windows::uninstall_windows_context_menu_impl).await
 }
 
+#[tauri::command]
+pub async fn retry_push(app: AppHandle, id: i64) -> Result<OpResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        Ok(git::git_push_only(&repository.path))
+    })
+    .await
+}
+
 // ── Quality Checks ────────────────────────────────────────────────────────
 
 #[tauri::command]

@@ -193,6 +193,20 @@ pub fn git_update_warning(error: &str) -> String {
     }
 }
 
+/// 单独执行 git push，用于提交成功但 push 失败后的重试
+pub fn git_push_only(root_path: &str) -> OperationResult {
+    let push_args = vec!["-C".to_string(), root_path.to_string(), "push".to_string()];
+    match run_command_args("git", &push_args) {
+        Ok(output) => success_operation("push", "git", "Git push 完成", output),
+        Err(error) => failed_operation(
+            "push",
+            "git",
+            format!("Git push 失败：{error}"),
+            false,
+        ),
+    }
+}
+
 pub fn git_has_remote_updates(path: &str) -> Result<bool, String> {
     // Try git fetch --dry-run first (more reliable)
     match run_command(["git", "-C", path, "fetch", "--dry-run", "origin"]) {

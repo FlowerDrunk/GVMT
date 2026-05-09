@@ -12,6 +12,7 @@ interface OperationPanelProps {
   t: Translator;
   onOpenSvnDownload: (target: "tortoise" | "sliksvn") => void;
   onClearHistory: () => void;
+  onRetryPush?: () => void;
 }
 
 function formatTimestamp(ts: number) {
@@ -37,12 +38,18 @@ function formatPersistedTimestamp(dateStr: string) {
   }
 }
 
-function ResultCard({ result, onOpenSvnDownload }: { result: OperationResult; onOpenSvnDownload: (target: "tortoise" | "sliksvn") => void }) {
+function ResultCard({ result, onOpenSvnDownload, onRetryPush }: { result: OperationResult; onOpenSvnDownload: (target: "tortoise" | "sliksvn") => void; onRetryPush?: () => void }) {
+  const isFailedPush = result.operation === "push" && !result.success;
   return (
     <div className={`operation-card ${result.success ? "success" : "failed"}`}>
       <div className="operation-heading">
         <strong>{VcsLabels[result.vcsType]}</strong>
         <span>{result.summary}</span>
+        {isFailedPush && onRetryPush ? (
+          <Button variant="secondary" size="sm" className="retry-push-btn" onClick={onRetryPush}>
+            重试 Push
+          </Button>
+        ) : null}
       </div>
       {result.warning ? (
         <div className="operation-warning">
@@ -81,7 +88,7 @@ function PersistedResultCard({ log }: { log: OperationLog }) {
   );
 }
 
-export function OperationPanel({ operationResults, history, persistedLogs, t, onOpenSvnDownload, onClearHistory }: OperationPanelProps) {
+export function OperationPanel({ operationResults, history, persistedLogs, t, onOpenSvnDownload, onClearHistory, onRetryPush }: OperationPanelProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [showPersisted, setShowPersisted] = useState(false);
   const hasCurrent = operationResults.length > 0;
@@ -110,7 +117,7 @@ export function OperationPanel({ operationResults, history, persistedLogs, t, on
       {hasCurrent ? (
         <div className="operation-list">
           {operationResults.map((result) => (
-            <ResultCard key={`${result.vcsType}-${result.operation}`} result={result} onOpenSvnDownload={onOpenSvnDownload} />
+            <ResultCard key={`${result.vcsType}-${result.operation}`} result={result} onOpenSvnDownload={onOpenSvnDownload} onRetryPush={onRetryPush} />
           ))}
         </div>
       ) : null}
@@ -126,7 +133,7 @@ export function OperationPanel({ operationResults, history, persistedLogs, t, on
                 <div className="history-group" key={entry.id}>
                   <time className="history-time">{formatTimestamp(entry.timestamp)}</time>
                   {entry.results.map((result, i) => (
-                    <ResultCard key={i} result={result} onOpenSvnDownload={onOpenSvnDownload} />
+                    <ResultCard key={i} result={result} onOpenSvnDownload={onOpenSvnDownload} onRetryPush={onRetryPush} />
                   ))}
                 </div>
               ))}

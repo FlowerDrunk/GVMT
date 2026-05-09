@@ -2299,6 +2299,10 @@ textarea:focus {
   gap: 14px;
 }
 
+.retry-push-btn {
+  flex-shrink: 0;
+}
+
 .workflow-header h3,
 .panel-title-row h3,
 .repo-header h3,

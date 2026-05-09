@@ -13,6 +13,7 @@ import {
   getWindowsContextMenuStatus,
   installWindowsContextMenu,
   isTauriRuntime,
+  retryPush,
   type RemoteUpdateStatus,
   type WindowsContextMenuStatus,
   uninstallWindowsContextMenu,
@@ -186,11 +187,18 @@ function AppContent() {
       statusHook.setOperationResults(results);
       operationHistory.addEntry(results);
       const failed = results.filter((result) => !result.success);
+      const commitSuccess = results.some((r) => r.operation === "commit" && r.success);
+      const pushFailed = results.some((r) => r.operation === "push" && !r.success);
       setStatus(failed.length === 0 ? "提交完成" : `${failed.length} 个提交步骤失败`);
-      if (failed.length === 0) {
+      // 只要本地提交成功就关闭弹窗 — push 失败不阻塞后续操作
+      if (commitSuccess) {
         commit.setCommitMessage("");
         commit.setIsCommitDialogOpen(false);
-        showToast("提交完成", "success");
+        if (pushFailed) {
+          showToast("本地提交成功，但 Push 失败，请点击重试按钮", "error");
+        } else {
+          showToast("提交完成", "success");
+        }
       }
       await statusHook.loadRepositoryStatus(true);
     } catch (error) {
@@ -545,6 +553,24 @@ function AppContent() {
                         t={t}
                         onOpenSvnDownload={statusHook.handleOpenSvnDownload}
                         onClearHistory={operationHistory.clearHistory}
+                        onRetryPush={async () => {
+                          if (!repo.selectedRepository) return;
+                          try {
+                            const result = await retryPush(repo.selectedRepository.id);
+                            statusHook.setOperationResults([result]);
+                            if (result.success) {
+                              showToast("Push 重试成功", "success");
+                              setStatus("Push 重试成功");
+                            } else {
+                              showToast("Push 重试失败", "error");
+                              setStatus("Push 重试失败");
+                            }
+                          } catch (error) {
+                            const msg = error instanceof Error ? error.message : String(error);
+                            showToast(msg, "error");
+                            setStatus(msg);
+                          }
+                        }}
                       />
                     );
                   default:

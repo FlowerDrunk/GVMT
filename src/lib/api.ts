@@ -228,6 +228,10 @@ export async function commitRepository(id: number, input: CommitRequest): Promis
   return invoke<OperationResult[]>("commit_repository", { id, input });
 }
 
+export async function retryPush(id: number): Promise<OperationResult> {
+  return invoke<OperationResult>("retry_push", { id });
+}
+
 export async function listRepositoryFiles(id: number, relativePath?: string): Promise<RepositoryDirectory> {
   return invoke<RepositoryDirectory>("list_repository_files", { id, relativePath });
 }
