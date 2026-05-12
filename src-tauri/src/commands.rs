@@ -801,22 +801,7 @@ pub async fn add_ignore_rule(
 
         match input.vcs_type.as_str() {
             "git" => {
-                let result = ignore::gitignore_append_rule(&repository.path, &normalized_path)?;
-                // 清理所有被新规则匹配的已跟踪文件
-                let cleaned = git::git_clean_ignored_tracked(&repository.path).unwrap_or(0);
-                if cleaned > 0 {
-                    Ok(OpResult {
-                        operation: "ignore".to_string(),
-                        vcs_type: "git".to_string(),
-                        success: true,
-                        summary: format!("已添加忽略规则（同时取消了 {cleaned} 个文件的跟踪）"),
-                        output: String::new(),
-                        warning: None,
-                        missing_svn_cli: false,
-                    })
-                } else {
-                    Ok(result)
-                }
+                ignore::gitignore_append_rule(&repository.path, &normalized_path)
             }
             "svn" => ignore::svn_ignore_append_rule(&repository.path, &normalized_path),
             _ => Err("无法识别的版本控制类型".to_string()),
@@ -841,19 +826,11 @@ pub async fn update_gitignore(
         let gitignore = std::path::Path::new(&repository.path).join(".gitignore");
         fs::write(&gitignore, input.content.as_bytes()).map_err(|error| error.to_string())?;
 
-        // 清理被新规则匹配的已跟踪文件
-        let cleaned = git::git_clean_ignored_tracked(&repository.path).unwrap_or(0);
-        let summary = if cleaned > 0 {
-            format!("已更新 .gitignore（移除了 {cleaned} 个已跟踪文件）")
-        } else {
-            "已更新 .gitignore".to_string()
-        };
-
         Ok(OpResult {
             operation: "ignore".to_string(),
             vcs_type: "git".to_string(),
             success: true,
-            summary,
+            summary: "已更新 .gitignore".to_string(),
             output: String::new(),
             warning: None,
             missing_svn_cli: false,

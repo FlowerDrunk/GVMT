@@ -11,4 +11,3 @@ playwright-report/
 .env.*
 !.env.example
 .claude/
-

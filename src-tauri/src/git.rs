@@ -100,15 +100,13 @@ pub fn git_commit_results(
         }
     };
 
-    // 过滤掉已被 .gitignore 忽略的文件
+    // 过滤掉已被 .gitignore 忽略的未跟踪文件；已跟踪文件不受 .gitignore 影响
     let tracked_paths: Vec<String> = normalized_paths.into_iter().filter(|path| {
-        // 用 check-ignore -q 检测是否被忽略（exit code 0 = 忽略，非 0 = 未忽略）
         let check = run_command_args("git", &[
             "-C".into(),
             root_path.to_string(),
             "check-ignore".into(),
             "-q".into(),
-            "--no-index".into(),
             path.to_string(),
         ]);
         check.is_err() // exit code != 0 表示未被忽略，保留
@@ -411,58 +409,6 @@ pub fn git_reset(root_path: &str, mode: &str, target: &str) -> OperationResult {
         ),
         Err(error) => failed_operation("reset", "git", format!("Git reset 失败：{error}"), false),
     }
-}
-
-/// 清理所有现在被 .gitignore 匹配的已跟踪文件（git rm --cached）
-/// 在 .gitignore 内容变更后调用，使新的忽略规则立即生效
-pub fn git_clean_ignored_tracked(root_path: &str) -> Result<usize, String> {
-    // 获取所有已跟踪文件
-    let tracked_output = run_command_args("git", &[
-        "-C".into(),
-        root_path.to_string(),
-        "ls-files".into(),
-        "--cached".into(),
-    ])?;
-
-    let tracked_files: Vec<&str> = tracked_output.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
-    if tracked_files.is_empty() {
-        return Ok(0);
-    }
-
-    // 用 check-ignore 筛选被忽略的（传参方式，避免 pipe 问题）
-    let check_args: Vec<String> = vec![
-        "-C".into(),
-        root_path.to_string(),
-        "check-ignore".into(),
-        "--no-index".into(), // 也检查已跟踪文件
-    ];
-    // 直接传文件路径作为参数而不是 pipe stdin
-    let batch_size = 50;
-    let mut cleaned = 0usize;
-
-    for chunk in tracked_files.chunks(batch_size) {
-        let mut batch_args = check_args.clone();
-        for path in chunk {
-            batch_args.push(path.to_string());
-        }
-        if let Ok(output) = run_command_args("git", &batch_args) {
-            for line in output.lines() {
-                let path = line.trim();
-                if !path.is_empty() {
-                    let _ = run_command_args("git", &[
-                        "-C".into(),
-                        root_path.to_string(),
-                        "rm".into(),
-                        "--cached".into(),
-                        path.to_string(),
-                    ]);
-                    cleaned += 1;
-                }
-            }
-        }
-    }
-
-    Ok(cleaned)
 }
 
 pub fn git_has_remote_updates(path: &str) -> Result<bool, String> {
