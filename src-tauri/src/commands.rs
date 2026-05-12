@@ -4,7 +4,7 @@ use crate::{
     db, file_browser, git, ignore, quality, svn, windows,
 };
 use crate::models::{
-    AddIgnoreRuleRequest, AddRepositoryInput, BranchInfo,
+    AddIgnoreRuleRequest, AddRepositoryInput, BranchInfo, RemoveIgnoreRuleRequest,
     CommitRequest, DetectedRepository, DiffRequest, IgnoreRules,
     OperationResult as OpResult, QualityCheckResult, QualityCheckTemplate, QualityCheckType,
     Repository, RepositoryDiff, RepositoryDirectory, RepositoryFilePreview, RepositoryStatus,
@@ -776,12 +776,19 @@ pub async fn get_ignore_rules(app: AppHandle, id: i64) -> Result<IgnoreRules, St
             }
         }
 
+        let skip_worktree_files = if repository.vcs_type == "git" || repository.vcs_type == "mixed" {
+            git::git_list_skip_worktree(&repository.path)
+        } else {
+            Vec::new()
+        };
+
         Ok(IgnoreRules {
             vcs_type: repository.vcs_type,
             gitignore_path,
             gitignore_content,
             svnignore_content,
             svn_entries,
+            skip_worktree_files,
         })
     })
     .await
@@ -801,9 +808,58 @@ pub async fn add_ignore_rule(
 
         match input.vcs_type.as_str() {
             "git" => {
-                ignore::gitignore_append_rule(&repository.path, &normalized_path)
+                if git::git_is_tracked(&repository.path, &normalized_path) {
+                    git::git_set_skip_worktree(&repository.path, &normalized_path)
+                        .map(|_| OpResult {
+                            operation: "ignore".to_string(),
+                            vcs_type: "git".to_string(),
+                            success: true,
+                            summary: format!("已通过 skip-worktree 隐藏：{normalized_path}"),
+                            output: String::new(),
+                            warning: None,
+                            missing_svn_cli: false,
+                        })
+                } else {
+                    ignore::gitignore_append_rule(&repository.path, &normalized_path)
+                }
             }
             "svn" => ignore::svn_ignore_append_rule(&repository.path, &normalized_path),
+            _ => Err("无法识别的版本控制类型".to_string()),
+        }
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn remove_ignore_rule(
+    app: AppHandle,
+    id: i64,
+    input: RemoveIgnoreRuleRequest,
+) -> Result<OpResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        let normalized_path = file_browser::normalize_relative_path(&input.path)?;
+
+        match input.vcs_type.as_str() {
+            "git" => {
+                if git::git_is_tracked(&repository.path, &normalized_path) {
+                    git::git_unset_skip_worktree(&repository.path, &normalized_path)
+                        .map(|_| OpResult {
+                            operation: "ignore".to_string(),
+                            vcs_type: "git".to_string(),
+                            success: true,
+                            summary: format!("已恢复文件跟踪：{normalized_path}"),
+                            output: String::new(),
+                            warning: None,
+                            missing_svn_cli: false,
+                        })
+                } else {
+                    ignore::gitignore_remove_rule(&repository.path, &normalized_path)
+                }
+            }
+            "svn" => ignore::svnignore_remove_rule(&repository.path, &normalized_path),
             _ => Err("无法识别的版本控制类型".to_string()),
         }
     })

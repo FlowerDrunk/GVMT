@@ -354,6 +354,7 @@ pub struct IgnoreRules {
     pub gitignore_content: Option<String>,
     pub svnignore_content: Option<String>,
     pub svn_entries: Vec<SvnIgnoreEntry>,
+    pub skip_worktree_files: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -372,6 +373,13 @@ pub struct UpdateGitignoreRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AddIgnoreRuleRequest {
+    pub path: String,
+    pub vcs_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoveIgnoreRuleRequest {
     pub path: String,
     pub vcs_type: String,
 }

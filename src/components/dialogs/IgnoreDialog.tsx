@@ -14,6 +14,7 @@ interface IgnoreDialogProps {
   onSaveSvnIgnore: () => void;
   onGitignoreContentChange: (content: string) => void;
   onSvnignoreContentChange: (content: string) => void;
+  onRemoveSkipWorktree: (path: string) => void;
 }
 
 export function IgnoreDialog({
@@ -26,6 +27,7 @@ export function IgnoreDialog({
   onSaveSvnIgnore,
   onGitignoreContentChange,
   onSvnignoreContentChange,
+  onRemoveSkipWorktree,
 }: IgnoreDialogProps) {
   const titleId = "ignore-dialog-title";
 
@@ -56,6 +58,30 @@ export function IgnoreDialog({
               <Button variant="default" disabled={isIgnoreLoading} onClick={onSaveGitignore}>
                 {isIgnoreLoading ? t("ignore.saving") : t("ignore.save")} .gitignore
               </Button>
+            </section>
+          ) : null}
+
+          {(ignoreRules.vcsType === "git" || ignoreRules.vcsType === "mixed") && ignoreRules.skipWorktreeFiles.length > 0 ? (
+            <section className="ignore-section">
+              <div className="ignore-section-header">
+                <h4>Skip-Worktree（已跟踪文件隐藏）</h4>
+                <span className="soft-chip">git update-index --skip-worktree</span>
+              </div>
+              <ul className="skip-worktree-list">
+                {ignoreRules.skipWorktreeFiles.map((file) => (
+                  <li key={file} className="skip-worktree-item">
+                    <span className="skip-worktree-path">{file}</span>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={isIgnoreLoading}
+                      onClick={() => onRemoveSkipWorktree(file)}
+                    >
+                      恢复
+                    </Button>
+                  </li>
+                ))}
+              </ul>
             </section>
           ) : null}
 

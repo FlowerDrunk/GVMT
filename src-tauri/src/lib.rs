@@ -59,6 +59,7 @@ pub fn run() {
             commands::pick_folder,
             commands::read_repository_file,
             commands::refresh_repository,
+            commands::remove_ignore_rule,
             commands::retry_push,
             commands::run_quality_check,
             commands::svn_remote_cat,

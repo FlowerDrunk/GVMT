@@ -784,6 +784,7 @@ function AppContent() {
             current ? { ...current, svnignoreContent: content } : current,
           )
         }
+        onRemoveSkipWorktree={(path) => ignore.handleRemoveIgnoreRule(path, "git")}
       />
 
       <CommitDialog

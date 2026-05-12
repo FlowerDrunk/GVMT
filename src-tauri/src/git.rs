@@ -450,3 +450,52 @@ fn normalized_commit_paths(files: &[CommitFileRequest]) -> Result<Vec<String>, S
         .map(|file| normalize_relative_path(&file.path))
         .collect::<Result<Vec<_>, _>>()
 }
+
+// ── Git Skip-Worktree ─────────────────────────────────────────────────────
+
+pub fn git_is_tracked(root_path: &str, relative_path: &str) -> bool {
+    run_command_args("git", &[
+        "-C".into(),
+        root_path.to_string(),
+        "ls-files".into(),
+        "--error-unmatch".into(),
+        relative_path.to_string(),
+    ]).is_ok()
+}
+
+pub fn git_set_skip_worktree(root_path: &str, relative_path: &str) -> Result<String, String> {
+    run_command_args("git", &[
+        "-C".into(),
+        root_path.to_string(),
+        "update-index".into(),
+        "--skip-worktree".into(),
+        relative_path.to_string(),
+    ])
+}
+
+pub fn git_unset_skip_worktree(root_path: &str, relative_path: &str) -> Result<String, String> {
+    run_command_args("git", &[
+        "-C".into(),
+        root_path.to_string(),
+        "update-index".into(),
+        "--no-skip-worktree".into(),
+        relative_path.to_string(),
+    ])
+}
+
+pub fn git_list_skip_worktree(root_path: &str) -> Vec<String> {
+    // git ls-files -v 输出格式：第一列是标志位，S 表示 skip-worktree
+    let output = match run_command(["git", "-C", root_path, "ls-files", "-v"]) {
+        Ok(o) => o,
+        Err(_) => return Vec::new(),
+    };
+    output
+        .lines()
+        .filter(|line| line.starts_with('S'))
+        .filter_map(|line| {
+            // 去掉标志位和空格，提取路径
+            let path = line[1..].trim();
+            if path.is_empty() { None } else { Some(path.to_string()) }
+        })
+        .collect()
+}

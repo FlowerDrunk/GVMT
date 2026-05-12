@@ -561,6 +561,7 @@ export interface IgnoreRules {
   gitignoreContent: string | null;
   svnignoreContent: string | null;
   svnEntries: SvnIgnoreEntry[];
+  skipWorktreeFiles: string[];
 }
 
 export async function getIgnoreRules(id: number): Promise<IgnoreRules> {
@@ -572,6 +573,13 @@ export async function addIgnoreRule(
   input: { path: string; vcsType: VcsType },
 ): Promise<OperationResult> {
   return invoke<OperationResult>("add_ignore_rule", { id, input });
+}
+
+export async function removeIgnoreRule(
+  id: number,
+  input: { path: string; vcsType: VcsType },
+): Promise<OperationResult> {
+  return invoke<OperationResult>("remove_ignore_rule", { id, input });
 }
 
 export async function updateGitignore(
