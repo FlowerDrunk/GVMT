@@ -15,6 +15,7 @@ export function useOperationHistory(repositoryId?: number | null) {
 
   // Load persisted logs on mount (or when repositoryId changes)
   useEffect(() => {
+    setPersistedLogs([]);
     if (!repositoryId) return;
     let cancelled = false;
 

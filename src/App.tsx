@@ -19,6 +19,7 @@ import {
   uninstallWindowsContextMenu,
   updateRepository,
   type ChangeStatus,
+  type OperationResult,
   VcsType,
 } from "./lib/api";
 import {
@@ -62,9 +63,11 @@ import { StatusPanel } from "./components/panels/StatusPanel";
 import { ChangesPane } from "./components/panels/ChangesPane";
 import { ReviewPane } from "./components/panels/ReviewPane";
 import { ThemeDialog } from "./components/panels/ThemePane";
-import { OperationPanel } from "./components/workspace/OperationPanel";
+import { OperationPanel, OperationDetailModal, type DetailSource } from "./components/workspace/OperationPanel";
 import { BranchSwitcher } from "./components/workspace/BranchSwitcher";
 import { StatusBar, IgnoreContextMenuOverlay } from "./components/workspace/StatusBar";
+import { UpdateProgressDialog } from "./components/workspace/UpdateProgressDialog";
+import { UpdateNotificationPanel } from "./components/workspace/UpdateNotificationPanel";
 import { TabPanel } from "./components/shared/TabPanel";
 import { DraggableCard } from "./components/shared/DraggableCard";
 import { Modal, ModalHeading } from "./components/shared/Modal";
@@ -123,6 +126,41 @@ function AppContent() {
     showToast,
   });
 
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateLines, setUpdateLines] = useState<string[]>([]);
+
+  const [latestSvnRevisions, setLatestSvnRevisions] = useState<Record<number, string>>({});
+  function handleLatestSvnRevision(repoId: number, revision: string) {
+    setLatestSvnRevisions((prev) => ({ ...prev, [repoId]: revision }));
+  }
+
+  const [failureDetail, setFailureDetail] = useState<DetailSource | null>(null);
+  const [failureDetailOpen, setFailureDetailOpen] = useState(false);
+  function showOperationFailure(results: OperationResult[]) {
+    const failed = results.find((r) => !r.success && r.operation !== "push");
+    if (failed) {
+      setFailureDetail({ kind: "result", result: failed });
+      setFailureDetailOpen(true);
+    }
+  }
+
+  // 监听 operationResults 变化，对非 commit 操作（如 update）弹出失败提示
+  const prevResultsRef = useRef(0);
+  useEffect(() => {
+    const current = statusHook.operationResults.length;
+    if (current > prevResultsRef.current && current > 0) {
+      prevResultsRef.current = current;
+      const results = statusHook.operationResults;
+      const failed = results.find((r) => !r.success && r.operation !== "push" && r.operation !== "commit");
+      if (failed) {
+        setFailureDetail({ kind: "result", result: failed });
+        setFailureDetailOpen(true);
+      }
+    } else if (current === 0) {
+      prevResultsRef.current = 0;
+    }
+  }, [statusHook.operationResults]);
+
   const ignore = useIgnoreRules({
     selectedRepository: repo.selectedRepository,
     loadRepositoryStatus: statusHook.loadRepositoryStatus,
@@ -178,6 +216,8 @@ function AppContent() {
     }
 
     commit.setIsCommitLoading(true);
+    commit.setCommitError(null);
+    commit.setCommitHash(null);
     try {
       const results = await commitRepository(repo.selectedRepository.id, {
         message: commit.commitMessage,
@@ -189,6 +229,20 @@ function AppContent() {
       const failed = results.filter((result) => !result.success);
       const commitSuccess = results.some((r) => r.operation === "commit" && r.success);
       const pushFailed = results.some((r) => r.operation === "push" && !r.success);
+      const commitOutput = results.find((r) => r.operation === "commit" && r.success)?.output;
+
+      // 从 git output 提取 hash
+      if (commitSuccess) {
+        const hashMatch = commitOutput?.match(/\[[\w\/]+\s+([a-f0-9]+)\]/);
+        const hash = hashMatch?.[1] ?? null;
+        commit.setCommitHash(hash);
+      }
+
+      if (failed.length > 0) {
+        const errorMsg = failed.map((r) => r.warning || r.summary).filter(Boolean).join("\n");
+        commit.setCommitError(errorMsg);
+      }
+
       setStatus(failed.length === 0 ? "提交完成" : `${failed.length} 个提交步骤失败`);
       // 只要本地提交成功就关闭弹窗 — push 失败不阻塞后续操作
       if (commitSuccess) {
@@ -202,7 +256,9 @@ function AppContent() {
       }
       await statusHook.loadRepositoryStatus(true);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error));
+      const msg = error instanceof Error ? error.message : String(error);
+      commit.setCommitError(msg);
+      setStatus(msg);
     } finally {
       commit.setIsCommitLoading(false);
     }
@@ -291,30 +347,6 @@ function AppContent() {
   }
 
   const [remoteUpdateStatus, setRemoteUpdateStatus] = useState<RemoteUpdateStatus | null>(null);
-
-  // Remote update detection: run periodically (every Nth auto-refresh cycle)
-  const remoteCheckCountRef = useRef(0);
-  useEffect(() => {
-    if (!repo.selectedRepository || !settings.autoRefresh) return;
-    remoteCheckCountRef.current = 0;
-
-    const timer = setInterval(async () => {
-      remoteCheckCountRef.current += 1;
-      if (remoteCheckCountRef.current % 5 !== 0) return;
-      try {
-        const status = await checkRemoteUpdates(repo.selectedRepository!.id);
-        setRemoteUpdateStatus(status);
-        if (status.hasUpdates) {
-          setStatus(status.details ?? "远端有更新可用");
-          showToast(status.details ?? "远端有更新可用", "info");
-        }
-      } catch {
-        // Remote check failed silently
-      }
-    }, settings.refreshIntervalMs * 5);
-
-    return () => clearInterval(timer);
-  }, [repo.selectedRepository?.id, settings.autoRefresh, settings.refreshIntervalMs]);
 
   function handleChangeRowContextMenu(
     event: MouseEvent<HTMLButtonElement>,
@@ -468,6 +500,7 @@ function AppContent() {
               showToast(`已识别路径：${droppedPath}`, "info");
             }}
             onSetStatus={setStatus}
+            latestSvnRevisions={latestSvnRevisions}
           />
         ) : null}
       </div>
@@ -482,13 +515,42 @@ function AppContent() {
           canOpenCommitDialog={commit.canOpenCommitDialog}
           isCommitLoading={commit.isCommitLoading}
           t={t}
+          latestSvnRevisions={latestSvnRevisions}
           onRefreshSelected={repo.handleRefreshSelected}
           onLoadRepositoryStatus={statusHook.handleLoadRepositoryStatus}
-          onUpdateRepository={statusHook.handleUpdateRepository}
+          onUpdateRepository={async () => {
+            setIsUpdating(true);
+            setUpdateLines([]);
+            let unlisten: (() => void) | null = null;
+            if (isTauriRuntime()) {
+              try {
+                const { listen } = await import("@tauri-apps/api/event");
+                const u = await listen<string>("svn-update-line", (e) => {
+                  setUpdateLines((prev) => [...prev, e.payload]);
+                });
+                unlisten = u;
+              } catch { /* ignore */ }
+            }
+            try {
+              await statusHook.handleUpdateRepository(settings.svnDepth);
+            } finally {
+              unlisten?.();
+              setIsUpdating(false);
+            }
+          }}
           onOpenIgnoreDialog={ignore.handleOpenIgnoreDialog}
           onOpenCommitDialog={() => commit.setIsCommitDialogOpen(true)}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onSwitchBranch={() => setIsBranchSwitcherOpen(true)}
+          onOperationResult={(result) => {
+            statusHook.setOperationResults([result]);
+            operationHistory.addEntry([result]);
+            setStatus(result.summary);
+            if (!result.success && result.operation !== "push") {
+              showOperationFailure([result]);
+            }
+          }}
+          onStashChanged={() => statusHook.loadRepositoryStatus(true)}
         />
 
         <div className="workbench">
@@ -506,6 +568,7 @@ function AppContent() {
                         currentReviewState={currentReviewState}
                         currentChangeCount={currentChangeCount}
                         t={t}
+                        onLatestSvnRevision={handleLatestSvnRevision}
                       />
                     );
                   case "file-browser":
@@ -683,9 +746,16 @@ function AppContent() {
 
       <IgnoreContextMenuOverlay
         menu={ignoreContextMenu.menu}
+        repositoryId={repo.selectedRepository?.id}
         t={t}
         onOpenDiff={handleOpenDiffFromContextMenu}
         onIgnoreFile={(path, vcsType) => ignore.handleAddIgnoreRule(path, vcsType)}
+        onOperationResult={(result) => {
+          statusHook.setOperationResults([result]);
+          operationHistory.addEntry([result]);
+          setStatus(result.summary);
+          statusHook.loadRepositoryStatus(true);
+        }}
       />
 
       <DeleteConfirmDialog
@@ -709,22 +779,16 @@ function AppContent() {
             current ? { ...current, gitignoreContent: content } : current,
           )
         }
-        onSvnRulesChange={(directory, rules) =>
-          ignore.setIgnoreRules((current) => {
-            if (!current) return current;
-            return {
-              ...current,
-              svnEntries: current.svnEntries.map((e) =>
-                e.directory === directory ? { ...e, rules } : e,
-              ),
-            };
-          })
+        onSvnignoreContentChange={(content) =>
+          ignore.setIgnoreRules((current) =>
+            current ? { ...current, svnignoreContent: content } : current,
+          )
         }
       />
 
       <CommitDialog
         open={commit.isCommitDialogOpen}
-        onClose={() => commit.setIsCommitDialogOpen(false)}
+        onClose={() => { commit.setIsCommitDialogOpen(false); commit.setCommitError(null); }}
         t={t}
         committableFiles={commit.committableFiles}
         selectedCommitKeys={commit.selectedCommitKeys}
@@ -735,11 +799,16 @@ function AppContent() {
         isCommitLoading={commit.isCommitLoading}
         latestQualityResult={qualityChecks.latestResult}
         vcsLabels={VcsLabels}
+        commitError={commit.commitError}
+        commitHash={commit.commitHash}
         onToggleAllFiles={commit.toggleAllCommitFiles}
         onToggleFile={commit.toggleCommitFile}
         onPushToggle={commit.setPushAfterCommit}
         onCommitMessageChange={commit.setCommitMessage}
         onSubmit={handleCommitRepository}
+        onOpenFileDiff={(path, vcsType, status) => {
+          changeTree.handleOpenChangeDiff(path, { status: status as ChangeStatus, vcsType });
+        }}
       />
 
       <BranchSwitcher
@@ -771,6 +840,23 @@ function AppContent() {
         t={t}
         settings={settings}
         onUpdateSettings={updateSettings}
+      />
+
+      <OperationDetailModal
+        data={failureDetail}
+        open={failureDetailOpen}
+        onClose={() => setFailureDetailOpen(false)}
+      />
+
+      <UpdateProgressDialog
+        open={isUpdating}
+        onClose={() => setIsUpdating(false)}
+        lines={updateLines}
+      />
+
+      <UpdateNotificationPanel
+        repositories={repo.repositories}
+        onUpdateCompleted={() => statusHook.loadRepositoryStatus(true)}
       />
     </main>
   );

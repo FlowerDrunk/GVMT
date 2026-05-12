@@ -352,6 +352,7 @@ pub struct IgnoreRules {
     pub vcs_type: String,
     pub gitignore_path: Option<String>,
     pub gitignore_content: Option<String>,
+    pub svnignore_content: Option<String>,
     pub svn_entries: Vec<SvnIgnoreEntry>,
 }
 

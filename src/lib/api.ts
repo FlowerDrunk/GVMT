@@ -196,8 +196,8 @@ export async function openSvnCliDownloadPage(target: "tortoise" | "sliksvn"): Pr
   return invoke<void>("open_svn_cli_download_page", { target });
 }
 
-export async function updateRepository(id: number): Promise<OperationResult[]> {
-  return invoke<OperationResult[]>("update_repository", { id });
+export async function updateRepository(id: number, depth?: string): Promise<OperationResult[]> {
+  return invoke<OperationResult[]>("update_repository", { id, depth: depth ?? null });
 }
 
 export async function consumeStartupContext(): Promise<StartupContext | null> {
@@ -230,6 +230,79 @@ export async function commitRepository(id: number, input: CommitRequest): Promis
 
 export async function retryPush(id: number): Promise<OperationResult> {
   return invoke<OperationResult>("retry_push", { id });
+}
+
+// ── Git Stash ────────────────────────────────────────────────────────────────
+
+export async function gitStashPush(id: number, message?: string): Promise<OperationResult> {
+  return invoke<OperationResult>("git_stash_push", { id, message: message ?? null });
+}
+
+export async function gitStashPop(id: number): Promise<OperationResult> {
+  return invoke<OperationResult>("git_stash_pop", { id });
+}
+
+export interface GitStashEntry {
+  index: number;
+  message: string;
+}
+
+export async function gitStashList(id: number): Promise<GitStashEntry[]> {
+  return invoke<GitStashEntry[]>("git_stash_list", { id });
+}
+
+export async function gitStashDrop(id: number, index: number): Promise<OperationResult> {
+  return invoke<OperationResult>("git_stash_drop", { id, index });
+}
+
+// ── Git Log ──────────────────────────────────────────────────────────────────
+
+export interface GitCommitLog {
+  hash: string;
+  author: string;
+  date: string;
+  message: string;
+}
+
+export async function gitLog(id: number, maxCount?: number): Promise<GitCommitLog[]> {
+  return invoke<GitCommitLog[]>("git_log", { id, maxCount: maxCount ?? null });
+}
+
+// ── Git Fetch ─────────────────────────────────────────────────────────────────
+
+export async function gitFetch(id: number): Promise<OperationResult> {
+  return invoke<OperationResult>("git_fetch", { id });
+}
+
+// ── Git Reset ─────────────────────────────────────────────────────────────────
+
+export async function gitReset(id: number, mode: string, target: string): Promise<OperationResult> {
+  return invoke<OperationResult>("git_reset", { id, mode, target });
+}
+
+// ── SVN Revert / Cleanup / Resolve / Log ──────────────────────────────────────
+
+export async function svnRevert(id: number, path: string): Promise<OperationResult> {
+  return invoke<OperationResult>("svn_revert", { id, path });
+}
+
+export async function svnCleanup(id: number): Promise<OperationResult> {
+  return invoke<OperationResult>("svn_cleanup", { id });
+}
+
+export async function svnResolve(id: number, path: string): Promise<OperationResult> {
+  return invoke<OperationResult>("svn_resolve", { id, path });
+}
+
+export interface SvnCommitLog {
+  revision: number;
+  author: string;
+  date: string;
+  message: string;
+}
+
+export async function svnLog(id: number, maxCount?: number): Promise<SvnCommitLog[]> {
+  return invoke<SvnCommitLog[]>("svn_log_command", { id, maxCount: maxCount ?? null });
 }
 
 export async function listRepositoryFiles(id: number, relativePath?: string): Promise<RepositoryDirectory> {
@@ -359,6 +432,13 @@ export interface GitHubPr {
   url: string;
 }
 
+export interface GhCreatePrInput {
+  title: string;
+  body: string;
+  head: string;
+  base: string;
+}
+
 export interface GitHubPrList {
   prs: GitHubPr[];
 }
@@ -426,6 +506,10 @@ export async function ghOpenBrowser(remoteUrl: string, page: string): Promise<vo
   return invoke<void>("gh_open_browser", { remoteUrl, page });
 }
 
+export async function createPr(remoteUrl: string, input: GhCreatePrInput): Promise<GitHubPr> {
+  return invoke<GitHubPr>("gh_create_pr", { remoteUrl, input });
+}
+
 export async function parseRemoteOwnerRepo(remoteUrl: string): Promise<GhOwnerRepo | null> {
   return invoke<GhOwnerRepo | null>("parse_remote_owner_repo", { remoteUrl });
 }
@@ -475,6 +559,7 @@ export interface IgnoreRules {
   vcsType: VcsType;
   gitignorePath: string | null;
   gitignoreContent: string | null;
+  svnignoreContent: string | null;
   svnEntries: SvnIgnoreEntry[];
 }
 
@@ -498,8 +583,7 @@ export async function updateGitignore(
 
 export async function updateSvnIgnore(
   id: number,
-  directory: string,
-  rules: string[],
+  content: string,
 ): Promise<OperationResult> {
-  return invoke<OperationResult>("update_svn_ignore", { id, directory, rules });
+  return invoke<OperationResult>("update_svn_ignore", { id, content });
 }

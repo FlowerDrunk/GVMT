@@ -223,53 +223,12 @@ const TOKEN_TO_CSS_VAR: Record<string, string[]> = {
   buttonGhostBorderColor: ["transparent"],
 };
 
-export const DEFAULT_CUSTOM_THEME_JSON = JSON.stringify(
-  {
-    algorithm: "light",
-    token: {
-      colorPrimary: "#2563eb",
-      colorSuccess: "#10b981",
-      colorWarning: "#f59e0b",
-      colorError: "#ef4444",
-      colorInfo: "#2563eb",
-      colorTextBase: "#1f2328",
-      colorBgBase: "#f6f7f9",
-      colorBgContainer: "#ffffff",
-      colorBgElevated: "#ffffff",
-      colorBgLayout: "#f6f7f9",
-      colorBorder: "#d1d5db",
-      colorBorderSecondary: "#e5e7eb",
-      borderRadius: 6,
-      borderRadiusXS: 4,
-      borderRadiusSM: 6,
-      borderRadiusLG: 8,
-      padding: 12,
-      paddingSM: 8,
-      paddingLG: 16,
-      margin: 12,
-      marginSM: 8,
-      marginLG: 16,
-      boxShadow: "0 1px 2px rgba(31, 35, 40, 0.06)",
-      boxShadowSecondary: "0 1px 3px rgba(31, 35, 40, 0.08)",
-      buttonPrimaryBg: "#2563eb",
-      buttonPrimaryHoverBg: "#1d4ed8",
-      buttonSecondaryBg: "#eff6ff",
-      buttonSecondaryColor: "#2563eb",
-      buttonSecondaryBorderColor: "#93c5fd",
-      buttonDangerBg: "#fef2f2",
-      buttonDangerColor: "#ef4444",
-      buttonBorderRadius: 6,
-      buttonShadow: "none",
-    },
-  },
-  null,
-  2,
-);
+export const DEFAULT_CUSTOM_THEME_JSON = "";
 
 function readStoredTheme(): ThemeMode {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (stored === "light" || stored === "dark" || stored === "system") return stored;
-  return "system";
+  return "light";
 }
 
 function readStoredCustomTheme(): string {

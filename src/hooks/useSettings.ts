@@ -3,14 +3,19 @@ import { isAppLanguage, type AppLanguage } from "../lib/i18n";
 
 export type ViewModeSetting = "flat" | "tree";
 
+export type SvnDepth = "infinity" | "immediates" | "files" | "empty";
+
 export interface AppSettings {
   autoRefresh: boolean;
   refreshIntervalMs: number;
   defaultViewMode: ViewModeSetting;
   language: AppLanguage;
+  svnDepth: SvnDepth;
 }
 
 const SETTINGS_KEY = "gvmt-settings";
+
+const VALID_DEPTHS: SvnDepth[] = ["infinity", "immediates", "files", "empty"];
 
 function readStoredSettings(): AppSettings {
   try {
@@ -22,12 +27,13 @@ function readStoredSettings(): AppSettings {
         refreshIntervalMs: parsed.refreshIntervalMs ?? 12000,
         defaultViewMode: parsed.defaultViewMode === "tree" ? "tree" : "flat",
         language: isAppLanguage(parsed.language) ? parsed.language : "zh-CN",
+        svnDepth: VALID_DEPTHS.includes(parsed.svnDepth) ? parsed.svnDepth : "infinity",
       };
     }
   } catch {
     // ignore corrupt data
   }
-  return { autoRefresh: true, refreshIntervalMs: 12000, defaultViewMode: "flat", language: "zh-CN" };
+  return { autoRefresh: true, refreshIntervalMs: 12000, defaultViewMode: "flat", language: "zh-CN", svnDepth: "infinity" };
 }
 
 function writeSettings(settings: AppSettings) {

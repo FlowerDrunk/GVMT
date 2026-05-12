@@ -2,6 +2,7 @@ use crate::command_exec::{run_command, run_command_args};
 use crate::file_browser::normalize_relative_path;
 use crate::models::{ChangeItem, CommitFileRequest, OperationResult};
 use crate::utils::{failed_operation, slice_from_char, success_operation};
+use serde::Serialize;
 
 pub fn git_status_changes(path: &str) -> Result<Vec<ChangeItem>, String> {
     let output = run_command(["git", "-C", path, "status", "--porcelain=v1"])?;
@@ -99,21 +100,68 @@ pub fn git_commit_results(
         }
     };
 
+    // 过滤掉已被 .gitignore 忽略的文件
+    let tracked_paths: Vec<String> = normalized_paths.into_iter().filter(|path| {
+        // 用 check-ignore -q 检测是否被忽略（exit code 0 = 忽略，非 0 = 未忽略）
+        let check = run_command_args("git", &[
+            "-C".into(),
+            root_path.to_string(),
+            "check-ignore".into(),
+            "-q".into(),
+            "--no-index".into(),
+            path.to_string(),
+        ]);
+        check.is_err() // exit code != 0 表示未被忽略，保留
+    }).collect();
+
+    if tracked_paths.is_empty() {
+        results.push(failed_operation(
+            "commit",
+            "git",
+            "所有选择的文件已被 .gitignore 忽略，无需提交".to_string(),
+            false,
+        ));
+        return results;
+    }
+
     let mut add_args = vec![
         "-C".to_string(),
         root_path.to_string(),
         "add".to_string(),
         "--".to_string(),
     ];
-    add_args.extend(normalized_paths.iter().cloned());
+    add_args.extend(tracked_paths.iter().cloned());
     if let Err(error) = run_command_args("git", &add_args) {
-        results.push(failed_operation(
-            "commit",
-            "git",
-            format!("Git add 失败：{error}"),
-            false,
-        ));
-        return results;
+        // 如果 git add 失败是因为 CRLF 警告，自动设置 core.autocrlf false 后重试
+        if error.to_lowercase().contains("crlf")
+            || error.to_lowercase().contains("lf will be replaced")
+        {
+            let _ = run_command_args("git", &[
+                "-C".into(),
+                root_path.to_string(),
+                "config".into(),
+                "core.autocrlf".into(),
+                "false".into(),
+            ]);
+            // 重试 add
+            if let Err(retry_error) = run_command_args("git", &add_args) {
+                results.push(failed_operation(
+                    "commit",
+                    "git",
+                    format!("Git add 失败：{retry_error}"),
+                    false,
+                ));
+                return results;
+            }
+        } else {
+            results.push(failed_operation(
+                "commit",
+                "git",
+                format!("Git add 失败：{error}"),
+                false,
+            ));
+            return results;
+        }
     }
 
     let mut commit_args = vec![
@@ -124,7 +172,7 @@ pub fn git_commit_results(
         message.to_string(),
         "--".to_string(),
     ];
-    commit_args.extend(normalized_paths.iter().cloned());
+    commit_args.extend(tracked_paths.iter().cloned());
     match run_command_args("git", &commit_args) {
         Ok(output) => results.push(success_operation("commit", "git", "Git 提交完成", output)),
         Err(error) => {
@@ -205,6 +253,216 @@ pub fn git_push_only(root_path: &str) -> OperationResult {
             false,
         ),
     }
+}
+
+// ── Git Stash ────────────────────────────────────────────────────────────
+
+pub fn git_stash_push(root_path: &str, message: Option<&str>) -> OperationResult {
+    let mut args = vec!["-C".to_string(), root_path.to_string(), "stash".to_string(), "push".to_string()];
+    if let Some(msg) = message {
+        args.push("-m".to_string());
+        args.push(msg.to_string());
+    }
+    match run_command_args("git", &args) {
+        Ok(output) => success_operation("stash", "git", "Git stash 保存完成", output),
+        Err(error) => failed_operation("stash", "git", format!("Git stash 保存失败：{error}"), false),
+    }
+}
+
+pub fn git_stash_pop(root_path: &str) -> OperationResult {
+    match run_command_args("git", &["-C".into(), root_path.to_string(), "stash".into(), "pop".into()]) {
+        Ok(output) => success_operation("stash", "git", "Git stash 恢复完成", output),
+        Err(error) => failed_operation("stash", "git", format!("Git stash 恢复失败：{error}"), false),
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitStashEntry {
+    pub index: usize,
+    pub message: String,
+}
+
+pub fn git_stash_list(root_path: &str) -> Result<Vec<GitStashEntry>, String> {
+    let output = run_command(["git", "-C", root_path, "stash", "list"])?;
+    Ok(output
+        .lines()
+        .filter_map(|line| {
+            // Format: "stash@{0}: On branch: message"
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            // Extract index
+            let index = if let Some(start) = line.find("stash@{") {
+                let rest = &line[start + 7..];
+                if let Some(end) = rest.find('}') {
+                    rest[..end].parse::<usize>().ok()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }?;
+
+            // Extract message (after ": ")
+            let message = if let Some(pos) = line.find(": ") {
+                line[pos + 2..].to_string()
+            } else {
+                line.to_string()
+            };
+
+            Some(GitStashEntry { index, message })
+        })
+        .collect())
+}
+
+pub fn git_stash_drop(root_path: &str, index: usize) -> OperationResult {
+    let args = vec![
+        "-C".to_string(),
+        root_path.to_string(),
+        "stash".to_string(),
+        "drop".to_string(),
+        format!("stash@{{{index}}}"),
+    ];
+    match run_command_args("git", &args) {
+        Ok(output) => success_operation("stash", "git", "Git stash 丢弃完成", output),
+        Err(error) => failed_operation("stash", "git", format!("Git stash 丢弃失败：{error}"), false),
+    }
+}
+
+// ── Git Log ──────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitLog {
+    pub hash: String,
+    pub author: String,
+    pub date: String,
+    pub message: String,
+}
+
+pub fn git_log(root_path: &str, max_count: usize) -> Result<Vec<GitCommitLog>, String> {
+    let output = run_command_args(
+        "git",
+        &[
+            "-C".into(),
+            root_path.to_string(),
+            "log".into(),
+            format!("--max-count={max_count}"),
+            "--format=%h|%an|%ai|%s".into(),
+        ],
+    )?;
+
+    Ok(output
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            let mut parts = line.splitn(4, '|');
+            let hash = parts.next()?.to_string();
+            let author = parts.next()?.to_string();
+            let date = parts.next()?.to_string();
+            let message = parts.next().unwrap_or("").to_string();
+
+            Some(GitCommitLog {
+                hash,
+                author,
+                date,
+                message,
+            })
+        })
+        .collect())
+}
+
+// ── Git Fetch ────────────────────────────────────────────────────────────
+
+pub fn git_fetch(root_path: &str) -> OperationResult {
+    match run_command(["git", "-C", root_path, "fetch", "--prune"]) {
+        Ok(output) => success_operation("fetch", "git", "Git fetch 完成", output),
+        Err(error) => failed_operation("fetch", "git", format!("Git fetch 失败：{error}"), false),
+    }
+}
+
+// ── Git Reset ────────────────────────────────────────────────────────────
+
+pub fn git_reset(root_path: &str, mode: &str, target: &str) -> OperationResult {
+    let mode_flag = match mode {
+        "soft" => "--soft",
+        "mixed" => "--mixed",
+        "hard" => "--hard",
+        _ => "--mixed",
+    };
+    let args = vec![
+        "-C".into(),
+        root_path.to_string(),
+        "reset".into(),
+        mode_flag.into(),
+        target.to_string(),
+    ];
+    match run_command_args("git", &args) {
+        Ok(output) => success_operation(
+            "reset",
+            "git",
+            format!("Git reset ({mode}) 完成: {target}").as_str(),
+            output,
+        ),
+        Err(error) => failed_operation("reset", "git", format!("Git reset 失败：{error}"), false),
+    }
+}
+
+/// 清理所有现在被 .gitignore 匹配的已跟踪文件（git rm --cached）
+/// 在 .gitignore 内容变更后调用，使新的忽略规则立即生效
+pub fn git_clean_ignored_tracked(root_path: &str) -> Result<usize, String> {
+    // 获取所有已跟踪文件
+    let tracked_output = run_command_args("git", &[
+        "-C".into(),
+        root_path.to_string(),
+        "ls-files".into(),
+        "--cached".into(),
+    ])?;
+
+    let tracked_files: Vec<&str> = tracked_output.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+    if tracked_files.is_empty() {
+        return Ok(0);
+    }
+
+    // 用 check-ignore 筛选被忽略的（传参方式，避免 pipe 问题）
+    let check_args: Vec<String> = vec![
+        "-C".into(),
+        root_path.to_string(),
+        "check-ignore".into(),
+        "--no-index".into(), // 也检查已跟踪文件
+    ];
+    // 直接传文件路径作为参数而不是 pipe stdin
+    let batch_size = 50;
+    let mut cleaned = 0usize;
+
+    for chunk in tracked_files.chunks(batch_size) {
+        let mut batch_args = check_args.clone();
+        for path in chunk {
+            batch_args.push(path.to_string());
+        }
+        if let Ok(output) = run_command_args("git", &batch_args) {
+            for line in output.lines() {
+                let path = line.trim();
+                if !path.is_empty() {
+                    let _ = run_command_args("git", &[
+                        "-C".into(),
+                        root_path.to_string(),
+                        "rm".into(),
+                        "--cached".into(),
+                        path.to_string(),
+                    ]);
+                    cleaned += 1;
+                }
+            }
+        }
+    }
+
+    Ok(cleaned)
 }
 
 pub fn git_has_remote_updates(path: &str) -> Result<bool, String> {

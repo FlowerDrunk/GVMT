@@ -386,6 +386,47 @@ pub fn gh_list_actions(remote_url: &str) -> Result<GitHubRunList, String> {
     Ok(GitHubRunList { runs })
 }
 
+// ── Create PR ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhCreatePrInput {
+    pub title: String,
+    pub body: String,
+    pub head: String,
+    pub base: String,
+}
+
+pub fn gh_create_pr(remote_url: &str, input: &GhCreatePrInput) -> Result<GitHubPr, String> {
+    let (owner, repo) = parse_owner_repo_from_remote(remote_url)
+        .ok_or_else(|| format!("无法从远端地址解析 owner/repo: {remote_url}"))?;
+
+    let mut args = vec![
+        "pr".into(),
+        "create".into(),
+        "--repo".into(),
+        format!("{owner}/{repo}"),
+        "--title".into(),
+        input.title.clone(),
+        "--head".into(),
+        input.head.clone(),
+        "--base".into(),
+        input.base.clone(),
+        "--json".into(),
+        "number,title,state,author,createdAt,headRefName,baseRefName,url".into(),
+    ];
+    if !input.body.is_empty() {
+        args.push("--body".into());
+        args.push(input.body.clone());
+    }
+
+    let output = run_command_args("gh", &args)?;
+    let pr: GitHubPr = serde_json::from_str(&output)
+        .map_err(|error| format!("解析 PR 创建结果失败: {error}"))?;
+
+    Ok(pr)
+}
+
 // ── Open in Browser ─────────────────────────────────────────────────────
 
 pub fn gh_open_browser(remote_url: &str, page: &str) -> Result<(), String> {

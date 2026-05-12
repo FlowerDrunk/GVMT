@@ -4,6 +4,7 @@ import type { Translator } from "../../lib/i18n";
 import type { HistoryEntry } from "../../hooks/useOperationHistory";
 import { VcsLabels } from "../../lib/constants";
 import { Button } from "../ui/button";
+import { Modal, ModalHeading } from "../shared/Modal";
 
 interface OperationPanelProps {
   operationResults: OperationResult[];
@@ -38,10 +39,62 @@ function formatPersistedTimestamp(dateStr: string) {
   }
 }
 
-function ResultCard({ result, onOpenSvnDownload, onRetryPush }: { result: OperationResult; onOpenSvnDownload: (target: "tortoise" | "sliksvn") => void; onRetryPush?: () => void }) {
+export type DetailSource =
+  | { kind: "result"; result: OperationResult; timestamp?: never }
+  | { kind: "log"; log: OperationLog; timestamp?: string };
+
+export function OperationDetailModal({ data, open, onClose }: { data: DetailSource | null; open: boolean; onClose: () => void }) {
+  if (!data) return null;
+  const title = data.kind === "result" ? data.result.summary : data.log.summary;
+  const vcsType = data.kind === "result" ? data.result.vcsType : data.log.vcsType;
+  const operation = data.kind === "result" ? data.result.operation : data.log.operation;
+  const success = data.kind === "result" ? data.result.success : data.log.success;
+  const output = data.kind === "result" ? data.result.output : data.log.output;
+  const warning = data.kind === "result" ? data.result.warning : data.log.warning;
+  const ts = data.kind === "result" ? data.timestamp : data.log.createdAt;
+
+  return (
+    <Modal open={open} onClose={onClose} labelledBy="operation-detail-title" className="operation-detail-modal">
+      <ModalHeading
+        eyebrow={`${VcsLabels[vcsType as keyof typeof VcsLabels] ?? vcsType} · ${operation}`}
+        title={title}
+        titleId="operation-detail-title"
+        onClose={onClose}
+      />
+      <div className="operation-detail-body">
+        <div className="operation-detail-status">
+          <span className={`status-pill ${success ? "success" : "failed"}`}>{success ? "成功" : "失败"}</span>
+          {ts ? <time>{ts}</time> : null}
+        </div>
+        {warning ? (
+          <div className="operation-detail-warning">
+            <strong>警告</strong>
+            <p>{warning}</p>
+          </div>
+        ) : null}
+        {output ? (
+          <div className="operation-detail-output">
+            <strong>输出</strong>
+            <pre>{output}</pre>
+          </div>
+        ) : null}
+      </div>
+    </Modal>
+  );
+}
+
+function ResultCard({ result, onOpenSvnDownload, onRetryPush, onShowDetail }: {
+  result: OperationResult;
+  onOpenSvnDownload: (target: "tortoise" | "sliksvn") => void;
+  onRetryPush?: () => void;
+  onShowDetail?: (data: DetailSource) => void;
+}) {
   const isFailedPush = result.operation === "push" && !result.success;
   return (
-    <div className={`operation-card ${result.success ? "success" : "failed"}`}>
+    <div className={`operation-card ${result.success ? "success" : "failed"}`}
+      onDoubleClick={() => onShowDetail?.({ kind: "result", result })}
+      title="双击查看详情"
+    >
       <div className="operation-heading">
         <strong>{VcsLabels[result.vcsType]}</strong>
         <span>{result.summary}</span>
@@ -71,9 +124,12 @@ function ResultCard({ result, onOpenSvnDownload, onRetryPush }: { result: Operat
   );
 }
 
-function PersistedResultCard({ log }: { log: OperationLog }) {
+function PersistedResultCard({ log, onShowDetail }: { log: OperationLog; onShowDetail?: (data: DetailSource) => void }) {
   return (
-    <div className={`operation-card ${log.success ? "success" : "failed"}`}>
+    <div className={`operation-card ${log.success ? "success" : "failed"}`}
+      onDoubleClick={() => onShowDetail?.({ kind: "log", log })}
+      title="双击查看详情"
+    >
       <div className="operation-heading">
         <strong>{VcsLabels[log.vcsType as keyof typeof VcsLabels] ?? log.vcsType}</strong>
         <span>{log.summary}</span>
@@ -89,24 +145,31 @@ function PersistedResultCard({ log }: { log: OperationLog }) {
 }
 
 export function OperationPanel({ operationResults, history, persistedLogs, t, onOpenSvnDownload, onClearHistory, onRetryPush }: OperationPanelProps) {
-  const [showHistory, setShowHistory] = useState(false);
   const [showPersisted, setShowPersisted] = useState(false);
+  const [detailData, setDetailData] = useState<DetailSource | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
   const hasCurrent = operationResults.length > 0;
-  const hasHistory = history.length > 0;
   const hasPersisted = persistedLogs.length > 0;
 
-  if (!hasCurrent && !hasHistory && !hasPersisted) return null;
+  function handleShowDetail(data: DetailSource) {
+    setDetailData(data);
+    setDetailOpen(true);
+  }
+
+  if (!hasCurrent && !hasPersisted) return null;
 
   return (
     <section className="panel operation-panel">
+      <OperationDetailModal data={detailData} open={detailOpen} onClose={() => setDetailOpen(false)} />
+
       <div className="panel-title-row">
         <div>
           <p className="eyebrow">Operation result</p>
           <h3>{hasCurrent ? t("operation.recent") : t("operation.history")}</h3>
         </div>
         <div className="panel-title-row-actions">
-          <span className="soft-chip">{hasCurrent ? t("operation.current") : `${history.length} ${t("operation.entryCount")}`}</span>
-          {(hasHistory || hasPersisted) ? (
+          <span className="soft-chip">{hasCurrent ? t("operation.current") : `${persistedLogs.length} ${t("operation.entryCount")}`}</span>
+          {hasPersisted ? (
             <Button variant="ghost" onClick={onClearHistory} title="清除历史">
               ✕
             </Button>
@@ -117,42 +180,22 @@ export function OperationPanel({ operationResults, history, persistedLogs, t, on
       {hasCurrent ? (
         <div className="operation-list">
           {operationResults.map((result) => (
-            <ResultCard key={`${result.vcsType}-${result.operation}`} result={result} onOpenSvnDownload={onOpenSvnDownload} onRetryPush={onRetryPush} />
+            <ResultCard key={`${result.vcsType}-${result.operation}`} result={result} onOpenSvnDownload={onOpenSvnDownload} onRetryPush={onRetryPush} onShowDetail={handleShowDetail} />
           ))}
         </div>
-      ) : null}
-
-      {hasHistory ? (
-        <>
-          <Button variant="ghost" className="history-toggle" onClick={() => setShowHistory(!showHistory)}>
-            {showHistory ? t("operation.hideHistory") : `${t("operation.showHistory")} (${history.length})`}
-          </Button>
-          {showHistory ? (
-            <div className="operation-list history-list">
-              {history.map((entry) => (
-                <div className="history-group" key={entry.id}>
-                  <time className="history-time">{formatTimestamp(entry.timestamp)}</time>
-                  {entry.results.map((result, i) => (
-                    <ResultCard key={i} result={result} onOpenSvnDownload={onOpenSvnDownload} onRetryPush={onRetryPush} />
-                  ))}
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </>
       ) : null}
 
       {hasPersisted ? (
         <>
           <Button variant="ghost" className="history-toggle" onClick={() => setShowPersisted(!showPersisted)}>
-            {showPersisted ? "收起历史记录" : `查看历史记录 (${persistedLogs.length} 条)`}
+            {showPersisted ? t("operation.hideHistory") : `${t("operation.showHistory")} (${persistedLogs.length})`}
           </Button>
           {showPersisted ? (
             <div className="operation-list history-list">
               {persistedLogs.map((log) => (
                 <div className="history-group" key={log.id}>
                   <time className="history-time">{formatPersistedTimestamp(log.createdAt)}</time>
-                  <PersistedResultCard log={log} />
+                  <PersistedResultCard log={log} onShowDetail={handleShowDetail} />
                 </div>
               ))}
             </div>

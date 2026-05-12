@@ -10,4 +10,5 @@ playwright-report/
 .env
 .env.*
 !.env.example
-.cluade/
+.claude/
+

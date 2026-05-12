@@ -13,6 +13,8 @@ export function useCommit({ selectedRepository, changedFiles }: UseCommitOptions
   const [selectedCommitKeys, setSelectedCommitKeys] = useState<Set<string>>(new Set());
   const [isCommitLoading, setIsCommitLoading] = useState(false);
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
+  const [commitHash, setCommitHash] = useState<string | null>(null);
 
   const committableFiles = useMemo(
     () => changedFiles.filter(isCommittableChange),
@@ -70,6 +72,8 @@ export function useCommit({ selectedRepository, changedFiles }: UseCommitOptions
     setSelectedCommitKeys(new Set());
     setIsCommitLoading(false);
     setIsCommitDialogOpen(false);
+    setCommitError(null);
+    setCommitHash(null);
   }
 
   return {
@@ -86,6 +90,10 @@ export function useCommit({ selectedRepository, changedFiles }: UseCommitOptions
     selectedCommitCount,
     hasGitCommitSelection,
     canOpenCommitDialog,
+    commitError,
+    setCommitError,
+    commitHash,
+    setCommitHash,
     toggleCommitFile,
     toggleAllCommitFiles,
     syncKeys,

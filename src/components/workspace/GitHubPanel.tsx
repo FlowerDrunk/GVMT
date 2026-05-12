@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import type { Repository, GhRepoInfo, GitHubPr, GitHubRun } from "../../lib/api";
-import { getGhRepoInfo, ghListPrs, ghListActions, ghOpenBrowser } from "../../lib/api";
+import { getGhRepoInfo, ghListPrs, ghListActions, ghOpenBrowser, createPr } from "../../lib/api";
 import type { Translator } from "../../lib/i18n";
 import { Button } from "../ui/button";
+import { Modal, ModalHeading } from "../shared/Modal";
 
 interface GitHubPanelProps {
   selectedRepository: Repository | undefined;
@@ -18,7 +19,15 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
   const [infoState, setInfoState] = useState<LoadingState>("idle");
   const [prState, setPrState] = useState<LoadingState>("idle");
   const [runState, setRunState] = useState<LoadingState>("idle");
-  const [infoError, setInfoError] = useState<string | null>(null);
+  const [infoError, setInfoError] = useState<string | null>(null);// 创建 PR 弹窗状态
+  const [isCreatePrDialogOpen, setIsCreatePrDialogOpen] = useState(false);
+  const [prTitle, setPrTitle] = useState("");
+  const [prBody, setPrBody] = useState("");
+  const [prHead, setPrHead] = useState("");
+  const [prBase, setPrBase] = useState("");
+  const [isPrCreating, setIsPrCreating] = useState(false);
+  const [prCreateError, setPrCreateError] = useState<string | null>(null);
+  const [prCreateSuccess, setPrCreateSuccess] = useState<string | null>(null);
 
   const remoteUrl = selectedRepository?.remoteUrl;
   const isSvn = selectedRepository?.vcsType === "svn";
@@ -40,6 +49,8 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
       .then((info) => {
         setRepoInfo(info);
         setInfoState("loaded");
+        // 自动填充默认分支和目标分支
+        setPrBase(info.defaultBranch || "main");
       })
       .catch((err) => {
         setInfoError(err instanceof Error ? err.message : String(err));
@@ -62,6 +73,43 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
       })
       .catch(() => setRunState("error"));
   }, [remoteUrl, isSvn]);
+
+  // 打开创建 PR 弹窗时自动填充当前分支
+  function handleOpenCreatePr() {
+    if (!selectedRepository?.branchOrRevision) return;
+    setPrHead(selectedRepository.branchOrRevision);
+    setPrTitle("");
+    setPrBody("");
+    setPrCreateError(null);
+    setPrCreateSuccess(null);
+    setIsCreatePrDialogOpen(true);
+  }
+
+  async function handleCreatePr() {
+    if (!remoteUrl || !prTitle.trim() || !prHead.trim() || !prBase.trim()) return;
+    setIsPrCreating(true);
+    setPrCreateError(null);
+    setPrCreateSuccess(null);
+    try {
+      const pr = await createPr(remoteUrl, {
+        title: prTitle.trim(),
+        body: prBody.trim(),
+        head: prHead.trim(),
+        base: prBase.trim(),
+      });
+      setPrCreateSuccess(`PR #${pr.number} 创建成功`);
+      setPrs((prev) => [pr, ...prev]);
+      // 3秒后自动关闭
+      setTimeout(() => {
+        setIsCreatePrDialogOpen(false);
+        setPrCreateSuccess(null);
+      }, 3000);
+    } catch (error) {
+      setPrCreateError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsPrCreating(false);
+    }
+  }
 
   if (!remoteUrl || isSvn) return null;
 
@@ -107,6 +155,16 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
               Actions
             </Button>
           </div>
+          {/* 创建 PR 入口：仅在当前分支不是默认分支时显示 */}
+          {selectedRepository?.branchOrRevision &&
+          repoInfo.defaultBranch &&
+          selectedRepository.branchOrRevision !== repoInfo.defaultBranch ? (
+            <div className="github-create-pr-entry">
+              <Button variant="default" onClick={handleOpenCreatePr}>
+                创建 PR：{selectedRepository.branchOrRevision} → {repoInfo.defaultBranch}
+              </Button>
+            </div>
+          ) : null}
         </>
       ) : null}
 
@@ -143,6 +201,79 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
           ))}
         </div>
       ) : null}
+
+      {/* ── 创建 PR 弹窗 ── */}
+      <Modal
+        open={isCreatePrDialogOpen}
+        onClose={() => { if (!isPrCreating) setIsCreatePrDialogOpen(false); }}
+        labelledBy="create-pr-title"
+      >
+        <ModalHeading
+          eyebrow="GitHub"
+          title="创建 Pull Request"
+          titleId="create-pr-title"
+          onClose={() => { if (!isPrCreating) setIsCreatePrDialogOpen(false); }}
+        />
+        <div className="create-pr-form">
+          <label className="create-pr-field">
+            <span>源分支</span>
+            <input
+              type="text"
+              value={prHead}
+              onChange={(e) => setPrHead(e.target.value)}
+              placeholder="feature-branch"
+              disabled={isPrCreating}
+            />
+          </label>
+          <label className="create-pr-field">
+            <span>目标分支</span>
+            <input
+              type="text"
+              value={prBase}
+              onChange={(e) => setPrBase(e.target.value)}
+              placeholder="main"
+              disabled={isPrCreating}
+            />
+          </label>
+          <label className="create-pr-field">
+            <span>标题 *</span>
+            <input
+              type="text"
+              value={prTitle}
+              onChange={(e) => setPrTitle(e.target.value)}
+              placeholder="PR 标题"
+              disabled={isPrCreating}
+              autoFocus
+            />
+          </label>
+          <label className="create-pr-field">
+            <span>描述</span>
+            <textarea
+              value={prBody}
+              onChange={(e) => setPrBody(e.target.value)}
+              placeholder="PR 描述（可选）"
+              rows={3}
+              disabled={isPrCreating}
+            />
+          </label>
+
+          {prCreateError ? (
+            <div className="create-pr-error">{prCreateError}</div>
+          ) : null}
+          {prCreateSuccess ? (
+            <div className="create-pr-success">{prCreateSuccess}</div>
+          ) : null}
+
+          <div className="modal-actions">
+            <Button variant="secondary" onClick={() => setIsCreatePrDialogOpen(false)} disabled={isPrCreating}>
+              取消
+            </Button>
+            <Button variant="default" onClick={handleCreatePr} disabled={isPrCreating || !prTitle.trim()}>
+              {isPrCreating ? "创建中..." : "创建 PR"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </section>
   );
 }

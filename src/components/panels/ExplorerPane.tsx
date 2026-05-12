@@ -18,6 +18,7 @@ interface ExplorerPaneProps {
   onRefreshRepositories: () => void;
   onDropPath: (path: string) => void;
   onSetStatus: (msg: string) => void;
+  latestSvnRevisions?: Record<number, string>;
 }
 
 export function ExplorerPane({
@@ -32,6 +33,7 @@ export function ExplorerPane({
   onRefreshRepositories,
   onDropPath,
   onSetStatus,
+  latestSvnRevisions = {},
 }: ExplorerPaneProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -41,13 +43,16 @@ export function ExplorerPane({
   const [addError, setAddError] = useState<string | null>(null);
 
   const filteredRepos = useMemo(() => {
-    if (!searchQuery.trim()) return repositories;
-    const lower = searchQuery.toLowerCase();
-    return repositories.filter(
-      (r) =>
-        r.name.toLowerCase().includes(lower) ||
-        r.path.toLowerCase().includes(lower),
-    );
+    let list = repositories;
+    if (searchQuery.trim()) {
+      const lower = searchQuery.toLowerCase();
+      list = list.filter(
+        (r) =>
+          r.name.toLowerCase().includes(lower) ||
+          r.path.toLowerCase().includes(lower),
+      );
+    }
+    return [...list].sort((a, b) => a.name.localeCompare(b.name));
   }, [repositories, searchQuery]);
 
   async function handlePickFolder() {
@@ -220,10 +225,7 @@ export function ExplorerPane({
                     <span className={`repo-dot ${statusTone(repository.vcsType)}`} />
                     <span className="repo-copy">
                       <strong>{repository.name}</strong>
-                      <small>{repository.path}</small>
-                      {repository.branchOrRevision ? (
-                        <span className="repo-branch">{repository.branchOrRevision}</span>
-                      ) : null}
+                      <span className="repo-branch">{latestSvnRevisions[repository.id] ?? repository.branchOrRevision ?? ""}</span>
                     </span>
                     <span className="repo-type">{VcsLabels[repository.vcsType]}</span>
                   </button>

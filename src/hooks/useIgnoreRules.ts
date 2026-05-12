@@ -7,7 +7,6 @@ import {
   type IgnoreRules,
   type OperationResult,
   type Repository,
-  type SvnIgnoreEntry,
   type VcsType,
 } from "../lib/api";
 
@@ -81,6 +80,9 @@ export function useIgnoreRules({
       const result = await updateGitignore(selectedRepository.id, { content });
       setOperationResults([result]);
       setStatus(result.summary);
+      if (result.success) {
+        await loadRepositoryStatus(true);
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
@@ -88,12 +90,13 @@ export function useIgnoreRules({
     }
   }
 
-  async function handleSaveSvnIgnore(entry: SvnIgnoreEntry) {
-    if (!selectedRepository) return;
+  async function handleSaveSvnIgnore() {
+    if (!selectedRepository || !ignoreRules) return;
 
     setIsIgnoreLoading(true);
     try {
-      const result = await updateSvnIgnore(selectedRepository.id, entry.directory, entry.rules);
+      const content = ignoreRules.svnignoreContent ?? "";
+      const result = await updateSvnIgnore(selectedRepository.id, content);
       setOperationResults([result]);
       setStatus(result.summary);
       if (result.success) {

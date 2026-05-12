@@ -73,7 +73,7 @@ export function useRepositoryStatus({
     }
   }
 
-  async function handleUpdateRepository() {
+  async function handleUpdateRepository(depth?: string) {
     if (!selectedRepository) {
       setStatus("请先选择一个仓库");
       return;
@@ -81,7 +81,7 @@ export function useRepositoryStatus({
 
     setIsLoading(true);
     try {
-      const results = await updateRepository(selectedRepository.id);
+      const results = await updateRepository(selectedRepository.id, depth);
       setOperationResults(results);
       const failed = results.filter((result) => !result.success);
       setStatus(failed.length === 0 ? "更新完成" : `${failed.length} 个更新步骤失败`);

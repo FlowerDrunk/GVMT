@@ -277,10 +277,10 @@ pub async fn update_all_repositories(app: AppHandle) -> Result<Vec<OpResult>, St
         for (_id, path, vcs_type) in repos {
             match vcs_type.as_str() {
                 "git" => all_results.push(git::git_update_result(&path)),
-                "svn" => all_results.push(svn::svn_update_result(&path)),
+                "svn" => all_results.push(svn::svn_update_result(&path, None)),
                 "mixed" => {
                     all_results.push(git::git_update_result(&path));
-                    all_results.push(svn::svn_update_result(&path));
+                    all_results.push(svn::svn_update_result(&path, None));
                 }
                 _ => {}
             }
@@ -504,18 +504,19 @@ pub async fn commit_repository(
 // ── Update ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn update_repository(app: AppHandle, id: i64) -> Result<Vec<OpResult>, String> {
+pub async fn update_repository(app: AppHandle, id: i64, depth: Option<String>) -> Result<Vec<OpResult>, String> {
     run_blocking(move || {
         let connection = db::open_database(&app)?;
         let repository = db::find_repository_by_id(&connection, id)?
             .ok_or_else(|| "未找到需要更新的仓库".to_string())?;
 
+        let app_ref = app.clone();
         let results = match repository.vcs_type.as_str() {
             "git" => vec![git::git_update_result(&repository.path)],
-            "svn" => vec![svn::svn_update_result(&repository.path)],
+            "svn" => vec![svn::svn_update_streaming(&app_ref, &repository.path, depth.as_deref())],
             "mixed" => vec![
                 git::git_update_result(&repository.path),
-                svn::svn_update_result(&repository.path),
+                svn::svn_update_streaming(&app_ref, &repository.path, depth.as_deref()),
             ],
             _ => vec![OpResult {
                 operation: "update".to_string(),
@@ -566,6 +567,91 @@ pub async fn retry_push(app: AppHandle, id: i64) -> Result<OpResult, String> {
         let repository =
             db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
         Ok(git::git_push_only(&repository.path))
+    })
+    .await
+}
+
+// ── Git Stash ────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn git_stash_push(app: AppHandle, id: i64, message: Option<String>) -> Result<OpResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        Ok(git::git_stash_push(&repository.path, message.as_deref()))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_stash_pop(app: AppHandle, id: i64) -> Result<OpResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        Ok(git::git_stash_pop(&repository.path))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_stash_list(app: AppHandle, id: i64) -> Result<Vec<git::GitStashEntry>, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        git::git_stash_list(&repository.path)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_stash_drop(app: AppHandle, id: i64, index: usize) -> Result<OpResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        Ok(git::git_stash_drop(&repository.path, index))
+    })
+    .await
+}
+
+// ── Git Log ──────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn git_log(app: AppHandle, id: i64, max_count: Option<usize>) -> Result<Vec<git::GitCommitLog>, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        git::git_log(&repository.path, max_count.unwrap_or(20))
+    })
+    .await
+}
+
+// ── Git Fetch ────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn git_fetch(app: AppHandle, id: i64) -> Result<OpResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        Ok(git::git_fetch(&repository.path))
+    })
+    .await
+}
+
+// ── Git Reset ────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn git_reset(app: AppHandle, id: i64, mode: String, target: String) -> Result<OpResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        Ok(git::git_reset(&repository.path, &mode, &target))
     })
     .await
 }
@@ -670,7 +756,8 @@ pub async fn get_ignore_rules(app: AppHandle, id: i64) -> Result<IgnoreRules, St
 
         let mut gitignore_path = None;
         let mut gitignore_content = None;
-        let mut svn_entries = Vec::new();
+        let mut svnignore_content = None;
+        let svn_entries = Vec::new();
 
         if repository.vcs_type == "git" || repository.vcs_type == "mixed" {
             let gitignore = std::path::Path::new(&repository.path).join(".gitignore");
@@ -681,19 +768,11 @@ pub async fn get_ignore_rules(app: AppHandle, id: i64) -> Result<IgnoreRules, St
         }
 
         if repository.vcs_type == "svn" || repository.vcs_type == "mixed" {
-            match crate::command_exec::run_command([
-                "svn",
-                "propget",
-                "svn:ignore",
-                "-R",
-                &repository.path,
-            ]) {
-                Ok(output) => {
-                    if !output.trim().is_empty() {
-                        svn_entries = svn::parse_svn_ignore_recursive(&output);
-                    }
-                }
-                Err(_) => {}
+            let svnignore = std::path::Path::new(&repository.path).join(".svnignore");
+            if svnignore.exists() {
+                svnignore_content = Some(fs::read_to_string(&svnignore).unwrap_or_default());
+            } else {
+                svnignore_content = Some(String::new());
             }
         }
 
@@ -701,6 +780,7 @@ pub async fn get_ignore_rules(app: AppHandle, id: i64) -> Result<IgnoreRules, St
             vcs_type: repository.vcs_type,
             gitignore_path,
             gitignore_content,
+            svnignore_content,
             svn_entries,
         })
     })
@@ -720,7 +800,24 @@ pub async fn add_ignore_rule(
         let normalized_path = file_browser::normalize_relative_path(&input.path)?;
 
         match input.vcs_type.as_str() {
-            "git" => ignore::gitignore_append_rule(&repository.path, &normalized_path),
+            "git" => {
+                let result = ignore::gitignore_append_rule(&repository.path, &normalized_path)?;
+                // 清理所有被新规则匹配的已跟踪文件
+                let cleaned = git::git_clean_ignored_tracked(&repository.path).unwrap_or(0);
+                if cleaned > 0 {
+                    Ok(OpResult {
+                        operation: "ignore".to_string(),
+                        vcs_type: "git".to_string(),
+                        success: true,
+                        summary: format!("已添加忽略规则（同时取消了 {cleaned} 个文件的跟踪）"),
+                        output: String::new(),
+                        warning: None,
+                        missing_svn_cli: false,
+                    })
+                } else {
+                    Ok(result)
+                }
+            }
             "svn" => ignore::svn_ignore_append_rule(&repository.path, &normalized_path),
             _ => Err("无法识别的版本控制类型".to_string()),
         }
@@ -744,11 +841,19 @@ pub async fn update_gitignore(
         let gitignore = std::path::Path::new(&repository.path).join(".gitignore");
         fs::write(&gitignore, input.content.as_bytes()).map_err(|error| error.to_string())?;
 
+        // 清理被新规则匹配的已跟踪文件
+        let cleaned = git::git_clean_ignored_tracked(&repository.path).unwrap_or(0);
+        let summary = if cleaned > 0 {
+            format!("已更新 .gitignore（移除了 {cleaned} 个已跟踪文件）")
+        } else {
+            "已更新 .gitignore".to_string()
+        };
+
         Ok(OpResult {
             operation: "ignore".to_string(),
             vcs_type: "git".to_string(),
             success: true,
-            summary: "已更新 .gitignore".to_string(),
+            summary,
             output: String::new(),
             warning: None,
             missing_svn_cli: false,
@@ -761,47 +866,23 @@ pub async fn update_gitignore(
 pub async fn update_svn_ignore(
     app: AppHandle,
     id: i64,
-    directory: String,
-    rules: Vec<String>,
+    content: String,
 ) -> Result<OpResult, String> {
     run_blocking(move || {
+        use std::fs;
+
         let connection = db::open_database(&app)?;
         let repository =
             db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
 
-        let dir_path = file_browser::safe_repository_child_path(
-            std::path::Path::new(&repository.path),
-            if directory.is_empty() {
-                None
-            } else {
-                Some(&directory)
-            },
-        )?;
-        let dir_str = crate::command_exec::os_str_to_string(dir_path.as_os_str());
-        let value = rules.join("\n");
-
-        crate::command_exec::run_command_args(
-            "svn",
-            &[
-                "propset".into(),
-                "svn:ignore".into(),
-                value.clone(),
-                dir_str,
-            ],
-        )?;
+        let svnignore = std::path::Path::new(&repository.path).join(".svnignore");
+        fs::write(&svnignore, content.as_bytes()).map_err(|error| error.to_string())?;
 
         Ok(OpResult {
             operation: "ignore".to_string(),
             vcs_type: "svn".to_string(),
             success: true,
-            summary: format!(
-                "已更新 svn:ignore — {}",
-                if directory.is_empty() {
-                    "仓库根目录"
-                } else {
-                    &directory
-                }
-            ),
+            summary: "已更新 .svnignore".to_string(),
             output: String::new(),
             warning: None,
             missing_svn_cli: false,
@@ -832,6 +913,52 @@ fn open_url(url: &str) -> Result<(), String> {
     } else {
         Err("当前版本仅支持 Windows 打开下载页面".to_string())
     }
+}
+
+// ── SVN Revert / Cleanup / Resolve / Log ──────────────────────────────────
+
+#[tauri::command]
+pub async fn svn_revert(app: AppHandle, id: i64, path: String) -> Result<OpResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        Ok(svn::svn_revert(&repository.path, &path))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn svn_cleanup(app: AppHandle, id: i64) -> Result<OpResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        Ok(svn::svn_cleanup(&repository.path))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn svn_resolve(app: AppHandle, id: i64, path: String) -> Result<OpResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        Ok(svn::svn_resolve(&repository.path, &path))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn svn_log_command(app: AppHandle, id: i64, max_count: Option<usize>) -> Result<Vec<crate::svn::SvnCommitLog>, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        svn::svn_log(&repository.path, max_count.unwrap_or(20))
+    })
+    .await
 }
 
 // ── Branches ──────────────────────────────────────────────────────────────
@@ -1053,6 +1180,14 @@ pub async fn gh_open_browser(remote_url: String, page: String) -> Result<(), Str
 #[tauri::command]
 pub fn parse_remote_owner_repo(remote_url: String) -> Result<Option<crate::gh::GhOwnerRepo>, String> {
     Ok(crate::gh::parse_owner_repo_from_remote(&remote_url).map(|(owner, name)| crate::gh::GhOwnerRepo { owner, name }))
+}
+
+#[tauri::command]
+pub async fn gh_create_pr(
+    remote_url: String,
+    input: crate::gh::GhCreatePrInput,
+) -> Result<crate::gh::GitHubPr, String> {
+    run_blocking(move || crate::gh::gh_create_pr(&remote_url, &input)).await
 }
 
 // ── Folder Picker ────────────────────────────────────────────────────────

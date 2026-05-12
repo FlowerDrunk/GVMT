@@ -71,9 +71,9 @@ interface Preset {
 const THEME_PRESETS: Preset[] = [
   {
     name: "default",
-    label: "默认蓝",
+    label: "默认",
     color: "#2563eb",
-    bgColor: "#e8f0fe",
+    bgColor: "#f6f7f9",
     json: DEFAULT_CUSTOM_THEME_JSON,
   },
   {
@@ -200,8 +200,8 @@ function updateToken(json: string, key: string, value: string | number): string 
 export function ThemeDialog({ open, onClose, t, settings, onUpdateSettings }: ThemePaneProps) {
   const { customThemeJson, customThemeError, setCustomThemeJson, resetCustomTheme, previewTheme } = useTheme();
 
-  // The initial "applied" JSON — user's last saved theme, or fallback
-  const [appliedJson, setAppliedJson] = useState(customThemeJson || DEFAULT_CUSTOM_THEME_JSON);
+  // The initial "applied" JSON — user's last saved theme, or "" = no custom theme
+  const [appliedJson, setAppliedJson] = useState(customThemeJson || "");
   // The working draft — tracks unsaved changes
   const [themeDraft, setThemeDraft] = useState(appliedJson);
   const themeDraftRef = useRef(themeDraft);
@@ -251,27 +251,21 @@ export function ThemeDialog({ open, onClose, t, settings, onUpdateSettings }: Th
     previewTheme(appliedJson);
   }
 
-  /** Full reset: clear custom theme, revert to default preset */
+  /** Full reset: clear custom theme, revert to CSS :root defaults */
   function handleResetAll() {
     resetCustomTheme();
     setAppliedJson("");
-    setThemeDraft(DEFAULT_CUSTOM_THEME_JSON);
-    themeDraftRef.current = DEFAULT_CUSTOM_THEME_JSON;
+    setThemeDraft("");
+    themeDraftRef.current = "";
     setThemeDraftError(null);
   }
 
   function handleSelectPreset(preset: Preset) {
-    setThemeDraft(preset.json);
-    themeDraftRef.current = preset.json;
-    setThemeDraftError(null);
-    previewTheme(preset.json);
+    applyJson(preset.json);
   }
 
   function handleSelectSavedTheme(theme: SavedTheme) {
-    setThemeDraft(theme.json);
-    themeDraftRef.current = theme.json;
-    setThemeDraftError(null);
-    previewTheme(theme.json);
+    applyJson(theme.json);
   }
 
   function handleSaveCustomTheme() {

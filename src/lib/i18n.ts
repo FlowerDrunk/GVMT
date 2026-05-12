@@ -27,6 +27,18 @@ export type TranslationKey =
   | "command.commit"
   | "command.ignore"
   | "command.update"
+  | "command.fetch"
+  | "command.stash"
+  | "command.stashPush"
+  | "command.stashPop"
+  | "command.stashEmpty"
+  | "command.stashDrop"
+  | "command.log"
+  | "command.logTitle"
+  | "command.logEmpty"
+  | "command.logLoading"
+  | "command.cleanup"
+  | "command.refreshRepo"
   | "settings.eyebrow"
   | "settings.title"
   | "settings.language"
@@ -43,6 +55,12 @@ export type TranslationKey =
   | "settings.flatView"
   | "settings.treeView"
   | "settings.done"
+  | "settings.svnDepth"
+  | "settings.svnDepthHelp"
+  | "settings.svnDepthInfinity"
+  | "settings.svnDepthImmediates"
+  | "settings.svnDepthFiles"
+  | "settings.svnDepthEmpty"
   // StatusPanel
   | "status.workspaceStatus"
   | "status.refresh"
@@ -203,10 +221,22 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "command.selectRepository": "选择或添加仓库",
     "command.changes": "变更",
     "command.redetect": "重新检测",
-    "command.refreshStatus": "刷新状态",
+    "command.refreshStatus": "检测",
     "command.commit": "提交",
     "command.ignore": "忽略",
     "command.update": "更新",
+    "command.fetch": "拉取",
+    "command.stash": "暂存",
+    "command.stashPush": "保存变更",
+    "command.stashPop": "恢复最近",
+    "command.stashEmpty": "暂无暂存",
+    "command.stashDrop": "丢弃",
+    "command.log": "历史",
+    "command.logTitle": "最近提交",
+    "command.logEmpty": "暂无提交记录",
+    "command.logLoading": "加载中...",
+    "command.cleanup": "清理",
+    "command.refreshRepo": "重检测",
     "settings.eyebrow": "Application",
     "settings.title": "设置",
     "settings.language": "语言",
@@ -223,6 +253,12 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "settings.flatView": "路径分组",
     "settings.treeView": "树形展开",
     "settings.done": "完成",
+    "settings.svnDepth": "检出/更新深度",
+    "settings.svnDepthHelp": "SVN update 命令的 --depth 参数，默认 infinity 更新整个目录树。",
+    "settings.svnDepthInfinity": "Infinity — 完整递归",
+    "settings.svnDepthImmediates": "Immediates — 仅子目录和文件",
+    "settings.svnDepthFiles": "Files — 仅文件",
+    "settings.svnDepthEmpty": "Empty — 仅目录自身",
     "status.workspaceStatus": "工作区状态",
     "status.refresh": "刷新",
     "status.totalChanges": "总变更",
@@ -370,6 +406,18 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "command.commit": "Commit",
     "command.ignore": "Ignore",
     "command.update": "Update",
+    "command.fetch": "Fetch",
+    "command.stash": "Stash",
+    "command.stashPush": "Push changes",
+    "command.stashPop": "Pop latest",
+    "command.stashEmpty": "No stashes",
+    "command.stashDrop": "Drop",
+    "command.log": "Log",
+    "command.logTitle": "Recent commits",
+    "command.logEmpty": "No commits yet",
+    "command.logLoading": "Loading...",
+    "command.cleanup": "Cleanup",
+    "command.refreshRepo": "Re-detect",
     "settings.eyebrow": "Application",
     "settings.title": "Settings",
     "settings.language": "Language",
@@ -386,6 +434,12 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "settings.flatView": "Path groups",
     "settings.treeView": "Tree",
     "settings.done": "Done",
+    "settings.svnDepth": "Checkout/Update depth",
+    "settings.svnDepthHelp": "Controls how deeply SVN update traverses the directory tree.",
+    "settings.svnDepthInfinity": "Infinity — full recursion",
+    "settings.svnDepthImmediates": "Immediates — children only",
+    "settings.svnDepthFiles": "Files — file entries only",
+    "settings.svnDepthEmpty": "Empty — directory only",
     "status.workspaceStatus": "Workspace Status",
     "status.refresh": "Refresh",
     "status.totalChanges": "Total",

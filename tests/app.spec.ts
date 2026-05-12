@@ -177,6 +177,12 @@ test.beforeEach(async ({ page }) => {
                   missingSvnCli: false,
                 },
               ];
+            case "list_operation_logs":
+              return [];
+            case "clear_operation_logs":
+              return null;
+            case "log_operation":
+              return null;
             default:
               return repositories[0];
           }
@@ -198,7 +204,7 @@ test("workbench layout is clear and commit/delete flows open in dialogs", async 
   const filePreviewDialog = page.getByRole("dialog", { name: "README.md" });
   await expect(filePreviewDialog).toBeVisible();
   await expect(filePreviewDialog.getByText("本地仓库文件预览")).toBeVisible();
-  await filePreviewDialog.getByRole("button", { name: "×" }).click();
+  await filePreviewDialog.getByRole("button", { title: "关闭" }).click();
   await expect(filePreviewDialog).toBeHidden();
   const commitButton = page.getByRole("button", { name: "提交", exact: true });
   await expect(commitButton).toBeVisible();
@@ -211,14 +217,14 @@ test("workbench layout is clear and commit/delete flows open in dialogs", async 
   await expect(diffDialog).toBeVisible();
   await expect(diffDialog.getByText("new", { exact: true })).toBeVisible();
   await expect(diffDialog.locator(".syntax-keyword").first()).toBeVisible();
-  await diffDialog.getByRole("button", { name: "×" }).click();
+  await diffDialog.locator(".modal-heading").getByRole("button", { title: "关闭" }).click();
   await expect(diffDialog).toBeHidden();
 
   await page.locator(".change-row", { hasText: "lib.rs" }).first().click({ button: "right" });
   await page.getByRole("button", { name: "查看 diff" }).click();
   const contextDiffDialog = page.getByRole("dialog", { name: "src-tauri/src/lib.rs" });
   await expect(contextDiffDialog).toBeVisible();
-  await contextDiffDialog.getByRole("button", { name: "×" }).click();
+  await contextDiffDialog.locator(".modal-heading").getByRole("button", { title: "关闭" }).click();
 
   const workspace = await page.locator(".workspace").boundingBox();
   const explorer = await page.locator(".explorer-pane").boundingBox();
@@ -229,7 +235,7 @@ test("workbench layout is clear and commit/delete flows open in dialogs", async 
   expect(explorer!.x + explorer!.width).toBeLessThanOrEqual(workspace!.x + 2);
   expect(changes!.width).toBeGreaterThan(260);
 
-  await page.getByRole("button", { name: "评审与质量" }).click();
+  await page.getByRole("tab", { name: "评审与质量" }).click();
   await expect(page.getByText("http://svn.example.local/repo/选型管理/HaierSelectionAppDir")).toBeVisible();
   await expect(page.getByText("%E9%80%89%E5%9E%8B")).toHaveCount(0);
   await expect(page.getByText("本地质量检查", { exact: true })).toBeVisible();
@@ -241,19 +247,20 @@ test("workbench layout is clear and commit/delete flows open in dialogs", async 
   await commitButton.click();
   const commitDialog = page.getByRole("dialog", { name: "提交变更" });
   await expect(commitDialog).toBeVisible();
-  await expect(commitDialog.getByText("最近一次本地质量检查")).toBeVisible();
+  await expect(commitDialog.getByText("质量检查")).toBeVisible();
   await expect(commitDialog.getByText("TypeScript build 通过，用时 1.2s")).toBeVisible();
   await expect(commitDialog.getByText("选中文件", { exact: true })).toBeVisible();
   await expect(commitDialog.getByPlaceholder("说明这次变更的目的...")).toBeVisible();
-  await commitDialog.getByRole("button", { name: "取消", exact: true }).click();
+  await commitDialog.locator(".modal-actions").getByRole("button", { name: "取消", exact: true }).click();
   await expect(commitDialog).toBeHidden();
+  await page.waitForTimeout(500);
 
   await page.locator(".repo-list").getByRole("button", { name: /Selection backup/ }).click({ button: "right" });
-  await page.getByRole("menuitem", { name: "删除仓库记录" }).click();
+  await page.getByRole("menuitem", { name: "删除记录" }).click();
   const deleteDialog = page.getByRole("dialog", { name: "删除仓库记录" });
   await expect(deleteDialog).toBeVisible();
-  await expect(deleteDialog.getByText("不会删除磁盘上的仓库文件")).toBeVisible();
-  await deleteDialog.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(deleteDialog.getByText("将从 GVMT 的本地列表中移除")).toBeVisible();
+  await deleteDialog.locator(".modal-actions").getByRole("button", { name: "取消", exact: true }).click();
 
   await page.locator(".activity-rail").getByRole("button", { name: "设置" }).click();
   const settingsDialog = page.getByRole("dialog", { name: "设置" });
@@ -263,7 +270,7 @@ test("workbench layout is clear and commit/delete flows open in dialogs", async 
   await settingsDialog.getByRole("button", { name: "安装右键菜单" }).click();
   await expect(settingsDialog.getByText("已安装")).toBeVisible();
   await settingsDialog.getByLabel("界面语言").selectOption("en-US");
-  await expect(page.locator(".activity-rail").getByRole("button", { name: "Repos" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Update", exact: true })).toBeVisible();
-  await page.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.getByText("Repos").first()).toBeVisible();
+  await expect(page.getByText("Update").first()).toBeVisible();
+  await page.getByRole("dialog", { name: "Settings" }).getByText("Done").click();
 });

@@ -1,4 +1,4 @@
-import type { IgnoreRules, SvnIgnoreEntry } from "../../lib/api";
+import type { IgnoreRules } from "../../lib/api";
 import type { Translator } from "../../lib/i18n";
 import { Modal, ModalHeading } from "../shared/Modal";
 import { EmptyState } from "../shared/EmptyState";
@@ -11,9 +11,9 @@ interface IgnoreDialogProps {
   isIgnoreLoading: boolean;
   t: Translator;
   onSaveGitignore: () => void;
-  onSaveSvnIgnore: (entry: SvnIgnoreEntry) => void;
+  onSaveSvnIgnore: () => void;
   onGitignoreContentChange: (content: string) => void;
-  onSvnRulesChange: (directory: string, rules: string[]) => void;
+  onSvnignoreContentChange: (content: string) => void;
 }
 
 export function IgnoreDialog({
@@ -25,7 +25,7 @@ export function IgnoreDialog({
   onSaveGitignore,
   onSaveSvnIgnore,
   onGitignoreContentChange,
-  onSvnRulesChange,
+  onSvnignoreContentChange,
 }: IgnoreDialogProps) {
   const titleId = "ignore-dialog-title";
 
@@ -62,38 +62,19 @@ export function IgnoreDialog({
           {(ignoreRules.vcsType === "svn" || ignoreRules.vcsType === "mixed") ? (
             <section className="ignore-section">
               <div className="ignore-section-header">
-                <h4>SVN svn:ignore</h4>
-                <span className="soft-chip">{ignoreRules.svnEntries.length} 个目录</span>
+                <h4>SVN .svnignore</h4>
+                <span className="soft-chip">仓库根目录</span>
               </div>
-              {ignoreRules.svnEntries.length === 0 ? (
-                <EmptyState
-                  compact
-                  title="暂无 SVN 忽略规则"
-                  description="从文件变更列表右键选择忽略此文件来添加，或直接在目录上设置 svn:ignore 属性。"
-                />
-              ) : (
-                ignoreRules.svnEntries.map((entry) => (
-                  <div className="svn-ignore-entry" key={entry.directory}>
-                    <div className="svn-ignore-entry-header">
-                      <span>{entry.directory || "仓库根目录"}</span>
-                    </div>
-                    <textarea
-                      className="ignore-editor"
-                      value={entry.rules.join("\n")}
-                      onChange={(event) =>
-                        onSvnRulesChange(
-                          entry.directory,
-                          event.target.value.split("\n").filter((r) => r.trim().length > 0),
-                        )
-                      }
-                      rows={4}
-                    />
-                    <Button variant="secondary" disabled={isIgnoreLoading} onClick={() => onSaveSvnIgnore(entry)}>
-                      {isIgnoreLoading ? t("ignore.saving") : t("ignore.save")}
-                    </Button>
-                  </div>
-                ))
-              )}
+              <textarea
+                className="ignore-editor"
+                value={ignoreRules.svnignoreContent ?? ""}
+                onChange={(event) => onSvnignoreContentChange(event.target.value)}
+                placeholder="# SVN 忽略规则，每行一条…"
+                rows={8}
+              />
+              <Button variant="default" disabled={isIgnoreLoading} onClick={onSaveSvnIgnore}>
+                {isIgnoreLoading ? t("ignore.saving") : t("ignore.save")} .svnignore
+              </Button>
             </section>
           ) : null}
         </div>
