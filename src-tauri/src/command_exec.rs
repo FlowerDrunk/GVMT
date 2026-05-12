@@ -86,11 +86,16 @@ pub fn run_command<const N: usize>(parts: [&str; N]) -> Result<String, String> {
         .map_err(|error| error.to_string())?;
 
     if !output.status.success() {
-        let error = decode_command_output(&output.stderr).trim().to_string();
-        return Err(if error.is_empty() {
-            format!("命令执行失败：{resolved_program}")
+        let stderr = decode_command_output(&output.stderr).trim().to_string();
+        let stdout = decode_command_output(&output.stdout).trim().to_string();
+        return Err(if stderr.is_empty() {
+            if stdout.is_empty() {
+                format!("命令执行失败：{resolved_program}")
+            } else {
+                stdout
+            }
         } else {
-            error
+            stderr
         });
     }
 
@@ -105,11 +110,16 @@ pub fn run_command_args(program: &str, args: &[String]) -> Result<String, String
         .map_err(|error| error.to_string())?;
 
     if !output.status.success() {
-        let error = decode_command_output(&output.stderr).trim().to_string();
-        return Err(if error.is_empty() {
-            format!("命令执行失败：{resolved_program}")
+        let stderr = decode_command_output(&output.stderr).trim().to_string();
+        let stdout = decode_command_output(&output.stdout).trim().to_string();
+        return Err(if stderr.is_empty() {
+            if stdout.is_empty() {
+                format!("命令执行失败：{resolved_program}")
+            } else {
+                stdout
+            }
         } else {
-            error
+            stderr
         });
     }
 
