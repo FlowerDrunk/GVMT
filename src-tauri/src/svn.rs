@@ -249,7 +249,7 @@ pub fn svn_commit_result(
                     return failed_operation(
                         "commit",
                         "svn",
-                        format!("SVN add 失败：{error}"),
+                        svn_failure_warning("add", &error),
                         false,
                     );
                 }
@@ -268,7 +268,7 @@ pub fn svn_commit_result(
 
     match run_command_args("svn", &commit_args) {
         Ok(output) => success_operation("commit", "svn", "SVN 提交完成", output),
-        Err(error) => failed_operation("commit", "svn", format!("SVN 提交失败：{error}"), false),
+        Err(error) => failed_operation("commit", "svn", svn_failure_warning("提交", &error), false),
     }
 }
 
@@ -400,10 +400,23 @@ pub fn svn_status_warning(error: &str) -> String {
     svn_failure_warning("状态检测", error)
 }
 
-/// 根据操作名称生成 SVN 失败警告，统一处理 svn.exe 缺失检测
+pub fn is_svn_locked_error(error: &str) -> bool {
+    let lower = error.to_lowercase();
+    lower.contains("locked")
+        || lower.contains("e155004")
+        || lower.contains("e200033")
+        || lower.contains("e155037")
+        || lower.contains("previous operation has not finished")
+        || lower.contains("run 'cleanup'")
+        || lower.contains("run 'svn cleanup'")
+}
+
+/// 根据操作名称生成 SVN 失败警告，统一处理 svn.exe 缺失、工作副本锁定等常见错误
 pub fn svn_failure_warning(operation: &str, error: &str) -> String {
     if is_missing_svn_cli_error(error) {
         "当前环境没有可调用的 svn.exe。TortoiseSVN GUI 可用于识别工作副本，但命令行功能需要 SVN 命令行工具。可以安装 SlikSVN，或重新安装 / 修改 TortoiseSVN 并勾选 command line client tools。".to_string()
+    } else if is_svn_locked_error(error) {
+        format!("SVN 工作副本已被锁定，上一次操作可能未完成或被中断。\n请点击工具栏中的 Cleanup 按钮解除锁定后重试。\n\n原始错误：{error}")
     } else if error.trim().is_empty() {
         format!("SVN {operation}失败，命令无错误输出，请检查网络连接、认证信息或工作副本状态")
     } else {
@@ -701,7 +714,7 @@ pub fn svn_revert(root_path: &str, relative_path: &str) -> OperationResult {
     };
     match run_command_args("svn", &["revert".into(), path]) {
         Ok(output) => success_operation("revert", "svn", "SVN revert 完成", output),
-        Err(error) => failed_operation("revert", "svn", format!("SVN revert 失败：{error}"), false),
+        Err(error) => failed_operation("revert", "svn", svn_failure_warning("revert", &error), false),
     }
 }
 
@@ -723,7 +736,7 @@ pub fn svn_resolve(root_path: &str, relative_path: &str) -> OperationResult {
     };
     match run_command_args("svn", &["resolve".into(), "--accept".into(), "working".into(), path]) {
         Ok(output) => success_operation("resolve", "svn", "SVN resolve 完成", output),
-        Err(error) => failed_operation("resolve", "svn", format!("SVN resolve 失败：{error}"), false),
+        Err(error) => failed_operation("resolve", "svn", svn_failure_warning("resolve", &error), false),
     }
 }
 
