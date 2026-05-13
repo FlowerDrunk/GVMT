@@ -298,7 +298,7 @@ pub fn svn_update_result(path: &str, depth: Option<&str>) -> OperationResult {
                 success: false,
                 summary: "SVN 更新失败".to_string(),
                 output: String::new(),
-                warning: Some(svn_status_warning(&error)),
+                warning: Some(svn_failure_warning("更新", &error)),
                 missing_svn_cli,
             }
         }
@@ -375,7 +375,7 @@ pub fn svn_update_streaming(
             success: false,
             summary: "SVN 更新失败".to_string(),
             output: full_output,
-            warning: Some(svn_status_warning(&stderr_output)),
+            warning: Some(svn_failure_warning("更新", &stderr_output)),
             missing_svn_cli,
         }
     }
@@ -397,10 +397,15 @@ pub fn is_missing_svn_cli_error(error: &str) -> bool {
 }
 
 pub fn svn_status_warning(error: &str) -> String {
+    svn_failure_warning("状态检测", error)
+}
+
+/// 根据操作名称生成 SVN 失败警告，统一处理 svn.exe 缺失检测
+pub fn svn_failure_warning(operation: &str, error: &str) -> String {
     if is_missing_svn_cli_error(error) {
-        "当前环境没有可调用的 svn.exe。TortoiseSVN GUI 可用于识别工作副本，但状态检测仍需要 SVN 命令行工具。可以安装 SlikSVN，或重新安装 / 修改 TortoiseSVN 并勾选 command line client tools。".to_string()
+        "当前环境没有可调用的 svn.exe。TortoiseSVN GUI 可用于识别工作副本，但命令行功能需要 SVN 命令行工具。可以安装 SlikSVN，或重新安装 / 修改 TortoiseSVN 并勾选 command line client tools。".to_string()
     } else {
-        format!("SVN 状态检测失败：{error}")
+        format!("SVN {operation}失败：{error}")
     }
 }
 
