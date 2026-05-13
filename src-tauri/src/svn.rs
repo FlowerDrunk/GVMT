@@ -404,6 +404,8 @@ pub fn svn_status_warning(error: &str) -> String {
 pub fn svn_failure_warning(operation: &str, error: &str) -> String {
     if is_missing_svn_cli_error(error) {
         "当前环境没有可调用的 svn.exe。TortoiseSVN GUI 可用于识别工作副本，但命令行功能需要 SVN 命令行工具。可以安装 SlikSVN，或重新安装 / 修改 TortoiseSVN 并勾选 command line client tools。".to_string()
+    } else if error.trim().is_empty() {
+        format!("SVN {operation}失败，命令无错误输出，请检查网络连接、认证信息或工作副本状态")
     } else {
         format!("SVN {operation}失败：{error}")
     }
