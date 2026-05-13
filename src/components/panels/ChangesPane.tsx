@@ -5,6 +5,8 @@ import type { ChangeTreeNode } from "../../lib/utils";
 import type { TreeViewNode } from "../shared/TreeView";
 import { TreeView } from "../shared/TreeView";
 import { ChangeBadge } from "../shared/ChangeBadge";
+import { Modal, ModalHeading } from "../shared/Modal";
+import { Button } from "../ui/button";
 
 interface ChangesPaneProps {
   changedFiles: ChangeItem[];
@@ -24,8 +26,11 @@ interface ChangesPaneProps {
     status: ChangeStatus,
   ) => void;
   repositoryStatus: RepositoryStatus | null;
-  repositoryStats: { total: number; git: number; svn: number; unknown: number };
   defaultViewMode?: ViewMode;
+  onStageAll?: () => void;
+  onUnstageAll?: () => void;
+  onCommitStaged?: () => void;
+  onUnstageFile?: (path: string) => void;
 }
 
 function filterTreeNodes(nodes: TreeViewNode[], query: string): TreeViewNode[] {
@@ -53,7 +58,7 @@ function collectAllPaths(nodes: TreeViewNode[]): string[] {
 
 interface FlatGroup {
   prefix: string;
-  files: { path: string; name: string; status: ChangeStatus; vcsType: VcsType }[];
+  files: { path: string; name: string; status: ChangeStatus; vcsType: VcsType; staged: boolean }[];
 }
 
 function buildFlatGroups(changes: ChangeItem[]): FlatGroup[] {
@@ -71,7 +76,7 @@ function buildFlatGroups(changes: ChangeItem[]): FlatGroup[] {
       group = { prefix, files: [] };
       groupMap.set(prefix, group);
     }
-    group.files.push({ path: change.path, name, status: change.status, vcsType: change.vcsType });
+    group.files.push({ path: change.path, name, status: change.status, vcsType: change.vcsType, staged: change.staged });
   }
 
   const groups = [...groupMap.values()];
@@ -131,11 +136,15 @@ export function ChangesPane({
   onOpenChangeDiff,
   onContextMenu,
   repositoryStatus,
-  repositoryStats,
   defaultViewMode = "flat",
+  onStageAll,
+  onUnstageAll,
+  onCommitStaged,
+  onUnstageFile,
 }: ChangesPaneProps) {
   const [filterText, setFilterText] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
+  const [isStagedDialogOpen, setIsStagedDialogOpen] = useState(false);
 
   const flatGroups = useMemo(() => buildFlatGroups(changedFiles), [changedFiles]);
 
@@ -212,8 +221,8 @@ export function ChangesPane({
                       className={`change-row flat${selectedChange?.path === file.path ? " selected" : ""}`}
                       key={`${file.vcsType}-${file.status}-${file.path}`}
                       type="button"
-                      onClick={() => onSelectChange(file.path, { status: file.status, vcsType: file.vcsType })}
-                      onDoubleClick={() => onOpenChangeDiff(file.path, { status: file.status, vcsType: file.vcsType })}
+                      onClick={() => onSelectChange(file.path, { status: file.status, vcsType: file.vcsType, staged: file.staged })}
+                      onDoubleClick={() => onOpenChangeDiff(file.path, { status: file.status, vcsType: file.vcsType, staged: file.staged })}
                       onContextMenu={(event) => {
                         onContextMenu(event, file.path, file.vcsType, file.status);
                       }}
@@ -278,33 +287,88 @@ export function ChangesPane({
         </div>
       )}
 
-      <section className="changes-stats">
-        <div>
-          <span>{t("changes.totalRepos")}</span>
-          <strong>{repositoryStats.total}</strong>
-        </div>
-        <div>
-          <span>Git</span>
-          <strong>{repositoryStats.git}</strong>
-        </div>
-        <div>
-          <span>SVN</span>
-          <strong>{repositoryStats.svn}</strong>
-        </div>
-        <div>
-          <span>{t("changes.pending")}</span>
-          <strong>{repositoryStats.unknown}</strong>
-        </div>
-      </section>
+      {repositoryStatus?.vcsType !== "svn" && (repositoryStatus?.vcsType === "git" || repositoryStatus?.vcsType === "mixed") ? (
+        <section className="changes-staging">
+          <h3>{t("changes.stagingArea")}</h3>
+          <div className="staging-stats">
+            <button
+              className="staging-stat clickable"
+              type="button"
+              onClick={() => setIsStagedDialogOpen(true)}
+            >
+              <span className="staging-label">{t("changes.staged")}</span>
+              <strong className="staging-count staged">{changedFiles.filter((f) => f.staged).length}</strong>
+            </button>
+            <div className="staging-stat">
+              <span className="staging-label">{t("changes.unstaged")}</span>
+              <strong className="staging-count unstaged">{changedFiles.filter((f) => !f.staged).length}</strong>
+            </div>
+          </div>
+          <div className="staging-actions">
+            {onStageAll && (
+              <button className="staging-btn" type="button" onClick={onStageAll}>
+                {t("changes.stageAll")}
+              </button>
+            )}
+            {onUnstageAll && (
+              <button className="staging-btn" type="button" onClick={onUnstageAll}>
+                {t("changes.unstageAll")}
+              </button>
+            )}
+            {onCommitStaged && (
+              <button className="staging-btn primary" type="button" onClick={onCommitStaged}>
+                {t("changes.commitStaged")}
+              </button>
+            )}
+          </div>
+        </section>
+      ) : null}
 
-      <section className="changes-roadmap">
-        <h3>{t("changes.currentStage")}</h3>
-        <div className="task-list compact">
-          <span data-state="done">{t("changes.stageBrowse")}</span>
-          <span data-state="completed">{t("changes.stageRefactor")}</span>
-          <span data-state="active">{t("changes.stageFeatures")}</span>
+      <Modal open={isStagedDialogOpen} onClose={() => setIsStagedDialogOpen(false)} className="staged-files-dialog">
+        <ModalHeading
+          eyebrow="Git Staging"
+          title={t("changes.stagedFiles")}
+          titleId="staged-dialog-title"
+          onClose={() => setIsStagedDialogOpen(false)}
+        />
+        <div className="staged-files-list">
+          {changedFiles.filter((f) => f.staged).length === 0 ? (
+            <p className="staged-files-empty">{t("changes.noStagedFiles")}</p>
+          ) : (
+            changedFiles
+              .filter((f) => f.staged)
+              .map((file) => (
+                <div className="staged-file-row" key={`${file.vcsType}-${file.path}`}>
+                  <ChangeBadge status={file.status} />
+                  <span className="staged-file-path">{file.path}</span>
+                  {onUnstageFile && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        onUnstageFile(file.path);
+                      }}
+                    >
+                      {t("changes.unstage")}
+                    </Button>
+                  )}
+                </div>
+              ))
+          )}
         </div>
-      </section>
+        <div className="staged-dialog-actions">
+          {onUnstageAll && (
+            <Button variant="outline" onClick={() => { onUnstageAll(); }}>
+              {t("changes.unstageAll")}
+            </Button>
+          )}
+          {onCommitStaged && (
+            <Button variant="default" onClick={() => { onCommitStaged(); setIsStagedDialogOpen(false); }}>
+              {t("changes.commitStaged")}
+            </Button>
+          )}
+        </div>
+      </Modal>
     </aside>
   );
 }

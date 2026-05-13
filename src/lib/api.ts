@@ -32,6 +32,7 @@ export interface ChangeItem {
   path: string;
   status: ChangeStatus;
   vcsType: VcsType;
+  staged: boolean;
 }
 
 export interface RepositoryStatusSummary {
@@ -230,6 +231,18 @@ export async function commitRepository(id: number, input: CommitRequest): Promis
 
 export async function retryPush(id: number): Promise<OperationResult> {
   return invoke<OperationResult>("retry_push", { id });
+}
+
+export async function stageAllFiles(id: number): Promise<OperationResult> {
+  return invoke<OperationResult>("stage_all_files", { id });
+}
+
+export async function unstageAllFiles(id: number): Promise<OperationResult> {
+  return invoke<OperationResult>("unstage_all_files", { id });
+}
+
+export async function unstageFile(id: number, path: string): Promise<OperationResult> {
+  return invoke<OperationResult>("unstage_file", { id, path });
 }
 
 // ── Git Stash ────────────────────────────────────────────────────────────────

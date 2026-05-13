@@ -182,6 +182,7 @@ pub fn parse_svn_status_line(line: &str, root_path: &str) -> Option<ChangeItem> 
         path: repository_relative_change_path(path, root_path),
         status: svn_status_kind(status_code).to_string(),
         vcs_type: "svn".to_string(),
+        staged: false,
     })
 }
 

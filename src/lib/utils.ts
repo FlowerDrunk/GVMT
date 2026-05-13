@@ -62,6 +62,7 @@ export interface ChangeTreeNode {
   change?: {
     status: ChangeStatus;
     vcsType: VcsType;
+    staged: boolean;
   };
 }
 
@@ -92,6 +93,7 @@ export function buildChangeTree(changes: ChangeItem[]) {
         node.change = {
           status: change.status,
           vcsType: change.vcsType,
+          staged: change.staged,
         };
       }
 

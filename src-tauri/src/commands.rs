@@ -1,4 +1,5 @@
 use serde::Serialize;
+use crate::command_exec::run_command_args;
 use crate::utils::{summarize_changes};
 use crate::{
     db, file_browser, git, ignore, quality, svn, windows,
@@ -567,6 +568,110 @@ pub async fn retry_push(app: AppHandle, id: i64) -> Result<OpResult, String> {
         let repository =
             db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
         Ok(git::git_push_only(&repository.path))
+    })
+    .await
+}
+
+// ── Stage / Unstage ───────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn stage_all_files(app: AppHandle, id: i64) -> Result<OpResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+
+        match repository.vcs_type.as_str() {
+            "git" | "mixed" => {
+                match run_command_args("git", &["-C".into(), repository.path.clone(), "add".into(), "-A".into()]) {
+                    Ok(output) => Ok(OpResult {
+                        operation: "stage".to_string(),
+                        vcs_type: "git".to_string(),
+                        success: true,
+                        summary: "Git 暂存全部完成".to_string(),
+                        output,
+                        warning: None,
+                        missing_svn_cli: false,
+                    }),
+                    Err(error) => Ok(OpResult {
+                        operation: "stage".to_string(),
+                        vcs_type: "git".to_string(),
+                        success: false,
+                        summary: "Git 暂存全部失败".to_string(),
+                        output: String::new(),
+                        warning: Some(format!("Git add 失败：{error}")),
+                        missing_svn_cli: false,
+                    }),
+                }
+            }
+            "svn" => Ok(OpResult {
+                operation: "stage".to_string(),
+                vcs_type: "svn".to_string(),
+                success: true,
+                summary: "SVN 无需暂存操作，提交时会自动包含所有变更".to_string(),
+                output: String::new(),
+                warning: None,
+                missing_svn_cli: false,
+            }),
+            _ => Err("无法识别的版本控制类型".to_string()),
+        }
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn unstage_all_files(app: AppHandle, id: i64) -> Result<OpResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+
+        match repository.vcs_type.as_str() {
+            "git" | "mixed" => {
+                match run_command_args("git", &["-C".into(), repository.path.clone(), "reset".into(), "HEAD".into()]) {
+                    Ok(output) => Ok(OpResult {
+                        operation: "unstage".to_string(),
+                        vcs_type: "git".to_string(),
+                        success: true,
+                        summary: "Git 取消暂存完成".to_string(),
+                        output,
+                        warning: None,
+                        missing_svn_cli: false,
+                    }),
+                    Err(error) => Ok(OpResult {
+                        operation: "unstage".to_string(),
+                        vcs_type: "git".to_string(),
+                        success: false,
+                        summary: "Git 取消暂存失败".to_string(),
+                        output: String::new(),
+                        warning: Some(format!("Git reset 失败：{error}")),
+                        missing_svn_cli: false,
+                    }),
+                }
+            }
+            "svn" => Ok(OpResult {
+                operation: "unstage".to_string(),
+                vcs_type: "svn".to_string(),
+                success: true,
+                summary: "SVN 不支持取消暂存，请使用 revert 撤销变更".to_string(),
+                output: String::new(),
+                warning: None,
+                missing_svn_cli: false,
+            }),
+            _ => Err("无法识别的版本控制类型".to_string()),
+        }
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn unstage_file(app: AppHandle, id: i64, path: String) -> Result<OpResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        let normalized = file_browser::normalize_relative_path(&path)?;
+        Ok(git::git_reset_file(&repository.path, &normalized))
     })
     .await
 }

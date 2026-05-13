@@ -35,10 +35,14 @@ pub fn parse_git_status_line(line: &str) -> Option<ChangeItem> {
         return None;
     }
 
+    // 暂存区有变更：索引列不是空格且不是 ?（未跟踪）
+    let staged = index_status != ' ' && index_status != '?';
+
     Some(ChangeItem {
         path,
         status: git_status_kind(&status_code).to_string(),
         vcs_type: "git".to_string(),
+        staged,
     })
 }
 
@@ -498,4 +502,18 @@ pub fn git_list_skip_worktree(root_path: &str) -> Vec<String> {
             if path.is_empty() { None } else { Some(path.to_string()) }
         })
         .collect()
+}
+
+pub fn git_reset_file(root_path: &str, relative_path: &str) -> OperationResult {
+    match run_command_args("git", &[
+        "-C".into(),
+        root_path.to_string(),
+        "reset".into(),
+        "HEAD".into(),
+        "--".into(),
+        relative_path.to_string(),
+    ]) {
+        Ok(output) => success_operation("unstage", "git", &format!("已取消暂存：{relative_path}"), output),
+        Err(error) => failed_operation("unstage", "git", format!("取消暂存失败：{error}"), false),
+    }
 }

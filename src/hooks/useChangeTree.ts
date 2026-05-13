@@ -26,6 +26,7 @@ export function useChangeTree({ selectedRepository, setStatus }: UseChangeTreeOp
       path,
       status: change.status,
       vcsType: change.vcsType,
+      staged: change.staged,
     };
     setSelectedChange(nextChange);
   }
@@ -37,6 +38,7 @@ export function useChangeTree({ selectedRepository, setStatus }: UseChangeTreeOp
       path,
       status: change.status,
       vcsType: change.vcsType,
+      staged: change.staged,
     };
     setSelectedChange(nextChange);
     setDiffPreview(null);

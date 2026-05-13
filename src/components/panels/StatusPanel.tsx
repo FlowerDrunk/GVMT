@@ -16,8 +16,8 @@ interface StatusPanelProps {
   t: Translator;
   onLoadRepositoryStatus: () => void;
   onOpenSvnDownload: (target: "tortoise" | "sliksvn") => void;
-  onSelectChange: (path: string, change: { status: ChangeStatus; vcsType: VcsType }) => void;
-  onOpenChangeDiff: (path: string, change: { status: ChangeStatus; vcsType: VcsType }) => void;
+  onSelectChange: (path: string, change: { status: ChangeStatus; vcsType: VcsType; staged: boolean }) => void;
+  onOpenChangeDiff: (path: string, change: { status: ChangeStatus; vcsType: VcsType; staged: boolean }) => void;
   onContextMenu: (
     event: MouseEvent<HTMLButtonElement>,
     path: string,
@@ -101,8 +101,8 @@ export function StatusPanel({
                   className="change-row"
                   key={`${change.vcsType}-${change.status}-${change.path}`}
                   type="button"
-                  onClick={() => onSelectChange(change.path, { status: change.status, vcsType: change.vcsType })}
-                  onDoubleClick={() => onOpenChangeDiff(change.path, { status: change.status, vcsType: change.vcsType })}
+                  onClick={() => onSelectChange(change.path, { status: change.status, vcsType: change.vcsType, staged: change.staged })}
+                  onDoubleClick={() => onOpenChangeDiff(change.path, { status: change.status, vcsType: change.vcsType, staged: change.staged })}
                   onContextMenu={(event) => onContextMenu(event, change.path, change.vcsType, change.status)}
                 >
                   <ChangeBadge status={change.status} />

@@ -48,6 +48,7 @@ pub struct ChangeItem {
     pub path: String,
     pub status: String,
     pub vcs_type: String,
+    pub staged: bool,
 }
 
 #[derive(Debug, Deserialize)]

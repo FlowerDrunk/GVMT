@@ -111,10 +111,15 @@ export type TranslationKey =
   | "changes.notRefreshed"
   | "changes.totalRepos"
   | "changes.pending"
-  | "changes.currentStage"
-  | "changes.stageBrowse"
-  | "changes.stageRefactor"
-  | "changes.stageFeatures"
+  | "changes.stagingArea"
+  | "changes.staged"
+  | "changes.unstaged"
+  | "changes.stageAll"
+  | "changes.unstageAll"
+  | "changes.commitStaged"
+  | "changes.stagedFiles"
+  | "changes.noStagedFiles"
+  | "changes.unstage"
   // FileBrowser
   | "browser.title"
   | "browser.refresh"
@@ -305,10 +310,15 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "changes.notRefreshed": "尚未刷新状态",
     "changes.totalRepos": "总仓库",
     "changes.pending": "待确认",
-    "changes.currentStage": "当前阶段",
-    "changes.stageBrowse": "仓库文件浏览",
-    "changes.stageRefactor": "组件拆分 + Hook 提取",
-    "changes.stageFeatures": "功能完善",
+    "changes.stagingArea": "暂存区",
+    "changes.staged": "已暂存",
+    "changes.unstaged": "未暂存",
+    "changes.stageAll": "暂存全部",
+    "changes.unstageAll": "取消暂存",
+    "changes.commitStaged": "提交已暂存",
+    "changes.stagedFiles": "已暂存文件",
+    "changes.noStagedFiles": "暂存区为空",
+    "changes.unstage": "取消暂存",
     "browser.title": "文件浏览",
     "browser.refresh": "刷新",
     "browser.goUp": "返回上级",
@@ -486,10 +496,15 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "changes.notRefreshed": "Not refreshed yet",
     "changes.totalRepos": "Total repos",
     "changes.pending": "Pending",
-    "changes.currentStage": "Current stage",
-    "changes.stageBrowse": "Repository file browser",
-    "changes.stageRefactor": "Component splitting + Hooks",
-    "changes.stageFeatures": "Feature enhancement",
+    "changes.stagingArea": "Staging Area",
+    "changes.staged": "Staged",
+    "changes.unstaged": "Unstaged",
+    "changes.stageAll": "Stage All",
+    "changes.unstageAll": "Unstage All",
+    "changes.commitStaged": "Commit Staged",
+    "changes.stagedFiles": "Staged Files",
+    "changes.noStagedFiles": "No staged files",
+    "changes.unstage": "Unstage",
     "browser.title": "File Browser",
     "browser.refresh": "Refresh",
     "browser.goUp": "Go up",

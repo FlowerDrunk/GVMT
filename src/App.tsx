@@ -14,6 +14,9 @@ import {
   installWindowsContextMenu,
   isTauriRuntime,
   retryPush,
+  stageAllFiles,
+  unstageAllFiles,
+  unstageFile,
   type RemoteUpdateStatus,
   type WindowsContextMenuStatus,
   uninstallWindowsContextMenu,
@@ -264,6 +267,53 @@ function AppContent() {
     }
   }
 
+  async function handleStageAll() {
+    if (!repo.selectedRepository) return;
+    try {
+      setIsLoading(true);
+      const result = await stageAllFiles(repo.selectedRepository.id);
+      statusHook.setOperationResults([result]);
+      setStatus(result.summary);
+      await statusHook.loadRepositoryStatus(true);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleUnstageAll() {
+    if (!repo.selectedRepository) return;
+    try {
+      setIsLoading(true);
+      const result = await unstageAllFiles(repo.selectedRepository.id);
+      statusHook.setOperationResults([result]);
+      setStatus(result.summary);
+      await statusHook.loadRepositoryStatus(true);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleUnstageFile(path: string) {
+    if (!repo.selectedRepository) return;
+    try {
+      const result = await unstageFile(repo.selectedRepository.id, path);
+      statusHook.setOperationResults([result]);
+      setStatus(result.summary);
+      await statusHook.loadRepositoryStatus(true);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function handleCommitStaged() {
+    if (!repo.selectedRepository) return;
+    commit.setIsCommitDialogOpen(true);
+  }
+
   async function handleStartupContext() {
     try {
       const context = await consumeStartupContext();
@@ -359,14 +409,14 @@ function AppContent() {
   }
 
   function handleOpenDiffFromContextMenu(path: string, vcsType: VcsType, status?: ChangeStatus) {
-    const resolvedStatus =
-      status ?? changedFiles.find((file) => file.path === path && file.vcsType === vcsType)?.status;
+    const file = changedFiles.find((f) => f.path === path && f.vcsType === vcsType);
+    const resolvedStatus = status ?? file?.status;
     if (!resolvedStatus) {
       setStatus("未找到可查看的 diff 信息");
       return;
     }
 
-    void changeTree.handleOpenChangeDiff(path, { status: resolvedStatus, vcsType });
+    void changeTree.handleOpenChangeDiff(path, { status: resolvedStatus, vcsType, staged: file?.staged ?? false });
     ignoreContextMenu.close();
   }
 
@@ -681,8 +731,11 @@ function AppContent() {
                     onOpenChangeDiff={(path, ch) => void changeTree.handleOpenChangeDiff(path, ch)}
                     onContextMenu={handleChangeRowContextMenu}
                     repositoryStatus={statusHook.repositoryStatus}
-                    repositoryStats={repo.repositoryStats}
                     defaultViewMode={settings.defaultViewMode}
+                    onStageAll={repo.selectedRepository?.vcsType !== "svn" ? () => void handleStageAll() : undefined}
+                    onUnstageAll={repo.selectedRepository?.vcsType !== "svn" ? () => void handleUnstageAll() : undefined}
+                    onCommitStaged={() => handleCommitStaged()}
+                    onUnstageFile={(path) => void handleUnstageFile(path)}
                   />
                 ),
               },
@@ -808,7 +861,8 @@ function AppContent() {
         onCommitMessageChange={commit.setCommitMessage}
         onSubmit={handleCommitRepository}
         onOpenFileDiff={(path, vcsType, status) => {
-          changeTree.handleOpenChangeDiff(path, { status: status as ChangeStatus, vcsType });
+          const file = changedFiles.find((f) => f.path === path && f.vcsType === vcsType);
+          changeTree.handleOpenChangeDiff(path, { status: status as ChangeStatus, vcsType, staged: file?.staged ?? false });
         }}
       />
 
