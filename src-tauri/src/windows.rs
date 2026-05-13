@@ -172,17 +172,32 @@ pub fn show_message_box(title: &str, message: &str) {
 
 #[cfg(windows)]
 pub fn hide_console_window() {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
     unsafe {
-        let console = windows_sys::Win32::System::Console::GetConsoleWindow();
-        if !console.is_null() {
-            ShowWindow(console, SW_HIDE);
-        }
+        windows_sys::Win32::System::Console::FreeConsole();
     }
 }
 
 #[cfg(not(windows))]
 pub fn hide_console_window() {}
+
+/// Allocate a console for CLI mode output.
+/// Called only when running in pure CLI mode with windows_subsystem="windows".
+#[cfg(windows)]
+pub fn alloc_console() {
+    unsafe {
+        // Try to attach to parent console first (e.g., launched from cmd).
+        // If that fails, allocate a new console.
+        if windows_sys::Win32::System::Console::AttachConsole(
+            windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS,
+        ) == 0
+        {
+            windows_sys::Win32::System::Console::AllocConsole();
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn alloc_console() {}
 /// Uses a Windows named mutex. Returns `true` if this is the first instance,
 /// `false` if another instance is already running.
 pub fn ensure_single_instance() -> bool {

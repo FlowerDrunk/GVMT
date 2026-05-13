@@ -1,14 +1,15 @@
+#![windows_subsystem = "windows"]
+
 fn main() {
     let is_cli_mode = is_pure_cli_command();
 
     if is_cli_mode {
-        // Run as CLI mode — console is visible, stdout/stderr work naturally
+        // CLI mode: allocate a console so stdout/stderr work
+        #[cfg(target_os = "windows")]
+        gvmt_lib::windows::alloc_console();
         gvmt_lib::startup::execute_cli_command();
     } else {
-        // GUI mode — hide the console window on Windows
-        #[cfg(target_os = "windows")]
-        gvmt_lib::windows::hide_console_window();
-
+        // GUI mode: windows_subsystem="windows" prevents console allocation
         if gvmt_lib::startup::execute_background_action() {
             return;
         }
