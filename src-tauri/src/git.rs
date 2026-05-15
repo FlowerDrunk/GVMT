@@ -6,7 +6,7 @@ use serde::Serialize;
 use tauri::Emitter;
 
 pub fn git_status_changes(path: &str) -> Result<Vec<ChangeItem>, String> {
-    let output = run_command(["git", "-C", path, "status", "--porcelain=v1"])?;
+    let output = run_command(["git", "-C", path, "-c", "core.quotePath=false", "status", "--porcelain=v1"])?;
     Ok(output
         .lines()
         .filter_map(parse_git_status_line)
@@ -81,8 +81,8 @@ pub fn git_status_kind(status_code: &str) -> &'static str {
 }
 
 pub fn git_file_diff(root_path: &str, relative_path: &str) -> Result<String, String> {
-    let diff = run_command(["git", "-C", root_path, "diff", "HEAD", "--", relative_path])
-        .or_else(|_| run_command(["git", "-C", root_path, "diff", "--", relative_path]))?;
+    let diff = run_command(["git", "-C", root_path, "-c", "core.quotePath=false", "diff", "HEAD", "--", relative_path])
+        .or_else(|_| run_command(["git", "-C", root_path, "-c", "core.quotePath=false", "diff", "--", relative_path]))?;
     Ok(if diff.trim().is_empty() {
         "当前文件没有可展示的 Git diff，可能是仅属性变化或文件内容尚未加入跟踪。".to_string()
     } else {
@@ -400,7 +400,7 @@ pub fn git_log(root_path: &str, max_count: usize) -> Result<Vec<GitCommitLog>, S
 
 pub fn git_show_detail(root_path: &str, hash: &str) -> Result<CommitDetail, String> {
     // Get changed files with stats
-    let files_output = run_command(["git", "-C", root_path, "diff-tree", "--no-commit-id", "-r", "--name-status", hash])?;
+    let files_output = run_command(["git", "-C", root_path, "-c", "core.quotePath=false", "diff-tree", "--no-commit-id", "-r", "--name-status", hash])?;
     let files: Vec<CommitFileChange> = files_output
         .lines()
         .filter_map(|line| {
@@ -421,7 +421,7 @@ pub fn git_show_detail(root_path: &str, hash: &str) -> Result<CommitDetail, Stri
         .collect();
 
     // Get full diff — use `git show` which works for all commit types
-    let diff = run_command(["git", "-C", root_path, "show", "--patch", "--stat", hash])
+    let diff = run_command(["git", "-C", root_path, "-c", "core.quotePath=false", "show", "--patch", "--stat", hash])
         .unwrap_or_default();
 
     // Get commit metadata
@@ -557,7 +557,7 @@ pub fn git_unset_skip_worktree(root_path: &str, relative_path: &str) -> Result<S
 
 pub fn git_list_skip_worktree(root_path: &str) -> Vec<String> {
     // git ls-files -v 输出格式：第一列是标志位，S 表示 skip-worktree
-    let output = match run_command(["git", "-C", root_path, "ls-files", "-v"]) {
+    let output = match run_command(["git", "-C", root_path, "-c", "core.quotePath=false", "ls-files", "-v"]) {
         Ok(o) => o,
         Err(_) => return Vec::new(),
     };
