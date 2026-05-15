@@ -12,6 +12,7 @@ pub struct Repository {
     pub vcs_type: String,
     pub remote_url: Option<String>,
     pub branch_or_revision: Option<String>,
+    pub notes: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -408,4 +409,14 @@ pub struct OperationLog {
     pub output: String,
     pub warning: Option<String>,
     pub created_at: String,
+}
+
+// ── Clone / Checkout Progress ──────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CloneProgressStats {
+    pub files: u32,
+    pub size_mb: Option<f64>,
+    pub speed_kbps: Option<f64>,
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { checkRemoteUpdates, updateRepository, type RemoteUpdateStatus, type Repository } from "../../lib/api";
+import type { AppSettings } from "../../hooks/useSettings";
 
 interface RepoUpdateInfo {
   repository: Repository;
@@ -8,16 +9,23 @@ interface RepoUpdateInfo {
 
 interface UpdateNotificationPanelProps {
   repositories: Repository[];
+  settings: AppSettings;
   onUpdateCompleted: () => void;
 }
 
-export function UpdateNotificationPanel({ repositories, onUpdateCompleted }: UpdateNotificationPanelProps) {
+export function UpdateNotificationPanel({ repositories, settings, onUpdateCompleted }: UpdateNotificationPanelProps) {
   const [notifications, setNotifications] = useState<RepoUpdateInfo[]>([]);
   const [isUpdating, setIsUpdating] = useState<Set<number>>(new Set());
   const dismissedRef = useRef<Set<number>>(new Set());
 
-  // Poll all repositories for remote updates every 60s
   useEffect(() => {
+    if (!settings.remoteCheckEnabled) {
+      setNotifications([]);
+      return;
+    }
+
+    const intervalMs = settings.remoteCheckIntervalMinutes * 60 * 1000;
+
     const timer = setInterval(async () => {
       const results: RepoUpdateInfo[] = [];
       for (const repo of repositories) {
@@ -30,25 +38,23 @@ export function UpdateNotificationPanel({ repositories, onUpdateCompleted }: Upd
           // ignore
         }
       }
-      // Only show repos not yet dismissed
       setNotifications((prev) => {
         const updated = results.filter((r) => !dismissedRef.current.has(r.repository.id));
-        // Merge with existing notifications: keep old ones still valid, add new ones
         const existing = prev.filter(
           (p) => !dismissedRef.current.has(p.repository.id) && results.some((r) => r.repository.id === p.repository.id),
         );
         const merged = [...existing];
-        for (const r of results) {
+        for (const r of updated) {
           if (!merged.some((m) => m.repository.id === r.repository.id)) {
             merged.push(r);
           }
         }
         return merged;
       });
-    }, 60000);
+    }, intervalMs);
 
     return () => clearInterval(timer);
-  }, [repositories]);
+  }, [repositories, settings.remoteCheckEnabled, settings.remoteCheckIntervalMinutes]);
 
   async function handleUpdate(repoId: number) {
     setIsUpdating((prev) => new Set(prev).add(repoId));

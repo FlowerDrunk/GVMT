@@ -125,14 +125,17 @@ export function useRepositories({ setStatus, setIsLoading }: UseRepositoriesOpti
   async function handleDeleteRepositoryRecord() {
     if (!repositoryPendingDelete) return;
 
+    const wasSelected = selectedId === repositoryPendingDelete.id;
     setIsLoading(true);
     try {
       await deleteRepository(repositoryPendingDelete.id);
-      if (selectedId === repositoryPendingDelete.id) {
+      setRepositoryPendingDelete(null);
+      // Reload list but skip auto-select — don't trigger status scan on another large repo
+      const nextRepositories = await listRepositories();
+      setRepositories(nextRepositories);
+      if (wasSelected) {
         setSelectedId(null);
       }
-      setRepositoryPendingDelete(null);
-      await refreshRepositories();
       setStatus("已删除仓库记录，本地文件未受影响");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));

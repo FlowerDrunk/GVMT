@@ -12,6 +12,11 @@ use crate::models::{
     StartupContext, UpdateGitignoreRequest, WindowsContextMenuStatus,
 };
 use tauri::AppHandle;
+#[tauri::command]
+pub async fn cancel_operation() -> Result<(), String> {
+    crate::command_exec::kill_running_process();
+    Ok(())
+}
 
 async fn run_blocking<T, F>(task: F) -> Result<T, String>
 where
@@ -31,7 +36,7 @@ pub async fn list_repositories(app: AppHandle) -> Result<Vec<Repository>, String
         let connection = db::open_database(&app)?;
         let mut statement = connection
             .prepare(
-                "SELECT id, name, path, vcs_type, remote_url, branch_or_revision, created_at, updated_at
+                "SELECT id, name, path, vcs_type, remote_url, branch_or_revision, notes, created_at, updated_at
                  FROM repositories
                  ORDER BY updated_at DESC, name ASC",
             )
@@ -46,8 +51,9 @@ pub async fn list_repositories(app: AppHandle) -> Result<Vec<Repository>, String
                     vcs_type: row.get(3)?,
                     remote_url: row.get(4)?,
                     branch_or_revision: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
+                    notes: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
                 })
             })
             .map_err(|error| error.to_string())?;
@@ -87,6 +93,123 @@ pub async fn add_repository(app: AppHandle, input: AddRepositoryInput) -> Result
 
         db::find_repository_by_path(&connection, &detected.path)?
             .ok_or_else(|| "仓库保存后未能读取记录".to_string())
+    })
+    .await
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct CloneRepositoryInput {
+    pub url: String,
+    pub path: String,
+    pub shallow: Option<bool>,
+    pub ignore_externals: Option<bool>,
+}
+
+#[tauri::command]
+pub async fn clone_repository(app: AppHandle, input: CloneRepositoryInput) -> Result<Repository, String> {
+    let app_ref = app.clone();
+    let url = input.url.trim().to_string();
+    let path = input.path.trim().to_string();
+
+    if url.is_empty() { return Err("请输入远程仓库地址".to_string()); }
+    if path.is_empty() { return Err("请选择本地目录".to_string()); }
+
+    // Determine VCS type from URL
+    let lower_url = url.to_lowercase();
+    let is_svn = lower_url.contains("/svn") || lower_url.starts_with("svn://") || lower_url.starts_with("svn+ssh://");
+    let is_git = lower_url.ends_with(".git") || lower_url.starts_with("git@") || lower_url.starts_with("git://");
+
+    if !is_svn && !is_git {
+        // Heuristic: if URL looks like https:// and contains common SVN structures
+        let looks_svn = lower_url.contains("/trunk") || lower_url.contains("/branches") || lower_url.contains("/tags");
+        if looks_svn {
+            // Treat as SVN
+        } else {
+            // Default to git for https URLs
+        }
+    }
+
+    let shallow = input.shallow.unwrap_or(false);
+    let ignore_externals = input.ignore_externals.unwrap_or(true);
+
+    run_blocking(move || {
+        let result = if is_svn {
+            svn::svn_checkout_streaming(&app_ref, &url, &path, ignore_externals)
+        } else {
+            git::git_clone_streaming(&app_ref, &url, &path, shallow)
+        };
+
+        if !result.success {
+            return Err(result.warning.unwrap_or_else(|| result.summary));
+        }
+
+        // Detect and add the cloned repository
+        let detected = detect_repository_sync(path)?;
+        let connection = db::open_database(&app_ref)?;
+        connection.execute(
+            "INSERT INTO repositories (name, path, vcs_type, remote_url, branch_or_revision)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(path) DO UPDATE SET
+               name = excluded.name,
+               vcs_type = excluded.vcs_type,
+               remote_url = excluded.remote_url,
+               branch_or_revision = excluded.branch_or_revision,
+               updated_at = CURRENT_TIMESTAMP",
+            rusqlite::params![
+                detected.name,
+                detected.path,
+                detected.vcs_type,
+                detected.remote_url,
+                detected.branch_or_revision
+            ],
+        ).map_err(|e| e.to_string())?;
+
+        db::find_repository_by_path(&connection, &detected.path)?
+            .ok_or_else(|| "克隆成功但未能读取仓库记录".to_string())
+    })
+    .await
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct UpdateRepositoryInfoInput {
+    pub name: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[tauri::command]
+pub async fn update_repository_info(app: AppHandle, id: i64, input: UpdateRepositoryInfoInput) -> Result<Repository, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        if let Some(ref name) = input.name {
+            if name.trim().is_empty() {
+                return Err("仓库名称不能为空".to_string());
+            }
+        }
+        let mut set_clauses = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        if let Some(ref name) = input.name {
+            set_clauses.push("name = ?");
+            params.push(Box::new(name.trim().to_string()));
+        }
+        if let Some(ref notes) = input.notes {
+            set_clauses.push("notes = ?");
+            params.push(Box::new(notes.clone()));
+        }
+        if set_clauses.is_empty() {
+            return Err("没有需要更新的字段".to_string());
+        }
+        set_clauses.push("updated_at = CURRENT_TIMESTAMP");
+        let sql = format!("UPDATE repositories SET {} WHERE id = ?", set_clauses.join(", "));
+        params.push(Box::new(id));
+
+        let affected = connection
+            .execute(&sql, rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())))
+            .map_err(|e| e.to_string())?;
+        if affected == 0 {
+            return Err("未找到仓库".to_string());
+        }
+        db::find_repository_by_id(&connection, id)?
+            .ok_or_else(|| "更新后未能读取仓库".to_string())
     })
     .await
 }
@@ -735,6 +858,30 @@ pub async fn git_log(app: AppHandle, id: i64, max_count: Option<usize>) -> Resul
     .await
 }
 
+// ── Commit Detail ────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn git_show_detail(app: AppHandle, id: i64, hash: String) -> Result<git::CommitDetail, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        git::git_show_detail(&repository.path, &hash)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn svn_show_detail(app: AppHandle, id: i64, revision: i64) -> Result<git::CommitDetail, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        svn::svn_show_detail(&repository.path, revision)
+    })
+    .await
+}
+
 // ── Git Fetch ────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -1089,6 +1236,40 @@ pub async fn svn_resolve(app: AppHandle, id: i64, path: String) -> Result<OpResu
 }
 
 #[tauri::command]
+pub async fn svn_resolve_accept(app: AppHandle, id: i64, path: String, accept: String) -> Result<OpResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        Ok(svn::svn_resolve_accept(&repository.path, &path, &accept))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn svn_update_force(app: AppHandle, id: i64, depth: Option<String>) -> Result<OpResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        Ok(svn::svn_update_force(&repository.path, depth.as_deref()))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn svn_update_force_streaming_cmd(app: AppHandle, id: i64, depth: Option<String>) -> Result<OpResult, String> {
+    let app_ref = app.clone();
+    run_blocking(move || {
+        let connection = db::open_database(&app_ref)?;
+        let repository =
+            db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
+        Ok(svn::svn_update_force_streaming(&app_ref, &repository.path, depth.as_deref()))
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn svn_log_command(app: AppHandle, id: i64, max_count: Option<usize>) -> Result<Vec<crate::svn::SvnCommitLog>, String> {
     run_blocking(move || {
         let connection = db::open_database(&app)?;
@@ -1355,6 +1536,42 @@ pub async fn pick_folder() -> Result<Option<String>, String> {
         }
     })
     .await
+}
+
+#[tauri::command]
+pub async fn open_in_explorer(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("打开目录失败：{e}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("打开目录失败：{e}"))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("打开目录失败：{e}"))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn ensure_directory(path: String) -> Result<(), String> {
+    let p = std::path::PathBuf::from(&path);
+    if p.exists() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(&p).map_err(|e| format!("创建目录失败：{e}"))?;
+    Ok(())
 }
 
 // ── SVN Remote File Browsing ──────────────────────────────────────────────

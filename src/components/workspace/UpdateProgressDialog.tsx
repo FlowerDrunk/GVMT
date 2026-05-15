@@ -1,13 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { Modal, ModalHeading } from "../shared/Modal";
+import { Button } from "../ui/button";
 
 interface UpdateProgressDialogProps {
   open: boolean;
   onClose: () => void;
   lines: string[];
+  onCancel?: () => void;
+  title?: string;
+  progress?: number | null;
+  stats?: { files: number; sizeMb?: number; speedKbps?: number } | null;
 }
 
-export function UpdateProgressDialog({ open, onClose, lines }: UpdateProgressDialogProps) {
+export function UpdateProgressDialog({ open, onClose, lines, onCancel, title = "SVN Update", progress, stats }: UpdateProgressDialogProps) {
   const [elapsed, setElapsed] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -26,12 +31,30 @@ export function UpdateProgressDialog({ open, onClose, lines }: UpdateProgressDia
 
   return (
     <Modal open={open} onClose={onClose} labelledBy="update-progress-title" className="update-progress-modal">
-      <ModalHeading eyebrow="SVN Update" title="正在更新..." titleId="update-progress-title" onClose={onClose} />
+      <ModalHeading eyebrow={title} title="正在执行..." titleId="update-progress-title" onClose={onClose} />
       <div className="update-progress-body">
         <div className="update-progress-timer">
           <span className="update-progress-spinner" />
           <span>已耗时 {mins}:{secs.toString().padStart(2, "0")}</span>
+          {onCancel ? (
+            <Button variant="secondary" size="sm" onClick={onCancel} className="update-progress-cancel-btn">
+              取消
+            </Button>
+          ) : null}
         </div>
+        {progress != null ? (
+          <div className="update-progress-bar-track">
+            <div className="update-progress-bar-fill" style={{ width: `${progress}%` }} />
+            <span className="update-progress-bar-label">{progress}%</span>
+          </div>
+        ) : null}
+        {stats ? (
+          <div className="update-progress-stats">
+            {stats.files > 0 ? <span>{stats.files} 个文件</span> : null}
+            {stats.sizeMb != null ? <span>{stats.sizeMb.toFixed(1)} MiB</span> : null}
+            {stats.speedKbps != null ? <span>{stats.speedKbps < 1024 ? `${stats.speedKbps.toFixed(0)} KiB/s` : `${(stats.speedKbps / 1024).toFixed(1)} MiB/s`}</span> : null}
+          </div>
+        ) : null}
         <div className="update-progress-lines">
           {lines.map((line, i) => (
             <div key={i} className="update-progress-line">{line}</div>

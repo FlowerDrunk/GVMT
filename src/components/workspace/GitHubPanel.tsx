@@ -193,7 +193,13 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
           {runs.slice(0, 3).map((run, idx) => (
             <div className="github-run-item" key={idx}>
               <span className={`github-run-status ${run.conclusion ?? "pending"}`}>
-                {run.conclusion === "success" ? "✅" : run.conclusion === "failure" ? "❌" : "⏳"}
+                {run.conclusion === "success" ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-label="成功"><path d="M20 6 9 17l-5-5" /></svg>
+                ) : run.conclusion === "failure" ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-label="失败"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-label="等待中"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                )}
               </span>
               <span>{run.name}</span>
               <small>{run.headBranch}</small>

@@ -245,7 +245,7 @@ export function CommitDialog({
           {showRecent && recentMessages.length > 0 ? (
             <div className="commit-recent-list">
               {recentMessages.map((msg, i) => (
-                <button key={i} type="button" className="commit-recent-item" onClick={() => selectRecentMessage(msg)}>{msg.length > 60 ? msg.slice(0, 60) + "…" : msg}</button>
+                <span key={i} className="commit-recent-item" onClick={() => selectRecentMessage(msg)}>{msg.length > 60 ? msg.slice(0, 60) + "…" : msg}</span>
               ))}
             </div>
           ) : null}

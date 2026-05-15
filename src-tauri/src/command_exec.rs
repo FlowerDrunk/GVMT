@@ -4,6 +4,7 @@ use std::{
     ffi::OsStr,
     path::Path,
     process::Command,
+    sync::Mutex,
 };
 
 #[cfg(windows)]
@@ -200,4 +201,32 @@ fn registry_value(key: &str, value: &str) -> Option<String> {
             .map(|(_, path)| path.trim().to_string())
             .filter(|path| !path.is_empty())
     })
+}
+
+// ── Running PID tracking (for cancellation) ────────────────────────────────
+
+static RUNNING_PID: Mutex<Option<u32>> = Mutex::new(None);
+
+pub fn set_running_pid(pid: u32) {
+    *RUNNING_PID.lock().unwrap() = Some(pid);
+}
+
+pub fn clear_running_pid() {
+    *RUNNING_PID.lock().unwrap() = None;
+}
+
+pub fn kill_running_process() {
+    if let Some(pid) = *RUNNING_PID.lock().unwrap() {
+        #[cfg(windows)]
+        {
+            let _ = new_command("taskkill")
+                .args(&["/F", "/T", "/PID", &pid.to_string()])
+                .output();
+        }
+        #[cfg(not(windows))]
+        {
+            unsafe { libc::kill(pid as i32, libc::SIGKILL); }
+        }
+        *RUNNING_PID.lock().unwrap() = None;
+    }
 }

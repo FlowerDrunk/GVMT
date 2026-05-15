@@ -57,6 +57,14 @@ export type TranslationKey =
   | "settings.done"
   | "settings.svnDepth"
   | "settings.svnDepthHelp"
+  | "settings.remoteCheck"
+  | "settings.remoteCheckHelp"
+  | "settings.enableRemoteCheck"
+  | "settings.remoteCheckInterval"
+  | "settings.remoteCheckOff"
+  | "settings.remoteCheck1h"
+  | "settings.remoteCheck2h"
+  | "settings.remoteCheck4h"
   | "settings.svnDepthInfinity"
   | "settings.svnDepthImmediates"
   | "settings.svnDepthFiles"
@@ -260,6 +268,14 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "settings.done": "完成",
     "settings.svnDepth": "检出/更新深度",
     "settings.svnDepthHelp": "SVN update 命令的 --depth 参数，默认 infinity 更新整个目录树。",
+    "settings.remoteCheck": "远端更新检测",
+    "settings.remoteCheckHelp": "定时检测仓库远端是否有新的提交，检测到更新后以弹窗提醒。",
+    "settings.enableRemoteCheck": "启用远端检测",
+    "settings.remoteCheckInterval": "检测间隔",
+    "settings.remoteCheckOff": "关闭",
+    "settings.remoteCheck1h": "1 小时",
+    "settings.remoteCheck2h": "2 小时",
+    "settings.remoteCheck4h": "4 小时",
     "settings.svnDepthInfinity": "Infinity — 完整递归",
     "settings.svnDepthImmediates": "Immediates — 仅子目录和文件",
     "settings.svnDepthFiles": "Files — 仅文件",
@@ -446,6 +462,14 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "settings.done": "Done",
     "settings.svnDepth": "Checkout/Update depth",
     "settings.svnDepthHelp": "Controls how deeply SVN update traverses the directory tree.",
+    "settings.remoteCheck": "Remote Update Check",
+    "settings.remoteCheckHelp": "Periodically check remote repositories for new commits and notify via popup.",
+    "settings.enableRemoteCheck": "Enable remote check",
+    "settings.remoteCheckInterval": "Check interval",
+    "settings.remoteCheckOff": "Off",
+    "settings.remoteCheck1h": "1 hour",
+    "settings.remoteCheck2h": "2 hours",
+    "settings.remoteCheck4h": "4 hours",
     "settings.svnDepthInfinity": "Infinity — full recursion",
     "settings.svnDepthImmediates": "Immediates — children only",
     "settings.svnDepthFiles": "Files — file entries only",

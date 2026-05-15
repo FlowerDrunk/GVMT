@@ -8,6 +8,7 @@ const changeLabels: Record<string, string> = {
   renamed: "重命名",
   untracked: "未跟踪",
   conflicted: "冲突",
+  missing: "缺失",
   unknown: "未知",
 };
 

@@ -1,8 +1,9 @@
 use crate::command_exec::{run_command, run_command_args};
 use crate::file_browser::normalize_relative_path;
-use crate::models::{ChangeItem, CommitFileRequest, OperationResult};
+use crate::models::{ChangeItem, CloneProgressStats, CommitFileRequest, OperationResult};
 use crate::utils::{failed_operation, slice_from_char, success_operation};
 use serde::Serialize;
+use tauri::Emitter;
 
 pub fn git_status_changes(path: &str) -> Result<Vec<ChangeItem>, String> {
     let output = run_command(["git", "-C", path, "status", "--porcelain=v1"])?;
@@ -344,6 +345,24 @@ pub struct GitCommitLog {
     pub message: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitDetail {
+    pub hash: String,
+    pub author: String,
+    pub date: String,
+    pub message: String,
+    pub files: Vec<CommitFileChange>,
+    pub diff: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitFileChange {
+    pub path: String,
+    pub change_type: String,
+}
+
 pub fn git_log(root_path: &str, max_count: usize) -> Result<Vec<GitCommitLog>, String> {
     let output = run_command_args(
         "git",
@@ -377,6 +396,52 @@ pub fn git_log(root_path: &str, max_count: usize) -> Result<Vec<GitCommitLog>, S
             })
         })
         .collect())
+}
+
+pub fn git_show_detail(root_path: &str, hash: &str) -> Result<CommitDetail, String> {
+    // Get changed files with stats
+    let files_output = run_command(["git", "-C", root_path, "diff-tree", "--no-commit-id", "-r", "--name-status", hash])?;
+    let files: Vec<CommitFileChange> = files_output
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() { return None; }
+            let mut parts = line.splitn(2, '\t');
+            let code = parts.next()?;
+            let path = parts.next()?.to_string();
+            let change_type = match code {
+                "A" => "added",
+                "M" => "modified",
+                "D" => "deleted",
+                "R" => "renamed",
+                _ => "modified",
+            }.to_string();
+            Some(CommitFileChange { path, change_type })
+        })
+        .collect();
+
+    // Get full diff — use `git show` which works for all commit types
+    let diff = run_command(["git", "-C", root_path, "show", "--patch", "--stat", hash])
+        .unwrap_or_default();
+
+    // Get commit metadata
+    let info = run_command_args("git", &[
+        "-C".into(), root_path.to_string(),
+        "log".into(), "--format=%an|%ai|%s".into(), "-n".into(), "1".into(), hash.to_string(),
+    ])?;
+    let mut meta_parts = info.trim().splitn(3, '|');
+    let author = meta_parts.next().unwrap_or("").to_string();
+    let date = meta_parts.next().unwrap_or("").to_string();
+    let message = meta_parts.next().unwrap_or("").to_string();
+
+    Ok(CommitDetail {
+        hash: hash.to_string(),
+        author,
+        date,
+        message,
+        files,
+        diff,
+    })
 }
 
 // ── Git Fetch ────────────────────────────────────────────────────────────
@@ -416,35 +481,38 @@ pub fn git_reset(root_path: &str, mode: &str, target: &str) -> OperationResult {
 }
 
 pub fn git_has_remote_updates(path: &str) -> Result<bool, String> {
-    // Try git fetch --dry-run first (more reliable)
-    match run_command(["git", "-C", path, "fetch", "--dry-run", "origin"]) {
-        Ok(output) => {
-            let trimmed = output.trim();
-            Ok(!trimmed.is_empty())
-        }
-        Err(_) => {
-            // Fallback: compare local HEAD with remote HEAD using ls-remote
-            let local_head = run_command(["git", "-C", path, "rev-parse", "HEAD"])?;
-            let branch = run_command(["git", "-C", path, "rev-parse", "--abbrev-ref", "HEAD"])?
-                .trim()
-                .to_string();
-            if branch == "HEAD" {
-                return Ok(false); // detached HEAD, skip
-            }
-            let remote_ref = run_command_args("git", &[
-                "ls-remote".into(),
-                "origin".into(),
-                format!("refs/heads/{branch}"),
-            ])?;
-            let remote_sha = remote_ref.split_whitespace().next().unwrap_or("");
-            if remote_sha.is_empty() {
-                return Ok(false);
-            }
-            // If local HEAD matches remote HEAD, no updates
-            let local_trimmed = local_head.trim();
-            Ok(local_trimmed != remote_sha)
-        }
+    // Compare local HEAD hash against remote HEAD hash via ls-remote.
+    // This is more reliable than `git fetch --dry-run` which can produce
+    // false positives from negotiation output.
+    let local_head = run_command(["git", "-C", path, "rev-parse", "HEAD"])?
+        .trim()
+        .to_string();
+    if local_head.is_empty() {
+        return Ok(false);
     }
+
+    let branch = run_command(["git", "-C", path, "rev-parse", "--abbrev-ref", "HEAD"])?
+        .trim()
+        .to_string();
+    if branch == "HEAD" {
+        return Ok(false); // detached HEAD, can't compare
+    }
+
+    let remote_ref = match run_command_args("git", &[
+        "ls-remote".into(),
+        "origin".into(),
+        format!("refs/heads/{branch}"),
+    ]) {
+        Ok(output) => output,
+        Err(_) => return Ok(false),
+    };
+
+    let remote_sha = remote_ref.split_whitespace().next().unwrap_or("");
+    if remote_sha.is_empty() {
+        return Ok(false);
+    }
+
+    Ok(local_head != remote_sha)
 }
 
 
@@ -504,6 +572,52 @@ pub fn git_list_skip_worktree(root_path: &str) -> Vec<String> {
         .collect()
 }
 
+/// Extract progress percentage from git progress lines like:
+/// "Receiving objects: 45% (123/456)" → Some(45)
+/// "Resolving deltas: 80% (160/200)" → Some(80)
+fn parse_progress_percent(line: &str) -> Option<u8> {
+    let pct_start = line.find(|c: char| c == '%' || c.is_ascii_digit())?;
+    let after = &line[pct_start..];
+    let pct_end = after.find('%')?;
+    let num_str = &after[..pct_end];
+    let digits: String = num_str.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() || digits.len() > 3 { return None; }
+    digits.parse::<u8>().ok()
+}
+
+/// Parse size and speed from git progress lines like:
+/// "Receiving objects: 45% (123/456), 1.23 MiB | 500.00 KiB/s"
+/// Returns (size_in_mb, speed_in_kbps) if both are found.
+fn parse_git_progress_size_speed(line: &str) -> Option<(f64, f64)> {
+    // Look for pattern: "X.XX MiB" or similar size indication
+    let pipe_pos = line.find(" | ")?;
+    let before_pipe = &line[..pipe_pos];
+    let after_pipe = &line[pipe_pos + 3..];
+
+    // Parse size before pipe: ", 1.23 MiB"
+    let size_str = before_pipe.rsplit(',').next()?.trim();
+    let (size_val, unit) = size_str.split_once(' ')?;
+    let size_num: f64 = size_val.parse().ok()?;
+    let size_mb = match unit.trim() {
+        "GiB" => size_num * 1024.0,
+        "MiB" => size_num,
+        "KiB" => size_num / 1024.0,
+        _ => return None,
+    };
+
+    // Parse speed after pipe: "500.00 KiB/s"
+    let speed_str = after_pipe.trim();
+    let (speed_val, rest) = speed_str.split_once(' ')?;
+    let speed_num: f64 = speed_val.parse().ok()?;
+    let speed_kbps = match rest.trim() {
+        "MiB/s" => speed_num * 1024.0,
+        "KiB/s" => speed_num,
+        _ => return None,
+    };
+
+    Some((size_mb, speed_kbps))
+}
+
 pub fn git_reset_file(root_path: &str, relative_path: &str) -> OperationResult {
     match run_command_args("git", &[
         "-C".into(),
@@ -515,5 +629,88 @@ pub fn git_reset_file(root_path: &str, relative_path: &str) -> OperationResult {
     ]) {
         Ok(output) => success_operation("unstage", "git", &format!("已取消暂存：{relative_path}"), output),
         Err(error) => failed_operation("unstage", "git", format!("取消暂存失败：{error}"), false),
+    }
+}
+
+// ── Git Clone (streaming) ─────────────────────────────────────────────────
+
+pub fn git_clone_streaming(
+    app: &tauri::AppHandle,
+    url: &str,
+    path: &str,
+    shallow: bool,
+) -> OperationResult {
+    use crate::command_exec::{new_command, resolve_program};
+    use std::io::BufRead;
+
+    let resolved = resolve_program("git");
+    let mut args: Vec<String> = vec!["clone".into(), "--progress".into()];
+    if shallow {
+        args.push("--depth".into());
+        args.push("1".into());
+        args.push("--single-branch".into());
+    }
+    args.push(url.to_string());
+    args.push(path.to_string());
+    let mut child = match new_command(&resolved)
+        .args(&args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return OperationResult {
+                operation: "clone".to_string(),
+                vcs_type: "git".to_string(),
+                success: false,
+                summary: "Git clone 启动失败".to_string(),
+                output: String::new(),
+                warning: Some(e.to_string()),
+                missing_svn_cli: false,
+            };
+        }
+    };
+
+    crate::command_exec::set_running_pid(child.id());
+
+    let mut full_output = String::new();
+    // git clone outputs progress to stderr
+    if let Some(stderr) = child.stderr.take() {
+        let reader = std::io::BufReader::new(stderr);
+        for line in reader.lines() {
+            if let Ok(text) = line {
+                // Parse progress percentage for progress bar
+                if let Some(pct) = parse_progress_percent(&text) {
+                    let _ = app.emit("clone-progress-pct", pct);
+                }
+                // Parse size and speed for stats display
+                if let Some((size_mb, speed_kbps)) = parse_git_progress_size_speed(&text) {
+                    let stats = CloneProgressStats {
+                        files: 0,
+                        size_mb: Some(size_mb),
+                        speed_kbps: Some(speed_kbps),
+                    };
+                    let _ = app.emit("clone-progress-stats", &stats);
+                }
+                let _ = app.emit("clone-progress-line", &text);
+                full_output.push_str(&text);
+                full_output.push('\n');
+            }
+        }
+    }
+
+    let status = child.wait().unwrap_or_default();
+    crate::command_exec::clear_running_pid();
+
+    // Also read stdout for completion
+    if let Some(stdout) = child.stdout.take() {
+        let _ = std::io::read_to_string(stdout);
+    }
+
+    if status.success() {
+        success_operation("clone", "git", "Git clone 完成", full_output)
+    } else {
+        failed_operation("clone", "git", format!("Git clone 失败：{full_output}"), false)
     }
 }

@@ -50,6 +50,7 @@ pub fn initialize_database(connection: &Connection) -> Result<(), String> {
                 vcs_type TEXT NOT NULL,
                 remote_url TEXT,
                 branch_or_revision TEXT,
+                notes TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -65,7 +66,16 @@ pub fn initialize_database(connection: &Connection) -> Result<(), String> {
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );",
         )
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+
+    // Migration: add notes column if upgrading from older schema
+    connection
+        .execute_batch(
+            "ALTER TABLE repositories ADD COLUMN notes TEXT NOT NULL DEFAULT '';",
+        )
+        .ok(); // Ignore error if column already exists
+
+    Ok(())
 }
 
 pub fn normalize_repository_paths(connection: &Connection) -> Result<(), String> {
@@ -115,7 +125,7 @@ pub fn find_repository_by_id(
 ) -> Result<Option<Repository>, String> {
     connection
         .query_row(
-            "SELECT id, name, path, vcs_type, remote_url, branch_or_revision, created_at, updated_at
+            "SELECT id, name, path, vcs_type, remote_url, branch_or_revision, notes, created_at, updated_at
              FROM repositories
              WHERE id = ?1",
             params![id],
@@ -127,8 +137,9 @@ pub fn find_repository_by_id(
                     vcs_type: row.get(3)?,
                     remote_url: row.get(4)?,
                     branch_or_revision: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
+                    notes: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
                 })
             },
         )
@@ -142,7 +153,7 @@ pub fn find_repository_by_path(
 ) -> Result<Option<Repository>, String> {
     connection
         .query_row(
-            "SELECT id, name, path, vcs_type, remote_url, branch_or_revision, created_at, updated_at
+            "SELECT id, name, path, vcs_type, remote_url, branch_or_revision, notes, created_at, updated_at
              FROM repositories
              WHERE path = ?1",
             params![path],
@@ -154,8 +165,9 @@ pub fn find_repository_by_path(
                     vcs_type: row.get(3)?,
                     remote_url: row.get(4)?,
                     branch_or_revision: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
+                    notes: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
                 })
             },
         )

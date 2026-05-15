@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import type { GitCommitLog, GitStashEntry, OperationResult, Repository } from "../../lib/api";
-import { gitFetch, gitLog, gitStashDrop, gitStashList, gitStashPop, gitStashPush, svnCleanup, svnLog } from "../../lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { CommitDetail, GitCommitLog, GitStashEntry, OperationResult, Repository } from "../../lib/api";
+import { gitFetch, gitLog, gitShowDetail, gitStashDrop, gitStashList, gitStashPop, gitStashPush, svnCleanup, svnLog, svnShowDetail } from "../../lib/api";
 import { VcsLabels } from "../../lib/constants";
 import type { Translator } from "../../lib/i18n";
 import { Modal, ModalHeading } from "../shared/Modal";
@@ -18,6 +18,7 @@ interface CommandBarProps {
   onRefreshSelected: () => void;
   onLoadRepositoryStatus: () => void;
   onUpdateRepository: () => void;
+  onForceUpdateRepository: () => void;
   onOpenIgnoreDialog: () => void;
   onOpenCommitDialog: () => void;
   onOpenSettings: () => void;
@@ -52,6 +53,7 @@ export function CommandBar({
   onRefreshSelected,
   onLoadRepositoryStatus,
   onUpdateRepository,
+  onForceUpdateRepository,
   onOpenIgnoreDialog,
   onOpenCommitDialog,
   onOpenSettings,
@@ -66,9 +68,70 @@ export function CommandBar({
   const [isFetching, setIsFetching] = useState(false);
   const [stashEntries, setStashEntries] = useState<GitStashEntry[]>([]);
   const stashMenuRef = useRef<HTMLDivElement>(null);
+  const logMenuRef = useRef<HTMLDivElement>(null);
   const isGitRepo = selectedRepository?.vcsType === "git" || selectedRepository?.vcsType === "mixed";
   const isSvnRepo = selectedRepository?.vcsType === "svn" || selectedRepository?.vcsType === "mixed";
   const [isCleaningUp, setIsCleaningUp] = useState(false);
+
+  // ── Log detail & context menu state ──
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [detailCache, setDetailCache] = useState<Record<string, CommitDetail>>({});
+  const [detailLoading, setDetailLoading] = useState<string | null>(null);
+  const [logMenu, setLogMenu] = useState<{ x: number; y: number; entry: GitCommitLog } | null>(null);
+  const repoId = selectedRepository?.id;
+
+  const closeLogMenu = useCallback(() => setLogMenu(null), []);
+  useEffect(() => {
+    if (!logMenu) return;
+    function onClick(e: MouseEvent) {
+      if (logMenuRef.current && !logMenuRef.current.contains(e.target as Node)) closeLogMenu();
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [logMenu, closeLogMenu]);
+
+  async function loadDetail(idx: number, entry: GitCommitLog) {
+    if (!repoId) return;
+    const cacheKey = entry.hash;
+    if (detailCache[cacheKey]) return;
+    setDetailLoading(cacheKey);
+    try {
+      const isSvn = entry.hash.startsWith("r");
+      const detail = isSvn
+        ? await svnShowDetail(repoId, parseInt(entry.hash.slice(1), 10))
+        : await gitShowDetail(repoId, entry.hash);
+      setDetailCache((prev) => ({ ...prev, [cacheKey]: detail }));
+    } catch {
+      // silently ignore load failures
+    } finally {
+      setDetailLoading(null);
+    }
+  }
+
+  function handleLogItemClick(idx: number) {
+    const entry = logs[idx];
+    if (!entry) return;
+    if (expandedIdx === idx) {
+      setExpandedIdx(null);
+      return;
+    }
+    setExpandedIdx(idx);
+    loadDetail(idx, entry);
+  }
+
+  function handleLogContextMenu(e: React.MouseEvent, idx: number) {
+    e.preventDefault();
+    const entry = logs[idx];
+    if (!entry) return;
+    setLogMenu({ x: e.clientX, y: e.clientY, entry });
+  }
+
+  function handleCopyHash() {
+    if (logMenu) {
+      navigator.clipboard.writeText(logMenu.entry.hash).catch(() => {});
+    }
+    closeLogMenu();
+  }
 
   async function handleGitFetch() {
     if (!selectedRepository) return;
@@ -172,7 +235,11 @@ export function CommandBar({
                   stashEntries.slice(0, 5).map((entry) => (
                     <div className="stash-menu-item" key={entry.index}>
                       <span className="stash-menu-msg">{entry.message.length > 30 ? entry.message.slice(0, 30) + "…" : entry.message}</span>
-                      <button className="stash-menu-drop-btn cmd-danger" type="button" onClick={() => handleStashDrop(entry.index)} title={t("command.stashDrop")}>✕</button>
+                      <button className="stash-menu-drop-btn cmd-danger" type="button" onClick={() => handleStashDrop(entry.index)} title={t("command.stashDrop")}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+                </svg>
+              </button>
                     </div>
                   ))
                 )}
@@ -194,6 +261,12 @@ export function CommandBar({
           <button className="cmd-btn" type="button" disabled={!selectedRepository || isCleaningUp}
             onClick={handleSvnCleanup} title={t("command.cleanup")}>
             <CleanIcon /><span>{t("command.cleanup")}</span>
+          </button>
+
+          {/* ── Force Update ── */}
+          <button className="cmd-btn" type="button" disabled={!selectedRepository || isLoading}
+            onClick={onForceUpdateRepository} title="强制更新（解决树冲突/空目录问题）">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.3-9.8"/></svg><span>强制更新</span>
           </button>
 
           {/* ── Log ── */}
@@ -237,22 +310,73 @@ export function CommandBar({
       </div>
 
       {/* ── Log 弹窗 ── */}
-      <Modal open={isLogOpen} onClose={() => setIsLogOpen(false)} labelledBy="git-log-title" className="git-log-modal">
-        <ModalHeading eyebrow="History" title={t("command.logTitle")} titleId="git-log-title" onClose={() => setIsLogOpen(false)} />
+      <Modal open={isLogOpen} onClose={() => { setIsLogOpen(false); setExpandedIdx(null); }} labelledBy="git-log-title" className="git-log-modal">
+        <ModalHeading eyebrow="History" title={t("command.logTitle")} titleId="git-log-title" onClose={() => { setIsLogOpen(false); setExpandedIdx(null); }} />
         <div className="git-log-list">
           {isLogLoading ? <p className="git-log-loading">{t("command.logLoading")}</p>
           : logs.length === 0 ? <p className="git-log-empty">{t("command.logEmpty")}</p>
-          : logs.map((entry, idx) => (
-            <div className="git-log-item" key={idx}>
-              <code className="git-log-hash">{entry.hash.slice(0, 7)}</code>
-              <strong className="git-log-msg">{entry.message}</strong>
-              <div className="git-log-meta">
-                <span>{entry.author}</span>
-                <time>{formatLogDate(entry.date)}</time>
-              </div>
-            </div>
-          ))}
+          : logs.map((entry, idx) => {
+              const isExpanded = expandedIdx === idx;
+              const detail = detailCache[entry.hash];
+              const isLoading = detailLoading === entry.hash;
+              return (
+                <div key={idx}>
+                  <div
+                    className={`git-log-item ${isExpanded ? "git-log-item--expanded" : ""}`}
+                    onClick={() => handleLogItemClick(idx)}
+                    onContextMenu={(e) => handleLogContextMenu(e, idx)}
+                  >
+                    <code className="git-log-hash">{entry.hash.slice(0, 7)}</code>
+                    <strong className="git-log-msg">{entry.message}</strong>
+                    <div className="git-log-meta">
+                      <span>{entry.author}</span>
+                      <time>{formatLogDate(entry.date)}</time>
+                    </div>
+                  </div>
+                  {isExpanded ? (
+                    <div className="git-log-detail">
+                      {isLoading ? (
+                        <p className="git-log-detail-loading">Loading…</p>
+                      ) : detail ? (
+                        <>
+                          {detail.files.length > 0 ? (
+                            <div className="git-log-files">
+                              <span className="git-log-files-label">Changed files ({detail.files.length})</span>
+                              <div className="git-log-files-list">
+                                {detail.files.map((f, fi) => (
+                                  <span key={fi} className={`change-badge ${f.changeType}`}>{f.path}</span>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                          {detail.diff ? (
+                            <pre className="git-log-diff"><code>{detail.diff}</code></pre>
+                          ) : null}
+                          {!detail.files.length && !detail.diff ? (
+                            <p className="git-log-detail-empty">No details available</p>
+                          ) : null}
+                        </>
+                      ) : (
+                        <p className="git-log-detail-empty">Failed to load details</p>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
         </div>
+
+        {/* ── Log context menu ── */}
+        {logMenu ? (
+          <div className="context-menu" ref={logMenuRef} style={{ left: logMenu.x, top: logMenu.y, position: "fixed", zIndex: 9999 }}>
+            <button type="button" onClick={() => { handleLogItemClick(logs.indexOf(logMenu.entry)); closeLogMenu(); }}>
+              查看详情
+            </button>
+            <button type="button" onClick={handleCopyHash}>
+              复制版本号
+            </button>
+          </div>
+        ) : null}
       </Modal>
     </header>
   );

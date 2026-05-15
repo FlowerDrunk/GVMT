@@ -36,9 +36,9 @@
   /* Text */
   --text: #1f2328;
   --text-soft: #343a40;
-  --muted: #6c757d;
-  --subtle: #adb5bd;
-  --disabled: #adb5bd;
+  --muted: #475569;
+  --subtle: #788596;
+  --disabled: #9ca3af;
   --text-on-accent: #ffffff;
 
   /* Accent */
@@ -50,6 +50,7 @@
   --accent-border: #93c5fd;
   --accent-ring: rgba(37, 99, 235, 0.14);
   --accent-focus-border: #2563eb;
+  --ring: rgba(37, 99, 235, 0.3);
 
   /* Interactive */
   --hover-bg: #f8f9fa;
@@ -97,6 +98,14 @@
   /* Scrollbar */
   --scrollbar-thumb: #9ca3af;
   --scrollbar-track: transparent;
+
+  /* Z-index scale */
+  --z-base: 1;
+  --z-sticky: 10;
+  --z-dropdown: 20;
+  --z-context-menu: 30;
+  --z-modal: 50;
+  --z-toast: 60;
 
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   --shadow-secondary: 0 2px 8px rgba(0, 0, 0, 0.08);
@@ -163,6 +172,7 @@
   --accent-border: #2563eb;
   --accent-ring: rgba(37, 99, 235, 0.28);
   --accent-focus-border: #3b82f6;
+  --ring: rgba(59, 130, 246, 0.35);
   --hover-bg: #222226;
   --hover-border: #3f3f46;
   --success: #10b981;
@@ -239,6 +249,7 @@
     --accent-border: #2563eb;
     --accent-ring: rgba(37, 99, 235, 0.28);
     --accent-focus-border: #3b82f6;
+    --ring: rgba(59, 130, 246, 0.35);
     --hover-bg: #222226;
     --hover-border: #3f3f46;
     --success: #10b981;
@@ -305,6 +316,17 @@ textarea {
   font: inherit;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 @layer base {
   button {
     min-height: var(--button-height-md);
@@ -335,6 +357,12 @@ textarea {
     border-color: var(--button-default-active-border);
     background: var(--button-default-active-bg);
     transform: translateY(1px);
+  }
+
+  button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--ring);
+    border-color: var(--accent-focus-border);
   }
 
   button:disabled {
@@ -469,6 +497,12 @@ textarea:focus {
   color: var(--text-soft);
 }
 
+.rail-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+  border-radius: 10px;
+}
+
 .rail-button[aria-pressed="false"] {
   color: var(--subtle);
 }
@@ -563,6 +597,98 @@ textarea:focus {
   border-radius: var(--radius-sm);
 }
 
+.add-mode-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.add-mode-btn {
+  flex: 1;
+  min-height: 28px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.add-mode-btn.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.add-mode-btn:hover:not(.active) {
+  color: var(--text);
+}
+
+.clone-options {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.clone-options-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.clone-progress-hint {
+  color: var(--accent);
+  font-size: 12px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shallow-clone-label {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.edit-repo-modal {
+  width: min(420px, calc(100vw - 48px));
+}
+
+.edit-repo-body {
+  display: grid;
+  gap: 10px;
+}
+
+.edit-repo-body label {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.shallow-clone-label input[type="checkbox"] {
+  width: auto;
+  min-height: auto;
+  margin: 0;
+  cursor: pointer;
+}
+
 .repo-section {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -595,44 +721,58 @@ textarea:focus {
 
 .path-picker-row {
   display: flex;
+  gap: 0;
 }
 
-.folder-picker-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
+.path-input {
+  flex: 1;
   min-height: 38px;
+  min-width: 0;
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
+  border-right: none;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
   background: var(--surface-muted);
-  color: var(--muted);
-  font-size: 13px;
-  padding: 0 12px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.folder-picker-btn:hover:not(:disabled) {
-  border-color: var(--accent-border);
-  background: var(--surface-strong);
   color: var(--text);
+  font-size: 13px;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  padding: 0 12px;
 }
 
-.folder-picker-btn:disabled {
+.path-input::placeholder {
+  color: var(--subtle);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.path-input:focus {
+  border-color: var(--accent-focus-border);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+  background: var(--surface);
+}
+
+.path-picker-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  min-height: 38px;
+  flex-shrink: 0;
+  border: 1px solid var(--line-strong);
+  border-left: none;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--surface-muted);
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 120ms ease;
+}
+
+.path-picker-icon:hover:not(:disabled) {
+  background: var(--surface-strong);
+}
+
+.path-picker-icon:disabled {
   opacity: 0.6;
   cursor: wait;
-}
-
-.folder-picker-btn.has-path {
-  color: var(--text);
-  font-family: "Cascadia Code", "Consolas", monospace;
-  font-size: 11px;
-}
-
-.folder-picker-btn svg {
-  flex-shrink: 0;
-  color: var(--accent);
 }
 
 .path-row {
@@ -831,7 +971,7 @@ textarea:focus {
 
 .context-menu {
   position: fixed;
-  z-index: 100;
+  z-index: var(--z-context-menu);
   display: grid;
   min-width: 168px;
   border: 1px solid var(--line-alpha);
@@ -866,6 +1006,21 @@ textarea:focus {
 .context-menu button.danger:hover:not(:disabled) {
   background: var(--danger-hover-bg);
   color: var(--danger-fg);
+}
+
+.context-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+
+.context-menu-label {
+  padding: 4px 10px 2px;
+  color: var(--subtle);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .empty-list {
@@ -1027,7 +1182,7 @@ textarea:focus {
   bottom: 0;
   width: 5px;
   cursor: col-resize;
-  z-index: 10;
+  z-index: var(--z-sticky);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1717,6 +1872,12 @@ textarea:focus {
   background: var(--hover-bg);
 }
 
+.tree-row:focus-visible {
+  outline: none;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
 .tree-toggle {
   display: grid;
   place-items: center;
@@ -1724,15 +1885,23 @@ textarea:focus {
   height: 24px;
   border-radius: var(--radius-sm);
   color: var(--accent);
-  font-family: "Cascadia Code", "Consolas", monospace;
-  font-size: 12px;
-  font-weight: 900;
-  line-height: 1;
+  flex-shrink: 0;
+}
+
+.tree-chevron {
+  transition: transform 200ms ease;
+}
+
+.tree-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.tree-file-icon {
+  color: var(--subtle);
 }
 
 .tree-row.file .tree-toggle {
   color: var(--subtle);
-  font-size: 11px;
 }
 
 .tree-icon {
@@ -2885,7 +3054,8 @@ textarea:focus {
 }
 
 .change-badge.deleted,
-.change-badge.conflicted {
+.change-badge.conflicted,
+.change-badge.missing {
   background: var(--warning-soft);
   color: var(--warning);
 }
@@ -2973,6 +3143,8 @@ textarea:focus {
 
 .operation-warning p {
   margin: 0;
+  overflow-wrap: break-word;
+  word-break: break-all;
 }
 
 .operation-card pre {
@@ -2988,12 +3160,15 @@ textarea:focus {
   margin: 0;
   padding: 10px;
   white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-all;
 }
 
 /* ── Operation Detail Modal ── */
 
 .operation-detail-modal {
   width: min(600px, calc(100vw - 48px));
+  min-width: 0;
 }
 
 .operation-detail-body {
@@ -3050,6 +3225,8 @@ textarea:focus {
   font-size: 13px;
   margin: 0;
   white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-all;
 }
 
 .operation-detail-output {
@@ -3082,7 +3259,52 @@ textarea:focus {
   gap: 8px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.update-progress-cancel-btn {
+  margin-left: auto;
   flex-shrink: 0;
+}
+
+.update-progress-bar-track {
+  position: relative;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  overflow: hidden;
+}
+
+.update-progress-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  transition: width 300ms ease;
+  min-width: 0;
+}
+
+.update-progress-bar-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-on-accent);
+  mix-blend-mode: difference;
+}
+
+.update-progress-stats {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.update-progress-stats span {
+  white-space: nowrap;
 }
 
 .update-progress-spinner {
@@ -3132,6 +3354,8 @@ textarea:focus {
   margin: 0;
   padding: 12px;
   white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-all;
 }
 
 .task-list {
@@ -3328,7 +3552,7 @@ textarea:focus {
 
   .explorer-pane {
     position: fixed;
-    z-index: 20;
+    z-index: var(--z-dropdown);
     inset: 0 auto 0 58px;
     width: min(330px, calc(100vw - 58px));
     box-shadow: var(--shadow-elevated);
@@ -4347,8 +4571,11 @@ button.is-loading::after {
 .draggable-card {
   position: relative;
   cursor: default;
-  user-select: none;
   transition: opacity 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+
+.draggable-card.dragging {
+  user-select: none;
 }
 
 .draggable-card.dragging {
@@ -4384,6 +4611,7 @@ button.is-loading::after {
   display: grid;
   place-items: center;
   width: 36px;
+  cursor: grab;
   height: 16px;
   border: none;
   border-radius: 4px;
@@ -4522,6 +4750,30 @@ button.is-loading::after {
 }
 .remote-url-copy svg {
   display: block;
+}
+
+.repo-notes {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+  padding: 10px 12px;
+}
+
+.repo-notes-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.repo-notes p {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .repository-summary-desc {
@@ -4854,9 +5106,7 @@ button.is-loading::after {
 }
 
 .commit-recent-item {
-  background: none;
-  border: none;
-  text-align: left;
+  display: block;
   padding: 6px 10px;
   font-size: 12px;
   color: var(--text);
@@ -4864,6 +5114,9 @@ button.is-loading::after {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  user-select: text;
+  border-radius: var(--radius-sm);
+  transition: background-color 120ms ease;
 }
 
 .commit-recent-item:hover {
@@ -4922,6 +5175,7 @@ button.is-loading::after {
 }
 .cmd-btn:hover:not(:disabled) { background: rgba(128,128,128,0.10); }
 .cmd-btn:active:not(:disabled) { background: rgba(128,128,128,0.18); }
+.cmd-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring); }
 .cmd-btn:disabled { opacity: 0.35; cursor: default; }
 .cmd-btn svg { flex-shrink: 0; }
 
@@ -5040,7 +5294,7 @@ button.is-loading::after {
 
 /* ── git-log 弹窗 ── */
 .git-log-modal {
-  width: min(520px, calc(100vw - 3rem));
+  width: min(640px, calc(100vw - 3rem));
   max-height: calc(100vh - 6rem);
   display: flex;
   flex-direction: column;
@@ -5108,6 +5362,74 @@ button.is-loading::after {
 }
 .git-log-meta time {
   white-space: nowrap;
+}
+
+/* ── Log item interaction ── */
+.git-log-item {
+  cursor: pointer;
+  user-select: none;
+}
+.git-log-item--expanded {
+  background: var(--hover-bg);
+  border-bottom: 1px solid var(--line);
+}
+
+/* ── Log detail (expandable) ── */
+.git-log-detail {
+  padding: 12px 20px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-subtle);
+}
+.git-log-detail-loading,
+.git-log-detail-empty {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 8px 0;
+}
+.git-log-files {
+  margin-bottom: 10px;
+}
+.git-log-files-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.git-log-files-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.git-log-diff {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 360px;
+  white-space: pre;
+  tab-size: 4;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+.git-log-diff::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.git-log-diff::-webkit-scrollbar-track {
+  background: transparent;
+}
+.git-log-diff::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
 }
 
 /* ── 统一滚动条样式（适用于所有弹窗内滚动容器） ── */
@@ -5341,7 +5663,7 @@ button.is-loading::after {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  z-index: 9999;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: 8px;

@@ -8,6 +8,8 @@ export type SvnDepth = "infinity" | "immediates" | "files" | "empty";
 export interface AppSettings {
   autoRefresh: boolean;
   refreshIntervalMs: number;
+  remoteCheckEnabled: boolean;
+  remoteCheckIntervalMinutes: number;
   defaultViewMode: ViewModeSetting;
   language: AppLanguage;
   svnDepth: SvnDepth;
@@ -25,6 +27,8 @@ function readStoredSettings(): AppSettings {
       return {
         autoRefresh: parsed.autoRefresh ?? true,
         refreshIntervalMs: parsed.refreshIntervalMs ?? 12000,
+        remoteCheckEnabled: parsed.remoteCheckEnabled ?? false,
+        remoteCheckIntervalMinutes: parsed.remoteCheckIntervalMinutes ?? 60,
         defaultViewMode: parsed.defaultViewMode === "tree" ? "tree" : "flat",
         language: isAppLanguage(parsed.language) ? parsed.language : "zh-CN",
         svnDepth: VALID_DEPTHS.includes(parsed.svnDepth) ? parsed.svnDepth : "infinity",
@@ -33,7 +37,7 @@ function readStoredSettings(): AppSettings {
   } catch {
     // ignore corrupt data
   }
-  return { autoRefresh: true, refreshIntervalMs: 12000, defaultViewMode: "flat", language: "zh-CN", svnDepth: "infinity" };
+  return { autoRefresh: true, refreshIntervalMs: 12000, remoteCheckEnabled: false, remoteCheckIntervalMinutes: 60, defaultViewMode: "flat", language: "zh-CN", svnDepth: "infinity" };
 }
 
 function writeSettings(settings: AppSettings) {

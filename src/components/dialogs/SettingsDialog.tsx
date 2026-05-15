@@ -171,6 +171,42 @@ export function SettingsDialog({
           ) : null}
         </section>
 
+        {/* ── 远端更新检测 ── */}
+        <section className="settings-section">
+          <div className="settings-section-header">
+            <svg className="settings-section-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <div>
+              <h4>{t("settings.remoteCheck")}</h4>
+              <p>{t("settings.remoteCheckHelp")}</p>
+            </div>
+          </div>
+          <div className="settings-control-row">
+            <span className="settings-control-label">{t("settings.enableRemoteCheck")}</span>
+            <Switch
+              checked={settings.remoteCheckEnabled}
+              onCheckedChange={(checked) => onUpdateSettings({ remoteCheckEnabled: checked })}
+            />
+          </div>
+          {settings.remoteCheckEnabled ? (
+            <div className="settings-control-row">
+              <span className="settings-control-label">{t("settings.remoteCheckInterval")}</span>
+              <div className="settings-select-wrapper">
+                <select
+                  value={settings.remoteCheckIntervalMinutes}
+                  onChange={(event) =>
+                    onUpdateSettings({ remoteCheckIntervalMinutes: Number(event.currentTarget.value) })
+                  }
+                >
+                  <option value={60}>{t("settings.remoteCheck1h")}</option>
+                  <option value={120}>{t("settings.remoteCheck2h")}</option>
+                  <option value={240}>{t("settings.remoteCheck4h")}</option>
+                </select>
+                <svg className="settings-select-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
         {/* ── SVN ── */}
         <section className="settings-section">
           <div className="settings-section-header">

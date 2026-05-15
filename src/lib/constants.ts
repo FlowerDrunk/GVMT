@@ -12,5 +12,5 @@ export function changeKey(change: Pick<ChangeItem, "path" | "vcsType">) {
 }
 
 export function isCommittableChange(change: ChangeItem) {
-  return change.status !== "conflicted" && change.status !== "unknown";
+  return change.status !== "conflicted" && change.status !== "missing" && change.status !== "unknown";
 }

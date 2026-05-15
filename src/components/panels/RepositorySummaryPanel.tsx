@@ -121,6 +121,13 @@ export function RepositorySummaryPanel({
           </dl>
           <p className="repository-summary-desc">{vcsDescriptions[selectedRepository.vcsType]}</p>
 
+          {selectedRepository.notes ? (
+            <div className="repo-notes">
+              <span className="repo-notes-label">备注</span>
+              <p>{selectedRepository.notes}</p>
+            </div>
+          ) : null}
+
           {/* 提交历史 */}
           <div className="repo-log-section">
             <button

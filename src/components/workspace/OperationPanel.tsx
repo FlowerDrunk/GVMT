@@ -171,7 +171,7 @@ export function OperationPanel({ operationResults, history, persistedLogs, t, on
           <span className="soft-chip">{hasCurrent ? t("operation.current") : `${persistedLogs.length} ${t("operation.entryCount")}`}</span>
           {hasPersisted ? (
             <Button variant="ghost" onClick={onClearHistory} title="清除历史">
-              ✕
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
             </Button>
           ) : null}
         </div>

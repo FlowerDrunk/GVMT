@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ChangeStatus, GitStashEntry, OperationResult, Repository, VcsType } from "../../lib/api";
-import { gitReset, gitStashPush, svnRevert, svnResolve } from "../../lib/api";
+import { gitReset, gitStashPush, svnRevert, svnResolve, svnResolveAccept, svnUpdateForce, type SvnAcceptType } from "../../lib/api";
 import type { Translator } from "../../lib/i18n";
 import { Modal, ModalHeading } from "../shared/Modal";
 import { Button } from "../ui/button";
@@ -125,6 +125,42 @@ export function IgnoreContextMenuOverlay({
     }
   }
 
+  async function handleSvnResolveAccept(accept: SvnAcceptType) {
+    if (!repositoryId) return;
+    try {
+      const result = await svnResolveAccept(repositoryId, path, accept);
+      onOperationResult(result);
+    } catch (error) {
+      onOperationResult({
+        operation: "resolve",
+        vcsType: "svn",
+        success: false,
+        summary: "Resolve 失败",
+        output: String(error),
+        warning: String(error),
+        missingSvnCli: false,
+      });
+    }
+  }
+
+  async function handleSvnUpdateForce() {
+    if (!repositoryId) return;
+    try {
+      const result = await svnUpdateForce(repositoryId);
+      onOperationResult(result);
+    } catch (error) {
+      onOperationResult({
+        operation: "update",
+        vcsType: "svn",
+        success: false,
+        summary: "强制更新失败",
+        output: String(error),
+        warning: String(error),
+        missingSvnCli: false,
+      });
+    }
+  }
+
   async function handleGitStashPush() {
     if (!repositoryId) return;
     try {
@@ -180,12 +216,30 @@ export function IgnoreContextMenuOverlay({
         {/* SVN 操作 */}
         {isSvn ? (
           <>
+            {isConflicted ? (
+              <>
+                <div className="context-menu-label">冲突解决</div>
+                <button type="button" onClick={() => handleSvnResolveAccept("theirs-full")}>
+                  接受服务器版本 (theirs)
+                </button>
+                <button type="button" onClick={() => handleSvnResolveAccept("mine-full")}>
+                  保留本地版本 (mine)
+                </button>
+                <button type="button" onClick={() => handleSvnResolveAccept("base")}>
+                  还原原始版本 (base)
+                </button>
+                <button type="button" onClick={handleSvnResolve}>
+                  标记已解决 (保留当前状态)
+                </button>
+                <div className="context-menu-separator" />
+              </>
+            ) : null}
             <button type="button" className="cmd-danger" onClick={handleSvnRevert}>
               SVN Revert
             </button>
-            {isConflicted ? (
-              <button type="button" onClick={handleSvnResolve}>
-                SVN Resolve (标记已解决)
+            {!isConflicted ? (
+              <button type="button" onClick={handleSvnUpdateForce}>
+                强制更新此目录
               </button>
             ) : null}
           </>

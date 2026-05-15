@@ -21,6 +21,9 @@ import {
   type WindowsContextMenuStatus,
   uninstallWindowsContextMenu,
   updateRepository,
+  forceUpdateRepository,
+  cloneRepository,
+  cancelOperation,
   type ChangeStatus,
   type OperationResult,
   VcsType,
@@ -130,7 +133,10 @@ function AppContent() {
   });
 
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isCloningOp, setIsCloningOp] = useState(false);
   const [updateLines, setUpdateLines] = useState<string[]>([]);
+  const [cloneProgress, setCloneProgress] = useState<number | null>(null);
+  const [progressStats, setProgressStats] = useState<{ files: number; sizeMb?: number; speedKbps?: number } | null>(null);
 
   const [latestSvnRevisions, setLatestSvnRevisions] = useState<Record<number, string>>({});
   function handleLatestSvnRevision(repoId: number, revision: string) {
@@ -550,6 +556,51 @@ function AppContent() {
               showToast(`已识别路径：${droppedPath}`, "info");
             }}
             onSetStatus={setStatus}
+            isCloningActive={isUpdating}
+            onCloneRepository={async (url: string, targetPath: string, shallow: boolean, ignoreExternals: boolean) => {
+              setIsUpdating(true);
+              setIsCloningOp(true);
+              setUpdateLines([]);
+              setCloneProgress(null);
+              setProgressStats(null);
+              let unlistenLine: (() => void) | null = null;
+              let unlistenPct: (() => void) | null = null;
+              let unlistenStats: (() => void) | null = null;
+              if (isTauriRuntime()) {
+                try {
+                  const { listen } = await import("@tauri-apps/api/event");
+                  const u1 = await listen<string>("clone-progress-line", (e) => {
+                    setUpdateLines((prev) => [...prev, e.payload]);
+                  });
+                  unlistenLine = u1;
+                  const u2 = await listen<number>("clone-progress-pct", (e) => {
+                    setCloneProgress(e.payload);
+                  });
+                  unlistenPct = u2;
+                  const u3 = await listen<{ files: number; sizeMb?: number; speedKbps?: number }>("clone-progress-stats", (e) => {
+                    setProgressStats(e.payload);
+                  });
+                  unlistenStats = u3;
+                } catch { /* ignore */ }
+              }
+              try {
+                await cloneRepository({ url, path: targetPath, shallow, ignoreExternals });
+                showToast("克隆完成", "success");
+                setStatus("克隆完成");
+                return true;
+              } catch (error) {
+                const msg = error instanceof Error ? error.message : String(error);
+                showToast(msg, "error");
+                setStatus(msg);
+                return false;
+              } finally {
+                unlistenLine?.();
+                unlistenPct?.();
+                unlistenStats?.();
+                setIsUpdating(false);
+                setIsCloningOp(false);
+              }
+            }}
             latestSvnRevisions={latestSvnRevisions}
           />
         ) : null}
@@ -583,6 +634,34 @@ function AppContent() {
             }
             try {
               await statusHook.handleUpdateRepository(settings.svnDepth);
+            } finally {
+              unlisten?.();
+              setIsUpdating(false);
+            }
+          }}
+          onForceUpdateRepository={async () => {
+            if (!repo.selectedRepository) return;
+            setIsUpdating(true);
+            setUpdateLines([]);
+            let unlisten: (() => void) | null = null;
+            if (isTauriRuntime()) {
+              try {
+                const { listen } = await import("@tauri-apps/api/event");
+                const u = await listen<string>("svn-update-line", (e) => {
+                  setUpdateLines((prev) => [...prev, e.payload]);
+                });
+                unlisten = u;
+              } catch { /* ignore */ }
+            }
+            try {
+              const result = await forceUpdateRepository(repo.selectedRepository.id, settings.svnDepth);
+              statusHook.setOperationResults([result]);
+              operationHistory.addEntry([result]);
+              setStatus(result.summary);
+              if (!result.success && result.operation !== "push") {
+                showOperationFailure([result]);
+              }
+              await statusHook.loadRepositoryStatus(true);
             } finally {
               unlisten?.();
               setIsUpdating(false);
@@ -905,12 +984,17 @@ function AppContent() {
 
       <UpdateProgressDialog
         open={isUpdating}
-        onClose={() => setIsUpdating(false)}
+        onClose={() => { setIsUpdating(false); setIsCloningOp(false); }}
         lines={updateLines}
+        title={isCloningOp ? "远程克隆" : "SVN Update"}
+        onCancel={isCloningOp ? () => { cancelOperation(); setIsUpdating(false); setIsCloningOp(false); } : undefined}
+        progress={cloneProgress}
+        stats={progressStats}
       />
 
       <UpdateNotificationPanel
         repositories={repo.repositories}
+        settings={settings}
         onUpdateCompleted={() => statusHook.loadRepositoryStatus(true)}
       />
     </main>

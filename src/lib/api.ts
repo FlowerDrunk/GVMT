@@ -9,6 +9,7 @@ export interface Repository {
   vcsType: VcsType;
   remoteUrl: string | null;
   branchOrRevision: string | null;
+  notes: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -26,7 +27,7 @@ export interface AddRepositoryInput {
   name?: string;
 }
 
-export type ChangeStatus = "added" | "modified" | "deleted" | "renamed" | "untracked" | "conflicted" | "unknown";
+export type ChangeStatus = "added" | "modified" | "deleted" | "renamed" | "untracked" | "conflicted" | "missing" | "unknown";
 
 export interface ChangeItem {
   path: string;
@@ -173,6 +174,34 @@ export async function addRepository(input: AddRepositoryInput): Promise<Reposito
   return invoke<Repository>("add_repository", { input });
 }
 
+export interface CloneRepositoryInput {
+  url: string;
+  path: string;
+  shallow?: boolean;
+  ignoreExternals?: boolean;
+}
+
+export async function cloneRepository(input: CloneRepositoryInput): Promise<Repository> {
+  return invoke<Repository>("clone_repository", { input });
+}
+
+export async function openInExplorer(path: string): Promise<void> {
+  return invoke<void>("open_in_explorer", { path });
+}
+
+export async function cancelOperation(): Promise<void> {
+  return invoke<void>("cancel_operation");
+}
+
+export interface UpdateRepositoryInfoInput {
+  name?: string;
+  notes?: string;
+}
+
+export async function updateRepositoryInfo(id: number, input: UpdateRepositoryInfoInput): Promise<Repository> {
+  return invoke<Repository>("update_repository_info", { id, input });
+}
+
 export async function deleteRepository(id: number): Promise<void> {
   return invoke<void>("delete_repository", { id });
 }
@@ -307,6 +336,20 @@ export async function svnResolve(id: number, path: string): Promise<OperationRes
   return invoke<OperationResult>("svn_resolve", { id, path });
 }
 
+export type SvnAcceptType = "base" | "working" | "mine-full" | "theirs-full";
+
+export async function svnResolveAccept(id: number, path: string, accept: SvnAcceptType): Promise<OperationResult> {
+  return invoke<OperationResult>("svn_resolve_accept", { id, path, accept });
+}
+
+export async function svnUpdateForce(id: number, depth?: string): Promise<OperationResult> {
+  return invoke<OperationResult>("svn_update_force", { id, depth: depth ?? null });
+}
+
+export async function forceUpdateRepository(id: number, depth?: string): Promise<OperationResult> {
+  return invoke<OperationResult>("svn_update_force_streaming_cmd", { id, depth: depth ?? null });
+}
+
 export interface SvnCommitLog {
   revision: number;
   author: string;
@@ -316,6 +359,28 @@ export interface SvnCommitLog {
 
 export async function svnLog(id: number, maxCount?: number): Promise<SvnCommitLog[]> {
   return invoke<SvnCommitLog[]>("svn_log_command", { id, maxCount: maxCount ?? null });
+}
+
+export interface CommitFileChange {
+  path: string;
+  changeType: string;
+}
+
+export interface CommitDetail {
+  hash: string;
+  author: string;
+  date: string;
+  message: string;
+  files: CommitFileChange[];
+  diff: string;
+}
+
+export async function gitShowDetail(id: number, hash: string): Promise<CommitDetail> {
+  return invoke<CommitDetail>("git_show_detail", { id, hash });
+}
+
+export async function svnShowDetail(id: number, revision: number): Promise<CommitDetail> {
+  return invoke<CommitDetail>("svn_show_detail", { id, revision });
 }
 
 export async function listRepositoryFiles(id: number, relativePath?: string): Promise<RepositoryDirectory> {
