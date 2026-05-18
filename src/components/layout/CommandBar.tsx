@@ -265,7 +265,7 @@ export function CommandBar({
 
           {/* ── Force Update ── */}
           <button className="cmd-btn" type="button" disabled={!selectedRepository || isLoading}
-            onClick={onForceUpdateRepository} title="强制更新（解决树冲突/空目录问题）">
+            onClick={onForceUpdateRepository} title="强制更新（Clean + Revert + Update）">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.3-9.8"/></svg><span>强制更新</span>
           </button>
 

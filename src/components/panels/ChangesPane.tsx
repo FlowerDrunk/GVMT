@@ -1,4 +1,4 @@
-import { MouseEvent, useMemo, useState } from "react";
+import { memo, MouseEvent, useMemo, useState } from "react";
 import type { ChangeItem, ChangeStatus, RepositoryStatus, VcsType } from "../../lib/api";
 import type { Translator } from "../../lib/i18n";
 import type { ChangeTreeNode } from "../../lib/utils";
@@ -123,7 +123,7 @@ function TreeViewIcon() {
   );
 }
 
-export function ChangesPane({
+export const ChangesPane = memo(function ChangesPane({
   changedFiles,
   changeTreeViewNodes,
   expandedChangePaths,
@@ -368,7 +368,7 @@ export function ChangesPane({
             </Button>
           )}
         </div>
-      </Modal>
+          </Modal>
     </aside>
   );
-}
+});

@@ -186,7 +186,7 @@ function getNumericToken(json: string, key: string, fallback: number): number {
 
 function updateToken(json: string, key: string, value: string | number): string {
   try {
-    const parsed = JSON.parse(json);
+    const parsed = json.trim() ? JSON.parse(json) : {};
     if (!parsed.token) parsed.token = {};
     parsed.token[key] = value;
     return JSON.stringify(parsed, null, 2);
@@ -207,7 +207,6 @@ export function ThemeDialog({ open, onClose, t, settings, onUpdateSettings }: Th
   const themeDraftRef = useRef(themeDraft);
   themeDraftRef.current = themeDraft;
   const [themeDraftError, setThemeDraftError] = useState<string | null>(customThemeError);
-  const [showEditor, setShowEditor] = useState(false);
   const [savedThemes, setSavedThemes] = useState<SavedTheme[]>(loadSavedThemes);
   const [showSaveInput, setShowSaveInput] = useState(false);
   const [saveName, setSaveName] = useState("");
@@ -496,39 +495,8 @@ export function ThemeDialog({ open, onClose, t, settings, onUpdateSettings }: Th
           </div>
         </section>
 
-        {/* ── JSON 编辑器 ── */}
-        <section className="theme-dialog-section">
-          <div className="section-title">
-            <button type="button" className="theme-toggle-btn" onClick={() => setShowEditor(!showEditor)}>
-              <span>{showEditor ? "收起" : "展开"} JSON 编辑器</span>
-            </button>
-          </div>
-          {showEditor ? (
-            <div className="theme-json-section">
-              <textarea className="settings-theme-editor" spellCheck={false}
-                value={themeDraft}
-                onChange={(event) => {
-                  setThemeDraft(event.currentTarget.value);
-                  setThemeDraftError(null);
-                }}
-                aria-label="Custom theme JSON"
-              />
-              {themeDraftError ? <p className="inline-warning">{themeDraftError}</p> : null}
-              <div className="theme-json-actions">
-                <Button variant="default" type="button" onClick={handleApply}>
-                  应用
-                </Button>
-                <Button variant="ghost" type="button" onClick={() => setThemeDraft(DEFAULT_CUSTOM_THEME_JSON)}>
-                  重置示例
-                </Button>
-                <Button variant="ghost" type="button" onClick={handleResetAll}>
-                  恢复默认
-                </Button>
-              </div>
-            </div>
-          ) : null}
-        </section>
       </div>
     </Modal>
   );
 }
+

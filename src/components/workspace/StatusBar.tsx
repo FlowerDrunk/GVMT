@@ -4,6 +4,7 @@ import { gitReset, gitStashPush, svnRevert, svnResolve, svnResolveAccept, svnUpd
 import type { Translator } from "../../lib/i18n";
 import { Modal, ModalHeading } from "../shared/Modal";
 import { Button } from "../ui/button";
+import { ForceUpdateConfirmDialog } from "../dialogs/ForceUpdateConfirmDialog";
 
 interface StatusBarProps {
   isLoading: boolean;
@@ -81,6 +82,7 @@ export function IgnoreContextMenuOverlay({
   onOperationResult,
 }: IgnoreContextMenuOverlayProps) {
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+  const [isForceUpdateConfirmOpen, setIsForceUpdateConfirmOpen] = useState(false);
 
   if (!menu) return null;
 
@@ -88,6 +90,7 @@ export function IgnoreContextMenuOverlay({
   const isSvn = vcsType === "svn";
   const isGit = vcsType === "git" || vcsType === "mixed";
   const isConflicted = status === "conflicted";
+  const isMissing = status === "missing";
 
   async function handleSvnRevert() {
     if (!repositoryId) return;
@@ -143,8 +146,14 @@ export function IgnoreContextMenuOverlay({
     }
   }
 
-  async function handleSvnUpdateForce() {
+  function handleSvnUpdateForce() {
     if (!repositoryId) return;
+    setIsForceUpdateConfirmOpen(true);
+  }
+
+  async function handleForceUpdateExecute() {
+    if (!repositoryId) return;
+    setIsForceUpdateConfirmOpen(false);
     try {
       const result = await svnUpdateForce(repositoryId);
       onOperationResult(result);
@@ -237,11 +246,9 @@ export function IgnoreContextMenuOverlay({
             <button type="button" className="cmd-danger" onClick={handleSvnRevert}>
               SVN Revert
             </button>
-            {!isConflicted ? (
-              <button type="button" onClick={handleSvnUpdateForce}>
-                强制更新此目录
-              </button>
-            ) : null}
+            <button type="button" className="cmd-danger" onClick={handleSvnUpdateForce}>
+              强制更新 (Clean + Revert + Update)
+            </button>
           </>
         ) : null}
 
@@ -292,6 +299,12 @@ export function IgnoreContextMenuOverlay({
           </div>
         </div>
       </Modal>
+
+      <ForceUpdateConfirmDialog
+        open={isForceUpdateConfirmOpen}
+        onClose={() => setIsForceUpdateConfirmOpen(false)}
+        onConfirm={handleForceUpdateExecute}
+      />
     </>
   );
 }

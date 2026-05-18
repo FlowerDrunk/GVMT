@@ -1,4 +1,4 @@
-import { CSSProperties, MouseEvent, ReactNode } from "react";
+import { CSSProperties, memo, MouseEvent, ReactNode } from "react";
 
 export interface TreeViewNode {
   name: string;
@@ -20,7 +20,7 @@ interface TreeViewProps {
   rowClassName?: string;
 }
 
-export function TreeView({
+export const TreeView = memo(function TreeView({
   nodes,
   level = 0,
   expandedPaths,
@@ -87,8 +87,8 @@ export function TreeView({
               />
             ) : null}
           </div>
-        );
+                );
       })}
     </>
   );
-}
+});

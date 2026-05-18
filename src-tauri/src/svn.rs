@@ -874,100 +874,33 @@ fn svn_restore_missing(root_path: &str) -> Result<String, String> {
     Ok(combined)
 }
 
-// ── SVN Force Update (recover empty / tree-conflicted directories) ────────────
+// ── SVN Force Update (Clean → Revert → Update to latest) ──────────────────
 
-/// Force update a path to recover from tree conflicts, missing or empty directories.
-/// First restores any missing items via `svn revert`, then runs `svn update --force`.
-pub fn svn_update_force(root_path: &str, depth: Option<&str>) -> OperationResult {
-    // Restore missing items first — `svn update --force` alone won't bring them back
-    let restore_output = svn_restore_missing(root_path);
-
-    let mut args = vec!["update".to_string(), "--force".to_string(), root_path.to_string()];
-    if let Some(d) = depth {
-        if d != "infinity" {
-            args.push("--depth".to_string());
-            args.push(d.to_string());
-        }
-    }
-    match run_command_args("svn", &args) {
-        Ok(output) => {
-            let summary = parse_svn_update_output(&output);
-            let combined = match restore_output {
-                Ok(ref r) if !r.is_empty() => format!("[恢复缺失项]\n{r}\n\n[强制更新]\n{output}"),
-                _ => output.clone(),
-            };
-            let restore_count = restore_output.as_ref().map_or(0, |r| r.lines().count());
-            let msg = match (summary.total, restore_count) {
-                (0, 0) => "SVN 强制更新完成".to_string(),
-                (u, 0) => format!("SVN 强制更新完成（{} 项）", u),
-                (0, r) => format!("SVN 强制更新完成（恢复 {} 个缺失项）", r),
-                (u, r) => format!("SVN 强制更新完成（恢复 {} 个缺失项，更新 {} 项）", r, u),
-            };
-            success_operation("update", "svn", &msg, combined)
-        }
-        Err(error) => {
-            let missing_svn_cli = is_missing_svn_cli_error(&error);
-            OperationResult {
-                operation: "update".to_string(),
-                vcs_type: "svn".to_string(),
-                success: false,
-                summary: "SVN 强制更新失败".to_string(),
-                output: String::new(),
-                warning: Some(svn_failure_warning("强制更新", &error)),
-                missing_svn_cli,
-            }
-        }
-    }
-}
-
-/// Streaming version of force update — first restores missing items, then emits "svn-update-line" events.
-pub fn svn_update_force_streaming(
+/// Execute a single SVN step for the force-update pipeline, emitting output lines.
+fn svn_force_step(
     app: &tauri::AppHandle,
-    path: &str,
-    depth: Option<&str>,
-) -> OperationResult {
-    // Restore missing items first — `svn update --force` alone won't bring them back
-    let restore_output = svn_restore_missing(path);
-
-    let mut args = vec!["update".to_string(), "--force".to_string(), path.to_string()];
-    if let Some(d) = depth {
-        if d != "infinity" {
-            args.push("--depth".to_string());
-            args.push(d.to_string());
-        }
-    }
-
+    args: &[String],
+    label: &str,
+) -> Result<String, String> {
+    let _ = app.emit("svn-update-line", &format!("── {label} ──"));
     let resolved = crate::command_exec::resolve_program("svn");
-    let mut child = match new_command(&resolved)
-        .args(&args)
+    let mut child = new_command(&resolved)
+        .args(args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            return OperationResult {
-                operation: "update".to_string(),
-                vcs_type: "svn".to_string(),
-                success: false,
-                summary: "SVN 强制更新启动失败".to_string(),
-                output: String::new(),
-                warning: Some(e.to_string()),
-                missing_svn_cli: false,
-            };
-        }
-    };
+        .map_err(|e| e.to_string())?;
 
     crate::command_exec::set_running_pid(child.id());
 
-    let mut full_output = String::new();
+    let mut output = String::new();
     if let Some(stdout) = child.stdout.take() {
         let reader = std::io::BufReader::new(stdout);
         for line in reader.lines() {
             if let Ok(text) = line {
                 let _ = app.emit("svn-update-line", &text);
-                full_output.push_str(&text);
-                full_output.push('\n');
+                output.push_str(&text);
+                output.push('\n');
             }
         }
     }
@@ -981,37 +914,167 @@ pub fn svn_update_force_streaming(
     }
 
     if status.success() {
-        let summary = parse_svn_update_output(&full_output);
-        let combined = match restore_output {
-            Ok(ref r) if !r.is_empty() => format!("[恢复缺失项]\n{r}\n\n[强制更新]\n{full_output}"),
-            _ => full_output.clone(),
-        };
-        let restore_count = restore_output.as_ref().map_or(0, |r| r.lines().count());
-        let msg = match (summary.total, restore_count) {
-            (0, 0) => "SVN 强制更新完成".to_string(),
-            (u, 0) => format!("SVN 强制更新完成（{} 项）", u),
-            (0, r) => format!("SVN 强制更新完成（恢复 {} 个缺失项）", r),
-            (u, r) => format!("SVN 强制更新完成（恢复 {} 个缺失项，更新 {} 项）", r, u),
-        };
-        OperationResult {
-            operation: "update".to_string(),
-            vcs_type: "svn".to_string(),
-            success: true,
-            summary: msg,
-            output: combined,
-            warning: None,
-            missing_svn_cli: false,
-        }
+        Ok(output)
     } else {
-        let missing_svn_cli = is_missing_svn_cli_error(&stderr_output);
-        OperationResult {
-            operation: "update".to_string(),
-            vcs_type: "svn".to_string(),
-            success: false,
-            summary: "SVN 强制更新失败".to_string(),
-            output: full_output,
-            warning: Some(svn_failure_warning("强制更新", &stderr_output)),
-            missing_svn_cli,
+        Err(if stderr_output.trim().is_empty() { output } else { stderr_output })
+    }
+}
+
+/// Non-streaming force update: cleanup → revert -R → update.
+pub fn svn_update_force(root_path: &str, depth: Option<&str>) -> OperationResult {
+    let mut combined = String::new();
+
+    // 1. Cleanup — also remove unversioned & ignored items for a truly clean slate
+    match run_command_args("svn", &[
+        "cleanup".into(), "--remove-unversioned".into(), "--remove-ignored".into(), root_path.to_string(),
+    ]) {
+        Ok(out) => {
+            combined.push_str("[Cleanup]\n");
+            combined.push_str(&out);
+            combined.push_str("\n\n");
+        }
+        Err(e) => {
+            combined.push_str(&format!("[Cleanup] 失败 (继续执行): {e}\n\n"));
+        }
+    }
+
+    // 2. Revert -R (recursive)
+    match run_command_args("svn", &["revert".into(), "-R".into(), root_path.to_string()]) {
+        Ok(out) => {
+            combined.push_str("[Revert -R]\n");
+            combined.push_str(&out);
+            combined.push_str("\n\n");
+        }
+        Err(e) => {
+            return failed_operation("update", "svn", svn_failure_warning("revert", &e), false);
+        }
+    }
+
+    // 3. Update
+    let mut update_args = vec!["update".to_string(), root_path.to_string()];
+    if let Some(d) = depth {
+        if d != "infinity" {
+            update_args.push("--depth".to_string());
+            update_args.push(d.to_string());
+        }
+    }
+    match run_command_args("svn", &update_args) {
+        Ok(out) => {
+            combined.push_str("[Update]\n");
+            combined.push_str(&out);
+            let summary = parse_svn_update_output(&out);
+            let msg = if summary.total > 0 {
+                format!("SVN 强制更新完成（更新 {} 项）", summary.total)
+            } else {
+                "SVN 强制更新完成".to_string()
+            };
+            success_operation("update", "svn", &msg, combined)
+        }
+        Err(error) => {
+            let missing_svn_cli = is_missing_svn_cli_error(&error);
+            OperationResult {
+                operation: "update".to_string(),
+                vcs_type: "svn".to_string(),
+                success: false,
+                summary: "SVN 强制更新失败".to_string(),
+                output: combined,
+                warning: Some(svn_failure_warning("强制更新", &error)),
+                missing_svn_cli,
+            }
+        }
+    }
+}
+
+/// Streaming force update: cleanup → revert -R → update, all with real-time output.
+pub fn svn_update_force_streaming(
+    app: &tauri::AppHandle,
+    path: &str,
+    depth: Option<&str>,
+) -> OperationResult {
+    let mut combined = String::new();
+
+    // 1. Cleanup — also remove unversioned & ignored items for a truly clean slate
+    match svn_force_step(app, &[
+        "cleanup".into(), "--remove-unversioned".into(), "--remove-ignored".into(), path.to_string(),
+    ], "Cleanup") {
+        Ok(out) => {
+            let label = "[Cleanup]\n";
+            let _ = app.emit("svn-update-line", label);
+            combined.push_str(label);
+            combined.push_str(&out);
+            combined.push_str("\n");
+        }
+        Err(e) => {
+            let warn = format!("[Cleanup] 失败 (继续执行): {e}\n");
+            let _ = app.emit("svn-update-line", &warn);
+            combined.push_str(&warn);
+            combined.push('\n');
+        }
+    }
+
+    // 2. Revert -R
+    match svn_force_step(app, &["revert".into(), "-R".into(), path.to_string()], "Revert -R") {
+        Ok(out) => {
+            let label = "[Revert -R]\n";
+            let _ = app.emit("svn-update-line", label);
+            combined.push_str(label);
+            combined.push_str(&out);
+            combined.push_str("\n");
+        }
+        Err(e) => {
+            return OperationResult {
+                operation: "update".to_string(),
+                vcs_type: "svn".to_string(),
+                success: false,
+                summary: "SVN 强制更新失败".to_string(),
+                output: combined,
+                warning: Some(svn_failure_warning("revert", &e)),
+                missing_svn_cli: false,
+            };
+        }
+    }
+
+    // 3. Update
+    let mut update_args = vec!["update".to_string(), path.to_string()];
+    if let Some(d) = depth {
+        if d != "infinity" {
+            update_args.push("--depth".to_string());
+            update_args.push(d.to_string());
+        }
+    }
+    match svn_force_step(app, &update_args, "Update") {
+        Ok(out) => {
+            let label = "[Update]\n";
+            let _ = app.emit("svn-update-line", label);
+            combined.push_str(label);
+            combined.push_str(&out);
+            let summary = parse_svn_update_output(&out);
+            let msg = if summary.total > 0 {
+                format!("SVN 强制更新完成（更新 {} 项）", summary.total)
+            } else {
+                "SVN 强制更新完成".to_string()
+            };
+            OperationResult {
+                operation: "update".to_string(),
+                vcs_type: "svn".to_string(),
+                success: true,
+                summary: msg,
+                output: combined,
+                warning: None,
+                missing_svn_cli: false,
+            }
+        }
+        Err(e) => {
+            let missing_svn_cli = is_missing_svn_cli_error(&e);
+            OperationResult {
+                operation: "update".to_string(),
+                vcs_type: "svn".to_string(),
+                success: false,
+                summary: "SVN 强制更新失败".to_string(),
+                output: combined,
+                warning: Some(svn_failure_warning("强制更新", &e)),
+                missing_svn_cli,
+            }
         }
     }
 }

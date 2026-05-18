@@ -4015,10 +4015,6 @@ textarea:focus {
   gap: 10px;
 }
 
-.theme-settings-section {
-  gap: var(--space-md);
-}
-
 .settings-section-header {
   display: flex;
   align-items: flex-start;

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 
 interface DraggableCardProps {
   cardId: string;
@@ -10,7 +10,7 @@ interface DraggableCardProps {
   children: React.ReactNode;
 }
 
-export function DraggableCard({
+export const DraggableCard = memo(function DraggableCard({
   cardId,
   index,
   isDragging,
@@ -48,7 +48,7 @@ export function DraggableCard({
           </svg>
         </span>
       </div>
-      {children}
+        {children}
     </div>
   );
-}
+});

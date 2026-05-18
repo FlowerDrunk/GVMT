@@ -3,7 +3,6 @@ import type { AppSettings } from "../../hooks/useSettings";
 import type { WindowsContextMenuStatus, GhStatus } from "../../lib/api";
 import { checkGhStatus } from "../../lib/api";
 import type { AppLanguage, Translator } from "../../lib/i18n";
-import { DEFAULT_CUSTOM_THEME_JSON, useTheme } from "../../lib/theme";
 import { Modal, ModalHeading } from "../shared/Modal";
 import { Switch } from "../ui/switch";
 import { Button } from "../ui/button";
@@ -36,9 +35,6 @@ export function SettingsDialog({
   const titleId = "settings-dialog-title";
   const [ghStatus, setGhStatus] = useState<GhStatus | null>(null);
   const [isGhLoading, setIsGhLoading] = useState(false);
-  const { customThemeJson, customThemeError, setCustomThemeJson, resetCustomTheme } = useTheme();
-  const [themeDraft, setThemeDraft] = useState(customThemeJson || DEFAULT_CUSTOM_THEME_JSON);
-  const [themeDraftError, setThemeDraftError] = useState<string | null>(customThemeError);
 
   useEffect(() => {
     if (!open) return;
@@ -49,22 +45,8 @@ export function SettingsDialog({
       .finally(() => setIsGhLoading(false));
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    setThemeDraft(customThemeJson || DEFAULT_CUSTOM_THEME_JSON);
-    setThemeDraftError(customThemeError);
-  }, [customThemeError, customThemeJson, open]);
 
-  function handleApplyCustomTheme() {
-    const result = setCustomThemeJson(themeDraft);
-    setThemeDraftError(result.ok ? null : result.error ?? "Invalid theme JSON.");
-  }
 
-  function handleResetCustomTheme() {
-    resetCustomTheme();
-    setThemeDraft(DEFAULT_CUSTOM_THEME_JSON);
-    setThemeDraftError(null);
-  }
 
   return (
     <Modal open={open} onClose={onClose} labelledBy={titleId} className="settings-dialog">
@@ -76,37 +58,6 @@ export function SettingsDialog({
       />
 
       <div className="settings-sections">
-        <section className="settings-section theme-settings-section">
-          <div className="settings-section-header">
-            <svg className="settings-section-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 5.8 2 10.5S6 19 12 19h1.5a2.5 2.5 0 0 0 0-5H12a2 2 0 0 1 0-4h1.5A2.5 2.5 0 0 0 16 7.5C16 4.5 14.3 2 12 2Z"/></svg>
-            <div>
-              <h4>自定义主题 JSON</h4>
-              <p>支持 algorithm 与 token 字段，token 会统一映射为全局 CSS 变量。</p>
-            </div>
-          </div>
-          <textarea
-            className="settings-theme-editor"
-            spellCheck={false}
-            value={themeDraft}
-            onChange={(event) => {
-              setThemeDraft(event.currentTarget.value);
-              setThemeDraftError(null);
-            }}
-            aria-label="Custom theme JSON"
-          />
-          {themeDraftError ? <p className="inline-warning">{themeDraftError}</p> : null}
-          <div className="settings-action-row">
-            <Button variant="default" type="button" onClick={handleApplyCustomTheme}>
-              应用主题
-            </Button>
-            <Button variant="secondary" type="button" onClick={() => setThemeDraft(DEFAULT_CUSTOM_THEME_JSON)}>
-              填入示例
-            </Button>
-            <Button variant="ghost" type="button" onClick={handleResetCustomTheme}>
-              重置主题
-            </Button>
-          </div>
-        </section>
         {/* ── 语言 ── */}
         <section className="settings-section">
           <div className="settings-section-header">
