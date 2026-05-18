@@ -38,6 +38,7 @@ export function IgnoreDialog({
         title={t("ignore.title")}
         titleId={titleId}
         onClose={onClose}
+        t={t}
       />
 
       {ignoreRules ? (

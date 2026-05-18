@@ -8,13 +8,15 @@ import {
   type RepositoryFilePreview,
 } from "../lib/api";
 import { replaceFileTreeChildren } from "../lib/utils";
+import type { Translator } from "../lib/i18n";
 
 interface UseFileTreeOptions {
   selectedRepository: Repository | undefined;
   setStatus: (value: string) => void;
+  t: Translator;
 }
 
-export function useFileTree({ selectedRepository, setStatus }: UseFileTreeOptions) {
+export function useFileTree({ selectedRepository, setStatus, t }: UseFileTreeOptions) {
   const [repositoryFiles, setRepositoryFiles] = useState<RepositoryDirectory | null>(null);
   const [expandedFilePaths, setExpandedFilePaths] = useState<Set<string>>(new Set());
   const [loadedFilePaths, setLoadedFilePaths] = useState<Set<string>>(new Set());
@@ -25,7 +27,7 @@ export function useFileTree({ selectedRepository, setStatus }: UseFileTreeOption
 
   async function handleLoadRepositoryFiles(relativePath = "") {
     if (!selectedRepository) {
-      setStatus("请先选择一个仓库");
+      setStatus(t("status.selectRepoFirst"));
       return;
     }
 
@@ -37,7 +39,7 @@ export function useFileTree({ selectedRepository, setStatus }: UseFileTreeOption
       setIsFilePreviewOpen(false);
       setExpandedFilePaths(new Set());
       setLoadedFilePaths(new Set([nextFiles.path]));
-      setStatus(nextFiles.path ? `已打开 ${nextFiles.path}` : "已打开仓库根目录");
+      setStatus(nextFiles.path ? t("status.openedPath", { path: nextFiles.path }) : t("status.openedRepoRoot"));
     } catch (error) {
       setRepositoryFiles(null);
       setStatus(error instanceof Error ? error.message : String(error));
@@ -99,7 +101,7 @@ export function useFileTree({ selectedRepository, setStatus }: UseFileTreeOption
     try {
       const preview = await readRepositoryFile(selectedRepository.id, entry.path);
       setSelectedFilePreview(preview);
-      setStatus(`已预览 ${entry.path}`);
+      setStatus(t("status.previewedFile", { path: entry.path }));
     } catch (error) {
       setSelectedFilePreview(null);
       setStatus(error instanceof Error ? error.message : String(error));

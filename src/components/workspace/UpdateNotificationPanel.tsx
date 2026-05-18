@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { checkRemoteUpdates, updateRepository, type RemoteUpdateStatus, type Repository } from "../../lib/api";
 import type { AppSettings } from "../../hooks/useSettings";
+import type { Translator } from "../../lib/i18n";
 
 interface RepoUpdateInfo {
   repository: Repository;
@@ -11,9 +12,10 @@ interface UpdateNotificationPanelProps {
   repositories: Repository[];
   settings: AppSettings;
   onUpdateCompleted: () => void;
+  t: Translator;
 }
 
-export function UpdateNotificationPanel({ repositories, settings, onUpdateCompleted }: UpdateNotificationPanelProps) {
+export function UpdateNotificationPanel({ repositories, settings, onUpdateCompleted, t }: UpdateNotificationPanelProps) {
   const [notifications, setNotifications] = useState<RepoUpdateInfo[]>([]);
   const [isUpdating, setIsUpdating] = useState<Set<number>>(new Set());
   const dismissedRef = useRef<Set<number>>(new Set());
@@ -88,9 +90,9 @@ export function UpdateNotificationPanel({ repositories, settings, onUpdateComple
           <div className="update-notification-header">
             <div className="update-notification-info">
               <strong className="update-notification-repo">{n.repository.name}</strong>
-              <span className="update-notification-desc">{n.remoteStatus.details ?? "远端有更新可用"}</span>
+              <span className="update-notification-desc">{n.remoteStatus.details ?? t("notification.remoteUpdateAvailable")}</span>
             </div>
-            <button className="update-notification-close" type="button" onClick={() => handleDismiss(n.repository.id)} title="关闭">
+            <button className="update-notification-close" type="button" onClick={() => handleDismiss(n.repository.id)} title={t("ui.close")}>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
                 <path d="M18 6 6 18" /><path d="m6 6 12 12" />
               </svg>
@@ -102,7 +104,7 @@ export function UpdateNotificationPanel({ repositories, settings, onUpdateComple
             disabled={isUpdating.has(n.repository.id)}
             onClick={() => handleUpdate(n.repository.id)}
           >
-            {isUpdating.has(n.repository.id) ? "更新中..." : "更新"}
+            {isUpdating.has(n.repository.id) ? t("notification.updating") : t("notification.update")}
           </button>
         </div>
       ))}

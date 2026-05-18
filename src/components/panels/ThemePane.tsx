@@ -294,6 +294,7 @@ export function ThemeDialog({ open, onClose, t, settings, onUpdateSettings }: Th
         title="主题设置"
         titleId="theme-dialog-title"
         onClose={onClose}
+        t={t}
       />
       <div className="theme-dialog-body">
         {/* ── 预设主题 ── */}

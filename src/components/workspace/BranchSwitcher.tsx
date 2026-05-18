@@ -49,6 +49,7 @@ export function BranchSwitcher({ open, onClose, repository, t, onSwitched }: Bra
         title={t("branch.title")}
         titleId="branch-switcher-title"
         onClose={onClose}
+        t={t}
       />
       <div className="branch-list">
         {isLoading ? (

@@ -1,17 +1,22 @@
 import type { ChangeItem, ChangeStatus, RepositoryFileEntry, VcsType } from "./api";
 import type { TreeViewNode } from "../components/shared/TreeView";
+import type { Translator } from "./i18n";
 
-export const emptyStateCopy = {
-  title: "还没有仓库",
-  body: "添加一个 Git 或 SVN 工作副本，GVMT 会识别类型并记录到本地 SQLite。",
-};
+export function getEmptyStateCopy(t: Translator) {
+  return {
+    title: t("repo.emptyTitle"),
+    body: t("repo.emptyBody"),
+  };
+}
 
-export const vcsDescriptions: Record<VcsType, string> = {
-  git: "已检测到 Git 工作区",
-  svn: "已检测到 SVN 工作副本",
-  mixed: "当前目录同时包含 Git 与 SVN 信息",
-  unknown: "未检测到 Git 或 SVN 元数据",
-};
+export function getVcsDescriptions(t: Translator): Record<VcsType, string> {
+  return {
+    git: t("repo.gitDetected"),
+    svn: t("repo.svnDetected"),
+    mixed: t("repo.mixedDetected"),
+    unknown: t("repo.unknownDetected"),
+  };
+}
 
 export function formatFileSize(size: number | null) {
   if (size === null) return "-";
@@ -45,8 +50,8 @@ export function statusTone(vcsType: VcsType) {
   return "ready";
 }
 
-export function formatRemoteUrlForDisplay(remoteUrl: string | null) {
-  if (!remoteUrl) return "未检测到";
+export function formatRemoteUrlForDisplay(remoteUrl: string | null, notDetectedLabel?: string) {
+  if (!remoteUrl) return notDetectedLabel ?? "未检测到";
 
   try {
     return decodeURI(remoteUrl);

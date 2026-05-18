@@ -8,6 +8,7 @@ import {
   type QualityCheckType,
   type Repository,
 } from "../lib/api";
+import type { Translator } from "../lib/i18n";
 
 const fallbackTemplates: QualityCheckTemplate[] = [
   {
@@ -19,7 +20,7 @@ const fallbackTemplates: QualityCheckTemplate[] = [
   },
   {
     checkType: "playwrightUi",
-    label: "Playwright UI 测试",
+    label: "Playwright UI tests",
     command: "npm run test:ui",
     available: true,
     unavailableReason: null,
@@ -37,12 +38,14 @@ interface UseQualityChecksOptions {
   selectedRepository: Repository | undefined;
   setStatus: (status: string) => void;
   showToast: (message: string, tone?: "success" | "error" | "info") => void;
+  t: Translator;
 }
 
 export function useQualityChecks({
   selectedRepository,
   setStatus,
   showToast,
+  t,
 }: UseQualityChecksOptions) {
   const [templates, setTemplates] = useState<QualityCheckTemplate[]>(fallbackTemplates);
   const [results, setResults] = useState<Partial<Record<QualityCheckType, QualityCheckResult>>>({});
@@ -93,18 +96,18 @@ export function useQualityChecks({
 
   async function runCheck(checkType: QualityCheckType) {
     if (!selectedRepository) {
-      setStatus("请先选择一个仓库");
+      setStatus(t("status.selectRepoFirst"));
       return;
     }
 
     const template = templates.find((item) => item.checkType === checkType);
     if (template && !template.available) {
-      setStatus(template.unavailableReason ?? "当前检查不可用");
+      setStatus(template.unavailableReason ?? t("status.checkUnavailable"));
       return;
     }
 
     setRunningChecks((current) => new Set(current).add(checkType));
-    setStatus(`正在运行 ${template?.label ?? "质量检查"}...`);
+    setStatus(t("status.runningCheck", { label: template?.label ?? "quality check" }));
     try {
       const result = await runQualityCheck(selectedRepository.id, checkType);
       setResults((current) => ({ ...current, [checkType]: result }));

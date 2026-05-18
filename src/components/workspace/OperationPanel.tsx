@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { OperationResult, OperationLog } from "../../lib/api";
 import type { Translator } from "../../lib/i18n";
 import type { HistoryEntry } from "../../hooks/useOperationHistory";
-import { VcsLabels } from "../../lib/constants";
+import { getVcsLabels } from "../../lib/constants";
 import { Button } from "../ui/button";
 import { Modal, ModalHeading } from "../shared/Modal";
 
@@ -43,7 +43,7 @@ export type DetailSource =
   | { kind: "result"; result: OperationResult; timestamp?: never }
   | { kind: "log"; log: OperationLog; timestamp?: string };
 
-export function OperationDetailModal({ data, open, onClose }: { data: DetailSource | null; open: boolean; onClose: () => void }) {
+export function OperationDetailModal({ data, open, onClose, t }: { data: DetailSource | null; open: boolean; onClose: () => void; t: Translator }) {
   if (!data) return null;
   const title = data.kind === "result" ? data.result.summary : data.log.summary;
   const vcsType = data.kind === "result" ? data.result.vcsType : data.log.vcsType;
@@ -56,25 +56,26 @@ export function OperationDetailModal({ data, open, onClose }: { data: DetailSour
   return (
     <Modal open={open} onClose={onClose} labelledBy="operation-detail-title" className="operation-detail-modal">
       <ModalHeading
-        eyebrow={`${VcsLabels[vcsType as keyof typeof VcsLabels] ?? vcsType} · ${operation}`}
+        eyebrow={`${getVcsLabels(t)[vcsType] ?? vcsType} · ${operation}`}
         title={title}
         titleId="operation-detail-title"
         onClose={onClose}
+        t={t}
       />
       <div className="operation-detail-body">
         <div className="operation-detail-status">
-          <span className={`status-pill ${success ? "success" : "failed"}`}>{success ? "成功" : "失败"}</span>
+          <span className={`status-pill ${success ? "success" : "failed"}`}>{success ? t("ui.success") : t("ui.failed")}</span>
           {ts ? <time>{ts}</time> : null}
         </div>
         {warning ? (
           <div className="operation-detail-warning">
-            <strong>警告</strong>
+            <strong>{t("ui.warning")}</strong>
             <p>{warning}</p>
           </div>
         ) : null}
         {output ? (
           <div className="operation-detail-output">
-            <strong>输出</strong>
+            <strong>{t("ui.output")}</strong>
             <pre>{output}</pre>
           </div>
         ) : null}
@@ -83,24 +84,25 @@ export function OperationDetailModal({ data, open, onClose }: { data: DetailSour
   );
 }
 
-function ResultCard({ result, onOpenSvnDownload, onRetryPush, onShowDetail }: {
+function ResultCard({ result, onOpenSvnDownload, onRetryPush, onShowDetail, t }: {
   result: OperationResult;
   onOpenSvnDownload: (target: "tortoise" | "sliksvn") => void;
   onRetryPush?: () => void;
   onShowDetail?: (data: DetailSource) => void;
+  t: Translator;
 }) {
   const isFailedPush = result.operation === "push" && !result.success;
   return (
     <div className={`operation-card ${result.success ? "success" : "failed"}`}
       onDoubleClick={() => onShowDetail?.({ kind: "result", result })}
-      title="双击查看详情"
+      title={t("ui.doubleClickDetail")}
     >
       <div className="operation-heading">
-        <strong>{VcsLabels[result.vcsType]}</strong>
+        <strong>{getVcsLabels(t)[result.vcsType]}</strong>
         <span>{result.summary}</span>
         {isFailedPush && onRetryPush ? (
           <Button variant="secondary" size="sm" className="retry-push-btn" onClick={onRetryPush}>
-            重试 Push
+            {t("ui.retryPush")}
           </Button>
         ) : null}
       </div>
@@ -110,10 +112,10 @@ function ResultCard({ result, onOpenSvnDownload, onRetryPush, onShowDetail }: {
           {result.missingSvnCli ? (
             <div className="hint-actions">
               <Button variant="secondary" onClick={() => onOpenSvnDownload("tortoise")}>
-                下载 / 修改 TortoiseSVN
+                {t("status.downloadTortoise")}
               </Button>
               <Button variant="secondary" onClick={() => onOpenSvnDownload("sliksvn")}>
-                下载 SlikSVN
+                {t("status.downloadSlikSvn")}
               </Button>
             </div>
           ) : null}
@@ -124,14 +126,14 @@ function ResultCard({ result, onOpenSvnDownload, onRetryPush, onShowDetail }: {
   );
 }
 
-function PersistedResultCard({ log, onShowDetail }: { log: OperationLog; onShowDetail?: (data: DetailSource) => void }) {
+function PersistedResultCard({ log, onShowDetail, t }: { log: OperationLog; onShowDetail?: (data: DetailSource) => void; t: Translator }) {
   return (
     <div className={`operation-card ${log.success ? "success" : "failed"}`}
       onDoubleClick={() => onShowDetail?.({ kind: "log", log })}
-      title="双击查看详情"
+      title={t("ui.doubleClickDetail")}
     >
       <div className="operation-heading">
-        <strong>{VcsLabels[log.vcsType as keyof typeof VcsLabels] ?? log.vcsType}</strong>
+        <strong>{getVcsLabels(t)[log.vcsType as keyof ReturnType<typeof getVcsLabels>] ?? log.vcsType}</strong>
         <span>{log.summary}</span>
       </div>
       {log.warning ? (
@@ -160,7 +162,7 @@ export function OperationPanel({ operationResults, history, persistedLogs, t, on
 
   return (
     <section className="panel operation-panel">
-      <OperationDetailModal data={detailData} open={detailOpen} onClose={() => setDetailOpen(false)} />
+      <OperationDetailModal data={detailData} open={detailOpen} onClose={() => setDetailOpen(false)} t={t} />
 
       <div className="panel-title-row">
         <div>
@@ -170,7 +172,7 @@ export function OperationPanel({ operationResults, history, persistedLogs, t, on
         <div className="panel-title-row-actions">
           <span className="soft-chip">{hasCurrent ? t("operation.current") : `${persistedLogs.length} ${t("operation.entryCount")}`}</span>
           {hasPersisted ? (
-            <Button variant="ghost" onClick={onClearHistory} title="清除历史">
+            <Button variant="ghost" onClick={onClearHistory} title="Clear history">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
             </Button>
           ) : null}
@@ -180,7 +182,7 @@ export function OperationPanel({ operationResults, history, persistedLogs, t, on
       {hasCurrent ? (
         <div className="operation-list">
           {operationResults.map((result) => (
-            <ResultCard key={`${result.vcsType}-${result.operation}`} result={result} onOpenSvnDownload={onOpenSvnDownload} onRetryPush={onRetryPush} onShowDetail={handleShowDetail} />
+            <ResultCard key={`${result.vcsType}-${result.operation}`} result={result} onOpenSvnDownload={onOpenSvnDownload} onRetryPush={onRetryPush} onShowDetail={handleShowDetail} t={t} />
           ))}
         </div>
       ) : null}
@@ -195,7 +197,7 @@ export function OperationPanel({ operationResults, history, persistedLogs, t, on
               {persistedLogs.map((log) => (
                 <div className="history-group" key={log.id}>
                   <time className="history-time">{formatPersistedTimestamp(log.createdAt)}</time>
-                  <PersistedResultCard log={log} onShowDetail={handleShowDetail} />
+                  <PersistedResultCard log={log} onShowDetail={handleShowDetail} t={t} />
                 </div>
               ))}
             </div>

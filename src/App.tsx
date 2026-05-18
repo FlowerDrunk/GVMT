@@ -1,7 +1,7 @@
 import { FormEvent, MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import fileIconUrl from "../src-tauri/icons/file.png";
 import folderIconUrl from "../src-tauri/icons/folder.png";
-import { changeKey, VcsLabels } from "./lib/constants";
+import { changeKey, getVcsLabels } from "./lib/constants";
 import { applyDocumentLanguage, createTranslator } from "./lib/i18n";
 import {
   addRepository,
@@ -91,20 +91,20 @@ function AppContent() {
   const [activeSidebarTab, setActiveSidebarTab] = useState<string>("changes");
   const [windowsContextMenuStatus, setWindowsContextMenuStatus] = useState<WindowsContextMenuStatus | null>(null);
   const [isWindowsContextMenuLoading, setIsWindowsContextMenuLoading] = useState(false);
-  const [status, setStatus] = useState("正在启动...");
+  const [status, setStatus] = useState(t("status.starting"));
   const startupContextHandledRef = useRef(false);
 
   const { visibleSections, toggleSection } = useVisibleSections();
   const ignoreContextMenu = useContextMenu<{ path: string; vcsType: VcsType; status?: ChangeStatus }>();
 
-  const repo = useRepositories({ setStatus, setIsLoading });
+  const repo = useRepositories({ setStatus, setIsLoading, t });
 
   // Track initial load completion
   useEffect(() => {
     if (!isLoading && !hasInitialized && repo.repositories.length >= 0) {
       setHasInitialized(true);
       if (repo.repositories.length === 0) {
-        setStatus("准备就绪 — 请添加仓库");
+        setStatus(t("status.startupReady"));
       }
     }
   }, [isLoading, hasInitialized, repo.repositories.length]);
@@ -117,6 +117,7 @@ function AppContent() {
     refreshIntervalMs: settings.refreshIntervalMs,
     setStatus,
     setIsLoading,
+    t,
   });
 
   const changedFiles = statusHook.repositoryStatus?.changes ?? [];
@@ -124,12 +125,13 @@ function AppContent() {
 
   statusHook.syncKeysRef.current = commit.syncKeys;
 
-  const fileTree = useFileTree({ selectedRepository: repo.selectedRepository, setStatus });
-  const changeTree = useChangeTree({ selectedRepository: repo.selectedRepository, setStatus });
+  const fileTree = useFileTree({ selectedRepository: repo.selectedRepository, setStatus, t });
+  const changeTree = useChangeTree({ selectedRepository: repo.selectedRepository, setStatus, t });
   const qualityChecks = useQualityChecks({
     selectedRepository: repo.selectedRepository,
     setStatus,
     showToast,
+    t,
   });
 
   const [isUpdating, setIsUpdating] = useState(false);
@@ -176,6 +178,7 @@ function AppContent() {
     setOperationResults: statusHook.setOperationResults,
     onCloseContextMenu: ignoreContextMenu.close,
     setStatus,
+    t,
   });
 
   const cardOrder = useCardOrder();
@@ -208,7 +211,7 @@ function AppContent() {
   async function handleCommitRepository(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!repo.selectedRepository) {
-      setStatus("请先选择一个仓库");
+      setStatus(t("status.selectRepoFirst"));
       return;
     }
 
@@ -216,11 +219,11 @@ function AppContent() {
       (change) => commit.selectedCommitKeys.has(changeKey(change)),
     );
     if (selectedFiles.length === 0) {
-      setStatus("请选择需要提交的文件");
+      setStatus(t("status.selectFilesToCommit"));
       return;
     }
     if (!commit.commitMessage.trim()) {
-      setStatus("请输入提交信息");
+      setStatus(t("status.enterCommitMessage"));
       return;
     }
 
@@ -252,15 +255,15 @@ function AppContent() {
         commit.setCommitError(errorMsg);
       }
 
-      setStatus(failed.length === 0 ? "提交完成" : `${failed.length} 个提交步骤失败`);
+      setStatus(failed.length === 0 ? t("status.commitComplete") : t("status.commitStepsFailed", { count: failed.length }));
       // 只要本地提交成功就关闭弹窗 — push 失败不阻塞后续操作
       if (commitSuccess) {
         commit.setCommitMessage("");
         commit.setIsCommitDialogOpen(false);
         if (pushFailed) {
-          showToast("本地提交成功，但 Push 失败，请点击重试按钮", "error");
+          showToast(t("status.pushFailedToast"), "error");
         } else {
-          showToast("提交完成", "success");
+          showToast(t("status.commitSuccessToast"), "success");
         }
       }
       await statusHook.loadRepositoryStatus(true);
@@ -341,10 +344,10 @@ function AppContent() {
         commit.syncKeys(nextStatus.changes);
         setActiveSidebarTab("changes");
         setTimeout(() => commit.setIsCommitDialogOpen(true), 100);
-        setStatus("已从右键菜单进入提交流程");
+        setStatus(t("status.enteredCommitFromContextMenu"));
       } else {
-        showToast(`已打开 ${repository.name}`, "info");
-        setStatus(`已从右键菜单打开 ${repository.name}`);
+        showToast(t("status.repoOpenedToast", { name: repository.name }), "info");
+        setStatus(t("status.openedFromContextMenu", { name: repository.name }));
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -361,7 +364,7 @@ function AppContent() {
       const nextStatus = await getWindowsContextMenuStatus();
       setWindowsContextMenuStatus(nextStatus);
       if (showResult) {
-        setStatus(nextStatus.installed ? "Windows 右键菜单已安装" : "Windows 右键菜单未安装");
+        setStatus(nextStatus.installed ? t("status.contextMenuInstalled") : t("status.contextMenuNotInstalled"));
       }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
@@ -375,8 +378,8 @@ function AppContent() {
     try {
       const nextStatus = await installWindowsContextMenu();
       setWindowsContextMenuStatus(nextStatus);
-      setStatus(nextStatus.installed ? "已安装 Windows 右键菜单" : "Windows 右键菜单安装状态未知");
-      showToast("已安装 Windows 右键菜单", "success");
+      setStatus(nextStatus.installed ? t("status.contextMenuInstalledToast") : t("status.contextMenuNotInstalled"));
+      showToast(t("status.contextMenuInstalledToast"), "success");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setStatus(message);
@@ -391,8 +394,8 @@ function AppContent() {
     try {
       const nextStatus = await uninstallWindowsContextMenu();
       setWindowsContextMenuStatus(nextStatus);
-      setStatus("已移除 Windows 右键菜单");
-      showToast("已移除 Windows 右键菜单", "success");
+      setStatus(t("status.contextMenuRemoved"));
+      showToast(t("status.contextMenuRemovedToast"), "success");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setStatus(message);
@@ -418,7 +421,7 @@ function AppContent() {
     const file = changedFiles.find((f) => f.path === path && f.vcsType === vcsType);
     const resolvedStatus = status ?? file?.status;
     if (!resolvedStatus) {
-      setStatus("未找到可查看的 diff 信息");
+      setStatus(t("status.noDiffInfo"));
       return;
     }
 
@@ -429,9 +432,9 @@ function AppContent() {
   const currentChangeCount = statusHook.repositoryStatus?.summary.total ?? 0;
   const currentReviewState = statusHook.repositoryStatus
     ? statusHook.repositoryStatus.clean
-      ? "可进入评审"
-      : "有待处理变更"
-    : "等待检测";
+      ? t("review.reviewStateClean")
+      : t("review.reviewStatePending")
+    : t("review.reviewStateWaiting");
   const breadcrumbs = fileBreadcrumbs(fileTree.repositoryFiles?.path ?? "");
   const changeTreeData = buildChangeTree(changedFiles);
   const changeTreeWithRoot: ChangeTreeNode[] =
@@ -467,7 +470,7 @@ function AppContent() {
       <>
         <img className="tree-icon" src={isDirectory ? folderIconUrl : fileIconUrl} alt="" aria-hidden="true" />
         <strong>{node.name}</strong>
-        <span>{isDirectory ? "文件夹" : entry ? formatFileSize(entry.size) : "-"}</span>
+        <span>{isDirectory ? t("ui.folder") : entry ? formatFileSize(entry.size) : "-"}</span>
         <time>{entry ? formatModifiedAt(entry.modifiedAt) : "-"}</time>
       </>
     );
@@ -482,13 +485,13 @@ function AppContent() {
         <strong>{node.name}</strong>
         {changeNode?.change ? (
           <>
-            <ChangeBadge status={changeNode.change.status} />
-            <small>{VcsLabels[changeNode.change.vcsType]}</small>
+            <ChangeBadge status={changeNode.change.status} t={t} />
+            <small>{getVcsLabels(t)[changeNode.change.vcsType]}</small>
           </>
         ) : (
           <>
-            <span>{node.children.length} 项</span>
-            <small>目录</small>
+            <span>{node.children.length} {t("ui.items")}</span>
+            <small>{t("ui.directory")}</small>
           </>
         )}
       </>
@@ -553,10 +556,11 @@ function AppContent() {
             onRefreshRepositories={repo.refreshRepositories}
             onDropPath={(droppedPath) => {
               repo.setPath(droppedPath);
-              showToast(`已识别路径：${droppedPath}`, "info");
+              showToast(t("status.pathRecognized", { path: droppedPath }), "info");
             }}
             onSetStatus={setStatus}
             isCloningActive={isUpdating}
+            t={t}
             onCloneRepository={async (url: string, targetPath: string, shallow: boolean, ignoreExternals: boolean) => {
               setIsUpdating(true);
               setIsCloningOp(true);
@@ -585,8 +589,8 @@ function AppContent() {
               }
               try {
                 await cloneRepository({ url, path: targetPath, shallow, ignoreExternals });
-                showToast("克隆完成", "success");
-                setStatus("克隆完成");
+                showToast(t("status.cloneComplete"), "success");
+                setStatus(t("status.cloneComplete"));
                 return true;
               } catch (error) {
                 const msg = error instanceof Error ? error.message : String(error);
@@ -751,11 +755,11 @@ function AppContent() {
                             const result = await retryPush(repo.selectedRepository.id);
                             statusHook.setOperationResults([result]);
                             if (result.success) {
-                              showToast("Push 重试成功", "success");
-                              setStatus("Push 重试成功");
+                              showToast(t("status.pushRetrySuccess"), "success");
+                              setStatus(t("status.pushRetrySuccess"));
                             } else {
-                              showToast("Push 重试失败", "error");
-                              setStatus("Push 重试失败");
+                              showToast(t("status.pushRetryFailed"), "error");
+                              setStatus(t("status.pushRetryFailed"));
                             }
                           } catch (error) {
                             const msg = error instanceof Error ? error.message : String(error);
@@ -781,6 +785,7 @@ function AppContent() {
                   isDropTarget={isDropTarget}
                   registerCardRef={cardOrder.registerCardRef}
                   onMouseDown={cardOrder.handleMouseDown}
+                  t={t}
                 >
                   {content}
                 </DraggableCard>
@@ -794,7 +799,7 @@ function AppContent() {
             tabs={[
               {
                 key: "changes",
-                label: "变更状态",
+                label: t("changes.title"),
                 visible: visibleSections.changes,
                 content: (
                   <ChangesPane
@@ -820,7 +825,7 @@ function AppContent() {
               },
               {
                 key: "review",
-                label: "评审与质量",
+                label: t("review.reviewQuality"),
                 visible: visibleSections.review,
                 content: (
                   <ReviewPane
@@ -849,18 +854,19 @@ function AppContent() {
         className="diff-dialog"
       >
         <ModalHeading
-          eyebrow="Diff view"
-          title={changeTree.selectedChange?.path ?? "变更详情"}
+          eyebrow={t("diff.view")}
+          title={changeTree.selectedChange?.path ?? t("review.reviewStatePending")}
           titleId="diff-preview-title"
           onClose={changeTree.closeDiffDialog}
+          t={t}
         />
         <section className="diff-panel diff-dialog-body">
           {changeTree.selectedChange ? (
             <div className="panel-title-row">
               <div className="diff-panel-heading">
-                <ChangeBadge status={changeTree.selectedChange.status} />
+                <ChangeBadge status={changeTree.selectedChange.status} t={t} />
                 <strong title={changeTree.selectedChange.path}>{changeTree.selectedChange.path}</strong>
-                <span className="soft-chip">{VcsLabels[changeTree.selectedChange.vcsType]}</span>
+                <span className="soft-chip">{getVcsLabels(t)[changeTree.selectedChange.vcsType]}</span>
               </div>
             </div>
           ) : null}
@@ -868,8 +874,8 @@ function AppContent() {
           <DiffCodeBlock
             content={
               changeTree.isDiffLoading
-                ? "正在加载 diff..."
-                : changeTree.diffPreview?.content || "暂无 diff 内容"
+                ? t("diff.loading")
+                : changeTree.diffPreview?.content || t("diff.empty")
             }
             path={changeTree.selectedChange?.path}
           />
@@ -931,7 +937,7 @@ function AppContent() {
         commitMessage={commit.commitMessage}
         isCommitLoading={commit.isCommitLoading}
         latestQualityResult={qualityChecks.latestResult}
-        vcsLabels={VcsLabels}
+        vcsLabels={getVcsLabels(t)}
         commitError={commit.commitError}
         commitHash={commit.commitHash}
         onToggleAllFiles={commit.toggleAllCommitFiles}
@@ -980,22 +986,25 @@ function AppContent() {
         data={failureDetail}
         open={failureDetailOpen}
         onClose={() => setFailureDetailOpen(false)}
+        t={t}
       />
 
       <UpdateProgressDialog
         open={isUpdating}
         onClose={() => { setIsUpdating(false); setIsCloningOp(false); }}
         lines={updateLines}
-        title={isCloningOp ? "远程克隆" : "SVN Update"}
+        title={isCloningOp ? t("update.remoteClone") : "SVN Update"}
         onCancel={isCloningOp ? () => { cancelOperation(); setIsUpdating(false); setIsCloningOp(false); } : undefined}
         progress={cloneProgress}
         stats={progressStats}
+        t={t}
       />
 
       <UpdateNotificationPanel
         repositories={repo.repositories}
         settings={settings}
         onUpdateCompleted={() => statusHook.loadRepositoryStatus(true)}
+        t={t}
       />
     </main>
   );

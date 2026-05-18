@@ -19,7 +19,7 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
   const [infoState, setInfoState] = useState<LoadingState>("idle");
   const [prState, setPrState] = useState<LoadingState>("idle");
   const [runState, setRunState] = useState<LoadingState>("idle");
-  const [infoError, setInfoError] = useState<string | null>(null);// 创建 PR 弹窗状态
+  const [infoError, setInfoError] = useState<string | null>(null);
   const [isCreatePrDialogOpen, setIsCreatePrDialogOpen] = useState(false);
   const [prTitle, setPrTitle] = useState("");
   const [prBody, setPrBody] = useState("");
@@ -41,7 +41,6 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
     setRunState("idle");
     setInfoError(null);
 
-    // gh CLI only works with Git repositories, skip SVN
     if (!remoteUrl || isSvn) return;
 
     setInfoState("loading");
@@ -49,7 +48,6 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
       .then((info) => {
         setRepoInfo(info);
         setInfoState("loaded");
-        // 自动填充默认分支和目标分支
         setPrBase(info.defaultBranch || "main");
       })
       .catch((err) => {
@@ -74,7 +72,6 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
       .catch(() => setRunState("error"));
   }, [remoteUrl, isSvn]);
 
-  // 打开创建 PR 弹窗时自动填充当前分支
   function handleOpenCreatePr() {
     if (!selectedRepository?.branchOrRevision) return;
     setPrHead(selectedRepository.branchOrRevision);
@@ -97,9 +94,8 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
         head: prHead.trim(),
         base: prBase.trim(),
       });
-      setPrCreateSuccess(`PR #${pr.number} 创建成功`);
+      setPrCreateSuccess(t("github.prCreated", { number: pr.number }));
       setPrs((prev) => [pr, ...prev]);
-      // 3秒后自动关闭
       setTimeout(() => {
         setIsCreatePrDialogOpen(false);
         setPrCreateSuccess(null);
@@ -118,10 +114,10 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
       <div className="section-kicker">GitHub</div>
 
       {infoState === "loading" ? (
-        <p className="github-loading">加载中...</p>
+        <p className="github-loading">{t("ui.loading")}</p>
       ) : infoState === "error" ? (
         <div className="github-empty">
-          <p>{infoError || "无法获取仓库信息"}</p>
+          <p>{infoError || t("github.cannotFetchInfo")}</p>
         </div>
       ) : repoInfo ? (
         <>
@@ -135,18 +131,18 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
           <dl className="metadata compact">
             {repoInfo.primaryLanguage ? (
               <div>
-                <dt>主要语言</dt>
+                <dt>{t("github.primaryLanguage")}</dt>
                 <dd>{repoInfo.primaryLanguage}</dd>
               </div>
             ) : null}
             <div>
-              <dt>默认分支</dt>
+              <dt>{t("github.defaultBranch")}</dt>
               <dd>{repoInfo.defaultBranch}</dd>
             </div>
           </dl>
           <div className="github-actions-row">
             <Button variant="secondary" onClick={() => ghOpenBrowser(remoteUrl, "repo")}>
-              在浏览器中打开
+              {t("github.openInBrowser")}
             </Button>
             <Button variant="secondary" onClick={() => ghOpenBrowser(remoteUrl, "prs")}>
               PR ({prState === "loaded" ? prs.length : "…"})
@@ -155,13 +151,12 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
               Actions
             </Button>
           </div>
-          {/* 创建 PR 入口：仅在当前分支不是默认分支时显示 */}
           {selectedRepository?.branchOrRevision &&
           repoInfo.defaultBranch &&
           selectedRepository.branchOrRevision !== repoInfo.defaultBranch ? (
             <div className="github-create-pr-entry">
               <Button variant="default" onClick={handleOpenCreatePr}>
-                创建 PR：{selectedRepository.branchOrRevision} → {repoInfo.defaultBranch}
+                {t("github.createPrLabel", { head: selectedRepository.branchOrRevision, base: repoInfo.defaultBranch })}
               </Button>
             </div>
           ) : null}
@@ -169,7 +164,7 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
       ) : null}
 
       {prState === "loading" ? (
-        <p className="github-loading">加载 PR 列表...</p>
+        <p className="github-loading">{t("github.loadingPrs")}</p>
       ) : prState === "loaded" && prs.length > 0 ? (
         <div className="github-pr-list">
           <div className="section-kicker github-list-title">Pull Requests</div>
@@ -184,7 +179,7 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
           ))}
         </div>
       ) : prState === "loaded" ? (
-        <p className="github-muted">暂无 Pull Requests</p>
+        <p className="github-muted">{t("github.noPrs")}</p>
       ) : null}
 
       {runState === "loaded" && runs.length > 0 ? (
@@ -208,7 +203,6 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
         </div>
       ) : null}
 
-      {/* ── 创建 PR 弹窗 ── */}
       <Modal
         open={isCreatePrDialogOpen}
         onClose={() => { if (!isPrCreating) setIsCreatePrDialogOpen(false); }}
@@ -216,13 +210,14 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
       >
         <ModalHeading
           eyebrow="GitHub"
-          title="创建 Pull Request"
+          title={t("github.createPrTitle")}
           titleId="create-pr-title"
           onClose={() => { if (!isPrCreating) setIsCreatePrDialogOpen(false); }}
+          t={t}
         />
         <div className="create-pr-form">
           <label className="create-pr-field">
-            <span>源分支</span>
+            <span>{t("github.sourceBranch")}</span>
             <input
               type="text"
               value={prHead}
@@ -232,7 +227,7 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
             />
           </label>
           <label className="create-pr-field">
-            <span>目标分支</span>
+            <span>{t("github.targetBranch")}</span>
             <input
               type="text"
               value={prBase}
@@ -242,22 +237,22 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
             />
           </label>
           <label className="create-pr-field">
-            <span>标题 *</span>
+            <span>{t("github.titleField")}</span>
             <input
               type="text"
               value={prTitle}
               onChange={(e) => setPrTitle(e.target.value)}
-              placeholder="PR 标题"
+              placeholder={t("github.titlePlaceholder")}
               disabled={isPrCreating}
               autoFocus
             />
           </label>
           <label className="create-pr-field">
-            <span>描述</span>
+            <span>{t("github.description")}</span>
             <textarea
               value={prBody}
               onChange={(e) => setPrBody(e.target.value)}
-              placeholder="PR 描述（可选）"
+              placeholder={t("github.descriptionPlaceholder")}
               rows={3}
               disabled={isPrCreating}
             />
@@ -272,10 +267,10 @@ export function GitHubPanel({ selectedRepository, t }: GitHubPanelProps) {
 
           <div className="modal-actions">
             <Button variant="secondary" onClick={() => setIsCreatePrDialogOpen(false)} disabled={isPrCreating}>
-              取消
+              {t("ui.cancel")}
             </Button>
             <Button variant="default" onClick={handleCreatePr} disabled={isPrCreating || !prTitle.trim()}>
-              {isPrCreating ? "创建中..." : "创建 PR"}
+              {isPrCreating ? t("github.creating") : t("github.createPrBtn")}
             </Button>
           </div>
         </div>

@@ -227,7 +227,7 @@ export const ChangesPane = memo(function ChangesPane({
                         onContextMenu(event, file.path, file.vcsType, file.status);
                       }}
                     >
-                      <ChangeBadge status={file.status} />
+                      <ChangeBadge status={file.status} t={t} />
                       <span className="change-path">{file.name}</span>
                       <span className="change-vcs">{file.vcsType === "git" ? "Git" : file.vcsType === "svn" ? "SVN" : file.vcsType}</span>
                     </button>
@@ -330,6 +330,7 @@ export const ChangesPane = memo(function ChangesPane({
           title={t("changes.stagedFiles")}
           titleId="staged-dialog-title"
           onClose={() => setIsStagedDialogOpen(false)}
+          t={t}
         />
         <div className="staged-files-list">
           {changedFiles.filter((f) => f.staged).length === 0 ? (
@@ -339,7 +340,7 @@ export const ChangesPane = memo(function ChangesPane({
               .filter((f) => f.staged)
               .map((file) => (
                 <div className="staged-file-row" key={`${file.vcsType}-${file.path}`}>
-                  <ChangeBadge status={file.status} />
+                  <ChangeBadge status={file.status} t={t} />
                   <span className="staged-file-path">{file.path}</span>
                   {onUnstageFile && (
                     <Button

@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef } from "react";
+import type { Translator } from "../../lib/i18n";
 
 interface DraggableCardProps {
   cardId: string;
@@ -8,6 +9,7 @@ interface DraggableCardProps {
   registerCardRef: (id: string, el: HTMLDivElement | null) => void;
   onMouseDown: (e: React.MouseEvent, id: string) => void;
   children: React.ReactNode;
+  t: Translator;
 }
 
 export const DraggableCard = memo(function DraggableCard({
@@ -18,6 +20,7 @@ export const DraggableCard = memo(function DraggableCard({
   registerCardRef,
   onMouseDown,
   children,
+  t,
 }: DraggableCardProps) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -35,7 +38,7 @@ export const DraggableCard = memo(function DraggableCard({
       <div className="card-header-bar">
         <span
           className="card-drag-handle"
-          title="拖拽排序"
+          title={t("ui.dragToReorder")}
           onMouseDown={(e) => onMouseDown(e, cardId)}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
