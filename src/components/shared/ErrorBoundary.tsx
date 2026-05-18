@@ -1,5 +1,15 @@
 import React from "react";
 import { Button } from "../ui/button";
+import { createTranslator, isAppLanguage } from "../../lib/i18n";
+
+function getFallbackT() {
+  try {
+    const lang = localStorage.getItem("gvmt-language") ?? "zh-CN";
+    return createTranslator(isAppLanguage(lang) ? lang : "zh-CN");
+  } catch {
+    return createTranslator("zh-CN");
+  }
+}
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -27,16 +37,17 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   render() {
     if (this.state.hasError) {
+      const t = getFallbackT();
       return (
         <main className="error-boundary">
           <section className="error-boundary-content">
-            <h1>应用出现错误</h1>
-            <p>抱歉，应用遇到了一个意外错误。请刷新页面重试。</p>
+            <h1>{t("error.title")}</h1>
+            <p>{t("error.description")}</p>
             {this.state.error && (
               <pre className="error-boundary-detail">{this.state.error.message}</pre>
             )}
             <Button variant="default" onClick={this.handleReload}>
-              刷新重试
+              {t("error.reload")}
             </Button>
           </section>
         </main>

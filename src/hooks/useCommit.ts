@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ChangeItem, Repository } from "../lib/api";
-import { changeKey, isCommittableChange, VcsLabels } from "../lib/constants";
+import { changeKey, isCommittableChange } from "../lib/constants";
 
 interface UseCommitOptions {
   selectedRepository: Repository | undefined;
@@ -98,6 +98,5 @@ export function useCommit({ selectedRepository, changedFiles }: UseCommitOptions
     toggleAllCommitFiles,
     syncKeys,
     resetCommitState,
-    vcsLabels: VcsLabels,
   };
 }

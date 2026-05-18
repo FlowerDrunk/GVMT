@@ -1,11 +1,14 @@
 import type { ChangeItem, VcsType } from "./api";
+import type { Translator } from "./i18n";
 
-export const VcsLabels: Record<VcsType, string> = {
-  git: "Git",
-  svn: "SVN",
-  mixed: "Git + SVN",
-  unknown: "未知",
-};
+export function getVcsLabels(t: Translator): Record<VcsType, string> {
+  return {
+    git: t("vcs.git"),
+    svn: t("vcs.svn"),
+    mixed: t("vcs.mixed"),
+    unknown: t("vcs.unknown"),
+  };
+}
 
 export function changeKey(change: Pick<ChangeItem, "path" | "vcsType">) {
   return `${change.vcsType}:${change.path}`;

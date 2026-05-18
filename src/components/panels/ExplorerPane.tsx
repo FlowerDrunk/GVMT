@@ -2,7 +2,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { Repository } from "../../lib/api";
 import { addRepository, detectRepository, isTauriRuntime, openInExplorer, pickFolder, updateRepositoryInfo } from "../../lib/api";
 import { statusTone } from "../../lib/utils";
-import { VcsLabels } from "../../lib/constants";
+import { getVcsLabels } from "../../lib/constants";
+import type { Translator } from "../../lib/i18n";
 import { ContextMenu, ContextMenuItem } from "../shared/ContextMenu";
 import { Button } from "../ui/button";
 import { Modal, ModalHeading } from "../shared/Modal";
@@ -22,6 +23,7 @@ interface ExplorerPaneProps {
   onCloneRepository: (url: string, path: string, shallow: boolean, ignoreExternals: boolean) => Promise<boolean>;
   isCloningActive?: boolean;
   latestSvnRevisions?: Record<number, string>;
+  t: Translator;
 }
 
 export function ExplorerPane({
@@ -39,6 +41,7 @@ export function ExplorerPane({
   onCloneRepository,
   isCloningActive,
   latestSvnRevisions = {},
+  t,
 }: ExplorerPaneProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -77,7 +80,6 @@ export function ExplorerPane({
     setAddError(null);
   }
 
-  // Detect if the remote URL looks like SVN (for showing SVN-specific options)
   const isSvnUrl = useMemo(() => {
     const lower = remoteUrl.trim().toLowerCase();
     if (!lower) return false;
@@ -86,7 +88,6 @@ export function ExplorerPane({
       || lower.includes("/branches") || lower.includes("/tags");
   }, [remoteUrl]);
 
-  // Reset cloning state when progress dialog is closed externally (e.g. cancel)
   useEffect(() => {
     if (!isCloningActive) {
       setIsCloning(false);
@@ -126,8 +127,8 @@ export function ExplorerPane({
     if (addMode === "remote") {
       const trimmedUrl = remoteUrl.trim();
       const trimmedPath = path.trim();
-      if (!trimmedUrl) { setAddError("请输入远程仓库地址"); return; }
-      if (!trimmedPath) { setAddError("请选择本地目录"); return; }
+      if (!trimmedUrl) { setAddError(t("explorer.enterRemoteUrl")); return; }
+      if (!trimmedPath) { setAddError(t("explorer.selectLocalDir")); return; }
 
       setIsCloning(true);
       setAddError(null);
@@ -150,7 +151,7 @@ export function ExplorerPane({
 
     const trimmedPath = path.trim();
     if (!trimmedPath) {
-      setAddError("请先选择仓库目录");
+      setAddError(t("explorer.pleaseSelectRepoDir"));
       return;
     }
 
@@ -159,7 +160,7 @@ export function ExplorerPane({
     try {
       const detected = await detectRepository(trimmedPath);
       if (detected.vcsType === "unknown") {
-        setAddError("当前目录未检测到 Git 或 SVN 仓库，请确认路径正确");
+        setAddError(t("explorer.noRepoDetected"));
         return;
       }
       await addRepository({ path: trimmedPath });
@@ -167,7 +168,7 @@ export function ExplorerPane({
       setShowAddForm(false);
       setAddError(null);
       onRepositoriesChanged();
-      onSetStatus(`已添加 ${detected.name}`);
+      onSetStatus(t("status.repoAdded", { name: detected.name }));
     } catch (error) {
       setAddError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -212,14 +213,14 @@ export function ExplorerPane({
       <header className="pane-header">
         <div>
           <h1>GVMT</h1>
-          <p>通用版本控制工具</p>
+          <p>{t("explorer.subtitle")}</p>
         </div>
         <div className="pane-header-actions">
           <button
             type="button"
             className={`pane-add-btn ${showAddForm ? "active" : ""}`}
             onClick={() => { setShowAddForm(!showAddForm); setAddError(null); }}
-            title={showAddForm ? "收起" : "添加仓库"}
+            title={showAddForm ? t("ui.collapse") : t("explorer.addRepoBtn")}
           >
             {showAddForm ? "−" : "+"}
           </button>
@@ -229,33 +230,32 @@ export function ExplorerPane({
       {showAddForm ? (
         <section className="add-strip">
           <form onSubmit={handleAddRepository}>
-            {/* Mode toggle */}
             <div className="add-mode-toggle">
-              <button type="button" className={`add-mode-btn ${addMode === "local" ? "active" : ""}`} onClick={() => { setAddMode("local"); setAddError(null); }}>打开本地仓库</button>
-              <button type="button" className={`add-mode-btn ${addMode === "remote" ? "active" : ""}`} onClick={() => { setAddMode("remote"); setAddError(null); }}>克隆远程仓库</button>
+              <button type="button" className={`add-mode-btn ${addMode === "local" ? "active" : ""}`} onClick={() => { setAddMode("local"); setAddError(null); }}>{t("explorer.openRepo")}</button>
+              <button type="button" className={`add-mode-btn ${addMode === "remote" ? "active" : ""}`} onClick={() => { setAddMode("remote"); setAddError(null); }}>{t("explorer.cloneRepo")}</button>
             </div>
 
             {addMode === "remote" ? (
               <>
-                <label>远程仓库地址</label>
+                <label>{t("explorer.remoteUrl")}</label>
                 <input
                   type="text"
-                  placeholder="https://github.com/user/repo.git 或 SVN URL"
+                  placeholder={t("explorer.remoteUrlPlaceholder")}
                   value={remoteUrl}
                   onChange={(e) => setRemoteUrl(e.target.value)}
                 />
                 {remoteUrl.trim() ? (
                   <div className="clone-options">
-                    <span className="clone-options-label">{isSvnUrl ? "SVN 选项" : "Git 选项"}</span>
+                    <span className="clone-options-label">{isSvnUrl ? t("explorer.svnOptions") : t("explorer.gitOptions")}</span>
                     {isSvnUrl ? (
                       <label className="shallow-clone-label">
                         <input type="checkbox" checked={ignoreExternals} onChange={(e) => setIgnoreExternals(e.target.checked)} />
-                        忽略外部依赖（svn:externals），大幅提速
+                        {t("explorer.ignoreExternalsDesc")}
                       </label>
                     ) : (
                       <label className="shallow-clone-label">
                         <input type="checkbox" checked={shallowClone} onChange={(e) => setShallowClone(e.target.checked)} />
-                        浅克隆（--depth 1，仅最新版本，速度快）
+                        {t("explorer.shallowCloneDesc")}
                       </label>
                     )}
                   </div>
@@ -263,18 +263,17 @@ export function ExplorerPane({
               </>
             ) : null}
 
-            <label>本地目录</label>
+            <label>{t("explorer.localDirectory")}</label>
             <div className="path-picker-row">
               <input
                 className="path-input"
                 type="text"
-                placeholder="输入或选择本地目录路径..."
+                placeholder={t("explorer.localDirPlaceholder")}
                 value={path}
                 onChange={(e) => onPathChange(e.target.value)}
                 onBlur={async () => {
                   const trimmed = path.trim();
                   if (!trimmed) return;
-                  // If user typed a path that doesn't exist, try to create it
                   if (isTauriRuntime()) {
                     try {
                       const { invoke } = await import("@tauri-apps/api/core");
@@ -282,7 +281,7 @@ export function ExplorerPane({
                     } catch (error) {
                       const msg = error instanceof Error ? error.message : String(error);
                       if (!msg.includes("already exists") && !msg.includes("已存在")) {
-                        setAddError(`无法创建目录：${msg}`);
+                        setAddError(t("explorer.dirCreateFailed", { msg }));
                       }
                     }
                   }
@@ -293,7 +292,7 @@ export function ExplorerPane({
                 className="path-picker-icon"
                 onClick={handlePickFolder}
                 disabled={isPickingFolder || isCloning}
-                title="选择文件夹"
+                title={t("explorer.selectFolder")}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -301,28 +300,28 @@ export function ExplorerPane({
               </button>
             </div>
             {addError ? <p className="add-repo-error">{addError}</p> : null}
-            {isCloning ? <p className="clone-progress-hint">正在克隆... 请等待完成</p> : null}
+            {isCloning ? <p className="clone-progress-hint">{t("explorer.cloningInProgress")}</p> : null}
             <div className="form-actions">
               <Button
                 variant="secondary"
                 onClick={() => { setShowAddForm(false); setAddError(null); onPathChange(""); setRemoteUrl(""); setAddMode("local"); setIsPickingFolder(false); }}
                 type="button"
               >
-                取消
+                {t("ui.cancel")}
               </Button>
               <Button variant="default" type="submit" disabled={isAdding || isCloning || !path || !isTauriRuntime() || (addMode === "remote" && !remoteUrl.trim())}>
-                {isCloning ? "克隆中..." : isAdding ? "添加中..." : addMode === "remote" ? "克隆仓库" : "添加仓库"}
+                {isCloning ? t("explorer.cloning") : isAdding ? t("explorer.adding") : addMode === "remote" ? t("explorer.cloneRepoBtn") : t("explorer.addRepoBtn")}
               </Button>
             </div>
           </form>
-          {!isTauriRuntime() ? <p className="inline-warning">请在 Tauri 桌面环境中使用完整功能</p> : null}
+          {!isTauriRuntime() ? <p className="inline-warning">{t("explorer.tauriWarning")}</p> : null}
         </section>
       ) : null}
 
       <section className="repo-section">
         <div className="repo-section-header">
           <div className="section-title">
-            <span>仓库列表</span>
+            <span>{t("explorer.repoList")}</span>
             <div className="repo-stats-pills">
               {stats.git > 0 ? <span className="repo-stat-pill git">Git {stats.git}</span> : null}
               {stats.svn > 0 ? <span className="repo-stat-pill svn">SVN {stats.svn}</span> : null}
@@ -334,7 +333,7 @@ export function ExplorerPane({
             <div className="repo-search">
               <input
                 className="repo-search-input"
-                placeholder="搜索仓库..."
+                placeholder={t("explorer.searchRepo")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -345,7 +344,7 @@ export function ExplorerPane({
         <div className="repo-list">
           {filteredRepos.length === 0 ? (
             <div className="empty-list">
-              {searchQuery ? "无匹配仓库" : "拖拽文件夹到此处，或点击 + 添加"}
+              {searchQuery ? t("explorer.noMatch") : t("explorer.dropHint")}
             </div>
           ) : (
             filteredRepos.map((repository) => (
@@ -362,21 +361,21 @@ export function ExplorerPane({
                       <strong>{repository.name}</strong>
                       <span className="repo-branch">{latestSvnRevisions[repository.id] ?? repository.branchOrRevision ?? ""}</span>
                     </span>
-                    <span className="repo-type">{VcsLabels[repository.vcsType]}</span>
+                    <span className="repo-type">{getVcsLabels(t)[repository.vcsType]}</span>
                   </button>
                 }
               >
                 <ContextMenuItem onSelect={() => openEditDialog(repository)}>
-                  编辑信息
+                  {t("explorer.editInfo")}
                 </ContextMenuItem>
                 <ContextMenuItem onSelect={() => { openInExplorer(repository.path); }}>
-                  打开所在目录
+                  {t("explorer.openDir")}
                 </ContextMenuItem>
                 <ContextMenuItem
                   className="danger"
                   onSelect={() => onDeleteRepository(repository)}
                 >
-                  删除记录
+                  {t("explorer.deleteRecordContext")}
                 </ContextMenuItem>
               </ContextMenu>
             ))
@@ -385,17 +384,17 @@ export function ExplorerPane({
       </section>
       {editRepo ? (
         <Modal open={true} onClose={() => setEditRepo(null)} labelledBy="edit-repo-title" className="edit-repo-modal">
-          <ModalHeading eyebrow="编辑仓库" title={editRepo.name} titleId="edit-repo-title" onClose={() => setEditRepo(null)} />
+          <ModalHeading eyebrow={t("explorer.editRepo")} title={editRepo.name} titleId="edit-repo-title" onClose={() => setEditRepo(null)} t={t} />
           <div className="edit-repo-body">
-            <label>仓库名称</label>
+            <label>{t("explorer.repoName")}</label>
             <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} />
-            <label>备注</label>
-            <textarea rows={3} value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="添加备注信息..." />
+            <label>{t("explorer.notes")}</label>
+            <textarea rows={3} value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder={t("explorer.notesPlaceholder")} />
             {addError ? <p className="add-repo-error">{addError}</p> : null}
             <div className="form-actions">
-              <Button variant="secondary" onClick={() => setEditRepo(null)} type="button">取消</Button>
+              <Button variant="secondary" onClick={() => setEditRepo(null)} type="button">{t("ui.cancel")}</Button>
               <Button variant="default" onClick={handleSaveEdit} disabled={isSavingEdit || !editName.trim()}>
-                {isSavingEdit ? "保存中..." : "保存"}
+                {isSavingEdit ? t("ui.saving") : t("ui.save")}
               </Button>
             </div>
           </div>

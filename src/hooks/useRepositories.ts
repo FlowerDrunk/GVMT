@@ -8,13 +8,15 @@ import {
   type Repository,
 } from "../lib/api";
 import { useContextMenu } from "./useContextMenu";
+import type { Translator } from "../lib/i18n";
 
 interface UseRepositoriesOptions {
   setStatus: (value: string) => void;
   setIsLoading: (value: boolean) => void;
+  t: Translator;
 }
 
-export function useRepositories({ setStatus, setIsLoading }: UseRepositoriesOptions) {
+export function useRepositories({ setStatus, setIsLoading, t }: UseRepositoriesOptions) {
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [path, setPath] = useState("");
@@ -46,7 +48,7 @@ export function useRepositories({ setStatus, setIsLoading }: UseRepositoriesOpti
       } else if (!selectedId || !nextRepositories.some((repository) => repository.id === selectedId)) {
         setSelectedId(nextRepositories[0].id);
       }
-      setStatus(`已加载 ${nextRepositories.length} 个仓库`);
+      setStatus(t("status.reposLoaded", { count: nextRepositories.length }));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
@@ -62,7 +64,7 @@ export function useRepositories({ setStatus, setIsLoading }: UseRepositoriesOpti
     event.preventDefault();
     const trimmedPath = path.trim();
     if (!trimmedPath) {
-      setStatus("请输入本地仓库路径");
+      setStatus(t("status.enterRepoPath"));
       return;
     }
 
@@ -72,7 +74,7 @@ export function useRepositories({ setStatus, setIsLoading }: UseRepositoriesOpti
       await refreshRepositories();
       setSelectedId(repository.id);
       setPath("");
-      setStatus(`已添加 ${repository.name}`);
+      setStatus(t("status.repoAdded", { name: repository.name }));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
@@ -82,14 +84,14 @@ export function useRepositories({ setStatus, setIsLoading }: UseRepositoriesOpti
 
   async function handleDetect() {
     if (!path.trim()) {
-      setStatus("请输入需要检测的路径");
+      setStatus(t("status.enterDetectPath"));
       return;
     }
 
     setIsLoading(true);
     try {
       const detected = await detectRepository(path.trim());
-      setStatus(`检测结果：${detected.name} / ${detected.vcsType}`);
+      setStatus(t("status.detectResult", { name: detected.name, type: detected.vcsType }));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
@@ -99,7 +101,7 @@ export function useRepositories({ setStatus, setIsLoading }: UseRepositoriesOpti
 
   async function handleRefreshSelected() {
     if (!selectedRepository) {
-      setStatus("请先选择一个仓库");
+      setStatus(t("status.selectRepoFirst"));
       return;
     }
 
@@ -108,7 +110,7 @@ export function useRepositories({ setStatus, setIsLoading }: UseRepositoriesOpti
       const refreshed = await refreshRepository(selectedRepository.id);
       await refreshRepositories();
       setSelectedId(refreshed.id);
-      setStatus(`已重新检测 ${refreshed.name}：${refreshed.vcsType}`);
+      setStatus(t("status.repoReDetected", { name: refreshed.name, type: refreshed.vcsType }));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
@@ -136,7 +138,7 @@ export function useRepositories({ setStatus, setIsLoading }: UseRepositoriesOpti
       if (wasSelected) {
         setSelectedId(null);
       }
-      setStatus("已删除仓库记录，本地文件未受影响");
+      setStatus(t("status.repoRecordDeleted"));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {

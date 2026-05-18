@@ -6,13 +6,15 @@ import {
   type RepositoryDiff,
 } from "../lib/api";
 import type { ChangeTreeNode } from "../lib/utils";
+import type { Translator } from "../lib/i18n";
 
 interface UseChangeTreeOptions {
   selectedRepository: Repository | undefined;
   setStatus: (value: string) => void;
+  t: Translator;
 }
 
-export function useChangeTree({ selectedRepository, setStatus }: UseChangeTreeOptions) {
+export function useChangeTree({ selectedRepository, setStatus, t }: UseChangeTreeOptions) {
   const [selectedChange, setSelectedChange] = useState<ChangeItem | null>(null);
   const [diffPreview, setDiffPreview] = useState<RepositoryDiff | null>(null);
   const [isDiffLoading, setIsDiffLoading] = useState(false);
@@ -47,7 +49,7 @@ export function useChangeTree({ selectedRepository, setStatus }: UseChangeTreeOp
     try {
       const nextDiff = await getRepositoryDiff(selectedRepository.id, nextChange);
       setDiffPreview(nextDiff);
-      setStatus(`已加载 diff：${path}`);
+      setStatus(t("status.diffLoaded", { path }));
     } catch (error) {
       setDiffPreview(null);
       setStatus(error instanceof Error ? error.message : String(error));

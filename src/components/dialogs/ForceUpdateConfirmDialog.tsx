@@ -1,5 +1,6 @@
 import { Modal, ModalHeading } from "../shared/Modal";
 import { Button } from "../ui/button";
+import type { Translator } from "../../lib/i18n";
 
 interface ForceUpdateConfirmDialogProps {
   open: boolean;
@@ -7,6 +8,7 @@ interface ForceUpdateConfirmDialogProps {
   repositoryPath?: string;
   onClose: () => void;
   onConfirm: () => void;
+  t: Translator;
 }
 
 export function ForceUpdateConfirmDialog({
@@ -15,37 +17,39 @@ export function ForceUpdateConfirmDialog({
   repositoryPath,
   onClose,
   onConfirm,
+  t,
 }: ForceUpdateConfirmDialogProps) {
   return (
     <Modal open={open} onClose={onClose} labelledBy="force-update-title" className="confirm-dialog">
       <ModalHeading
         eyebrow="SVN"
-        title="强制更新确认"
+        title={t("forceUpdate.title")}
         titleId="force-update-title"
         onClose={onClose}
+        t={t}
       />
       <div className="confirm-warning">
-        <p>强制更新将<strong>还原整个仓库</strong>到服务器最新版本。</p>
-        <p>此操作包含三个步骤：</p>
+        <p dangerouslySetInnerHTML={{ __html: t("forceUpdate.warning1") }} />
+        <p>{t("forceUpdate.warning2")}</p>
         <ol>
-          <li><strong>Cleanup</strong> — 解除工作副本锁定</li>
-          <li><strong>Revert -R</strong> — 丢弃所有本地修改（不可撤销）</li>
-          <li><strong>Update</strong> — 拉取服务器最新版本</li>
+          <li><strong>Cleanup</strong> — {t("forceUpdate.step1")}</li>
+          <li><strong>Revert -R</strong> — {t("forceUpdate.step2")}</li>
+          <li><strong>Update</strong> — {t("forceUpdate.step3")}</li>
         </ol>
-        <p className="confirm-warning-highlight">所有未提交的本地修改将永久丢失。</p>
+        <p className="confirm-warning-highlight">{t("forceUpdate.warningLoss")}</p>
       </div>
       {repositoryName || repositoryPath ? (
         <dl className="metadata compact">
-          {repositoryName ? <div><dt>仓库</dt><dd>{repositoryName}</dd></div> : null}
-          {repositoryPath ? <div><dt>路径</dt><dd>{repositoryPath}</dd></div> : null}
+          {repositoryName ? <div><dt>{t("repo.name")}</dt><dd>{repositoryName}</dd></div> : null}
+          {repositoryPath ? <div><dt>{t("review.path")}</dt><dd>{repositoryPath}</dd></div> : null}
         </dl>
       ) : null}
       <div className="modal-actions">
         <Button variant="secondary" onClick={onClose}>
-          取消
+          {t("ui.cancel")}
         </Button>
         <Button variant="destructive" onClick={onConfirm}>
-          确认强制更新
+          {t("forceUpdate.confirmBtn")}
         </Button>
       </div>
     </Modal>

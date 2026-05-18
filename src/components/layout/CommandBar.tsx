@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CommitDetail, GitCommitLog, GitStashEntry, OperationResult, Repository } from "../../lib/api";
 import { gitFetch, gitLog, gitShowDetail, gitStashDrop, gitStashList, gitStashPop, gitStashPush, svnCleanup, svnLog, svnShowDetail } from "../../lib/api";
-import { VcsLabels } from "../../lib/constants";
+import { getVcsLabels } from "../../lib/constants";
 import type { Translator } from "../../lib/i18n";
 import { Modal, ModalHeading } from "../shared/Modal";
 
@@ -191,7 +191,7 @@ export function CommandBar({
       <div className="command-info">
         <span className={`repo-dot ${selectedRepository ? (selectedRepository.vcsType === "unknown" ? "warning" : "ready") : "warning"}`} />
         <strong className="command-repo-name">{selectedRepository?.name ?? t("command.selectRepository")}</strong>
-        {selectedRepository ? <span className="soft-chip">{VcsLabels[selectedRepository.vcsType]}</span> : null}
+        {selectedRepository ? <span className="soft-chip">{getVcsLabels(t)[selectedRepository.vcsType]}</span> : null}
         {(() => {
           const rev = selectedRepository
             ? (latestSvnRevisions[selectedRepository.id] ?? selectedRepository.branchOrRevision)
@@ -265,8 +265,8 @@ export function CommandBar({
 
           {/* ── Force Update ── */}
           <button className="cmd-btn" type="button" disabled={!selectedRepository || isLoading}
-            onClick={onForceUpdateRepository} title="强制更新（Clean + Revert + Update）">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.3-9.8"/></svg><span>强制更新</span>
+            onClick={onForceUpdateRepository} title={t("contextMenu.forceUpdate")}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.3-9.8"/></svg><span>{t("contextMenu.forceUpdate")}</span>
           </button>
 
           {/* ── Log ── */}
@@ -311,7 +311,7 @@ export function CommandBar({
 
       {/* ── Log 弹窗 ── */}
       <Modal open={isLogOpen} onClose={() => { setIsLogOpen(false); setExpandedIdx(null); }} labelledBy="git-log-title" className="git-log-modal">
-        <ModalHeading eyebrow="History" title={t("command.logTitle")} titleId="git-log-title" onClose={() => { setIsLogOpen(false); setExpandedIdx(null); }} />
+        <ModalHeading eyebrow="History" title={t("command.logTitle")} titleId="git-log-title" onClose={() => { setIsLogOpen(false); setExpandedIdx(null); }} t={t} />
         <div className="git-log-list">
           {isLogLoading ? <p className="git-log-loading">{t("command.logLoading")}</p>
           : logs.length === 0 ? <p className="git-log-empty">{t("command.logEmpty")}</p>
@@ -341,7 +341,7 @@ export function CommandBar({
                         <>
                           {detail.files.length > 0 ? (
                             <div className="git-log-files">
-                              <span className="git-log-files-label">Changed files ({detail.files.length})</span>
+                              <span className="git-log-files-label">{t("general.changedFiles", { count: detail.files.length })}</span>
                               <div className="git-log-files-list">
                                 {detail.files.map((f, fi) => (
                                   <span key={fi} className={`change-badge ${f.changeType}`}>{f.path}</span>
@@ -370,10 +370,10 @@ export function CommandBar({
         {logMenu ? (
           <div className="context-menu" ref={logMenuRef} style={{ left: logMenu.x, top: logMenu.y, position: "fixed", zIndex: 9999 }}>
             <button type="button" onClick={() => { handleLogItemClick(logs.indexOf(logMenu.entry)); closeLogMenu(); }}>
-              查看详情
+              {t("ui.viewDetail")}
             </button>
             <button type="button" onClick={handleCopyHash}>
-              复制版本号
+              {t("ui.copyRevision")}
             </button>
           </div>
         ) : null}

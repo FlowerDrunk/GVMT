@@ -55,6 +55,7 @@ export function SettingsDialog({
         title={t("settings.title")}
         titleId={titleId}
         onClose={onClose}
+        t={t}
       />
 
       <div className="settings-sections">

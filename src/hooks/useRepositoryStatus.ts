@@ -9,6 +9,7 @@ import {
   type Repository,
   type RepositoryStatus,
 } from "../lib/api";
+import type { Translator } from "../lib/i18n";
 
 interface UseRepositoryStatusOptions {
   selectedRepository: Repository | undefined;
@@ -16,6 +17,7 @@ interface UseRepositoryStatusOptions {
   refreshIntervalMs: number;
   setStatus: (value: string) => void;
   setIsLoading: (value: boolean) => void;
+  t: Translator;
 }
 
 export function useRepositoryStatus({
@@ -24,6 +26,7 @@ export function useRepositoryStatus({
   refreshIntervalMs,
   setStatus,
   setIsLoading,
+  t,
 }: UseRepositoryStatusOptions) {
   const abortRef = useRef(false);
   const syncKeysRef = useRef<(changes: ChangeItem[]) => void>(() => {});
@@ -33,7 +36,7 @@ export function useRepositoryStatus({
   const loadRepositoryStatus = useCallback(
     async (silent = false) => {
       if (!selectedRepository) {
-        if (!silent) setStatus("请先选择一个仓库");
+        if (!silent) setStatus(t("status.selectRepoFirst"));
         return;
       }
 
@@ -43,7 +46,7 @@ export function useRepositoryStatus({
         if (abortRef.current) return;
         setRepositoryStatus(nextStatus);
         syncKeysRef.current(nextStatus.changes);
-        if (!silent) setStatus(nextStatus.clean ? "工作区干净" : `检测到 ${nextStatus.summary.total} 个变更`);
+        if (!silent) setStatus(nextStatus.clean ? t("status.clean") : t("status.changesDetected", { count: nextStatus.summary.total }));
       } catch (error) {
         if (abortRef.current) return;
         setRepositoryStatus(null);
@@ -57,7 +60,7 @@ export function useRepositoryStatus({
 
   async function handleLoadRepositoryStatus() {
     if (!selectedRepository) {
-      setStatus("请先选择一个仓库");
+      setStatus(t("status.selectRepoFirst"));
       return;
     }
 
@@ -67,7 +70,7 @@ export function useRepositoryStatus({
   async function handleOpenSvnDownload(target: "tortoise" | "sliksvn") {
     try {
       await openSvnCliDownloadPage(target);
-      setStatus(target === "sliksvn" ? "已打开 SlikSVN 下载页" : "已打开 TortoiseSVN 下载页");
+      setStatus(target === "sliksvn" ? t("status.openedSlikSvn") : t("status.openedTortoise"));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     }
@@ -75,7 +78,7 @@ export function useRepositoryStatus({
 
   async function handleUpdateRepository(depth?: string) {
     if (!selectedRepository) {
-      setStatus("请先选择一个仓库");
+      setStatus(t("status.selectRepoFirst"));
       return;
     }
 
@@ -84,7 +87,7 @@ export function useRepositoryStatus({
       const results = await updateRepository(selectedRepository.id, depth);
       setOperationResults(results);
       const failed = results.filter((result) => !result.success);
-      setStatus(failed.length === 0 ? "更新完成" : `${failed.length} 个更新步骤失败`);
+      setStatus(failed.length === 0 ? t("status.updateComplete") : t("status.updateStepsFailed", { count: failed.length }));
       await handleLoadRepositoryStatus();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));

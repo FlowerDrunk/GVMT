@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import type { GitCommitLog, Repository } from "../../lib/api";
 import { gitLog, svnLog } from "../../lib/api";
 import type { Translator } from "../../lib/i18n";
-import { VcsLabels } from "../../lib/constants";
-import { emptyStateCopy, formatRemoteUrlForDisplay, statusTone, vcsDescriptions } from "../../lib/utils";
+import { getVcsLabels } from "../../lib/constants";
+import { getEmptyStateCopy, formatRemoteUrlForDisplay, getVcsDescriptions, statusTone } from "../../lib/utils";
 
 interface RepositorySummaryPanelProps {
   selectedRepository: Repository | undefined;
@@ -87,7 +87,7 @@ export function RepositorySummaryPanel({
           <h3>{t("review.repoInfo")}</h3>
         </div>
         <span className={`status-pill ${selectedRepository ? statusTone(selectedRepository.vcsType) : "warning"}`}>
-          {selectedRepository ? VcsLabels[selectedRepository.vcsType] : t("review.notSelected")}
+          {selectedRepository ? getVcsLabels(t)[selectedRepository.vcsType] : t("review.notSelected")}
         </span>
       </div>
       {selectedRepository ? (
@@ -100,7 +100,7 @@ export function RepositorySummaryPanel({
           </div>
           <dl className="metadata">
             <div>
-              <dt>名称</dt>
+              <dt>{t("summary.name")}</dt>
               <dd><strong>{selectedRepository.name}</strong></dd>
             </div>
             <div>
@@ -109,9 +109,9 @@ export function RepositorySummaryPanel({
             </div>
             <div>
               <dt>{t("review.remote")}</dt>
-              <dd className="remote-url-value" title={formatRemoteUrlForDisplay(selectedRepository.remoteUrl)}>
-                <span className="remote-url-text">{formatRemoteUrlForDisplay(selectedRepository.remoteUrl)}</span>
-                <CopyButton value={selectedRepository.remoteUrl ?? ""} />
+              <dd className="remote-url-value" title={formatRemoteUrlForDisplay(selectedRepository.remoteUrl, t("repo.notDetected"))}>
+                <span className="remote-url-text">{formatRemoteUrlForDisplay(selectedRepository.remoteUrl, t("repo.notDetected"))}</span>
+                <CopyButton value={selectedRepository.remoteUrl ?? ""} title={t("ui.copyAddress")} />
               </dd>
             </div>
             <div>
@@ -119,11 +119,11 @@ export function RepositorySummaryPanel({
               <dd>{displayRevision ?? t("review.notDetected")}</dd>
             </div>
           </dl>
-          <p className="repository-summary-desc">{vcsDescriptions[selectedRepository.vcsType]}</p>
+          <p className="repository-summary-desc">{getVcsDescriptions(t)[selectedRepository.vcsType]}</p>
 
           {selectedRepository.notes ? (
             <div className="repo-notes">
-              <span className="repo-notes-label">备注</span>
+              <span className="repo-notes-label">{t("summary.notes")}</span>
               <p>{selectedRepository.notes}</p>
             </div>
           ) : null}
@@ -135,14 +135,14 @@ export function RepositorySummaryPanel({
               type="button"
               onClick={() => setShowLog(!showLog)}
             >
-              {showLog ? "收起" : "展开"}最近提交 {isLogLoading ? "…" : `(${gitLogs.length})`}
+              {showLog ? t("ui.collapse") : t("ui.expand")}{t("summary.recentCommits")} {isLogLoading ? "…" : `(${gitLogs.length})`}
             </button>
             {showLog ? (
               <div className="repo-log-list">
                 {isLogLoading ? (
-                  <p className="repo-log-loading">加载中...</p>
+                  <p className="repo-log-loading">{t("summary.loading")}</p>
                 ) : gitLogs.length === 0 ? (
-                  <p className="repo-log-empty">暂无提交记录</p>
+                  <p className="repo-log-empty">{t("summary.noCommits")}</p>
                 ) : (
                   gitLogs.map((entry, idx) => (
                     <div className="repo-log-item" key={idx}>
@@ -163,8 +163,8 @@ export function RepositorySummaryPanel({
         </div>
       ) : (
         <div className="review-empty">
-          <h3>{emptyStateCopy.title}</h3>
-          <p>{emptyStateCopy.body}</p>
+          <h3>{getEmptyStateCopy(t).title}</h3>
+          <p>{getEmptyStateCopy(t).body}</p>
         </div>
       )}
     </section>
@@ -180,7 +180,7 @@ function formatDate(dateStr: string) {
   }
 }
 
-function CopyButton({ value }: { value: string }) {
+function CopyButton({ value, title }: { value: string; title: string }) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
@@ -192,7 +192,7 @@ function CopyButton({ value }: { value: string }) {
   }
 
   return (
-    <button type="button" className="remote-url-copy" onClick={handleCopy} title="复制地址">
+    <button type="button" className="remote-url-copy" onClick={handleCopy} title={title}>
       {copied ? (
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="20 6 9 17 4 12" />

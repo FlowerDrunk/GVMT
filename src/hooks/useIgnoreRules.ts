@@ -10,6 +10,7 @@ import {
   type Repository,
   type VcsType,
 } from "../lib/api";
+import type { Translator } from "../lib/i18n";
 
 interface UseIgnoreRulesOptions {
   selectedRepository: Repository | undefined;
@@ -17,6 +18,7 @@ interface UseIgnoreRulesOptions {
   setOperationResults: (results: OperationResult[]) => void;
   onCloseContextMenu: () => void;
   setStatus: (value: string) => void;
+  t: Translator;
 }
 
 export function useIgnoreRules({
@@ -25,6 +27,7 @@ export function useIgnoreRules({
   setOperationResults,
   onCloseContextMenu,
   setStatus,
+  t,
 }: UseIgnoreRulesOptions) {
   const [ignoreRules, setIgnoreRules] = useState<IgnoreRules | null>(null);
   const [isIgnoreDialogOpen, setIsIgnoreDialogOpen] = useState(false);
@@ -32,7 +35,7 @@ export function useIgnoreRules({
 
   async function handleOpenIgnoreDialog() {
     if (!selectedRepository) {
-      setStatus("请先选择一个仓库");
+      setStatus(t("status.selectRepoFirst"));
       return;
     }
 
@@ -41,7 +44,7 @@ export function useIgnoreRules({
       const rules = await getIgnoreRules(selectedRepository.id);
       setIgnoreRules(rules);
       setIsIgnoreDialogOpen(true);
-      setStatus("已加载忽略规则");
+      setStatus(t("status.rulesLoaded"));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
@@ -57,7 +60,7 @@ export function useIgnoreRules({
     try {
       const result = await addIgnoreRule(selectedRepository.id, { path, vcsType });
       setOperationResults([result]);
-      setStatus(result.success ? result.summary : `忽略操作失败：${result.warning ?? ""}`);
+      setStatus(result.success ? result.summary : t("status.ignoreFailed", { reason: result.warning ?? "" }));
       if (result.success) {
         await loadRepositoryStatus(true);
         if (ignoreRules) {
@@ -79,7 +82,7 @@ export function useIgnoreRules({
     try {
       const result = await removeIgnoreRule(selectedRepository.id, { path, vcsType });
       setOperationResults([result]);
-      setStatus(result.success ? result.summary : `取消忽略失败：${result.warning ?? ""}`);
+      setStatus(result.success ? result.summary : t("status.unignoreFailed", { reason: result.warning ?? "" }));
       if (result.success) {
         await loadRepositoryStatus(true);
         const updated = await getIgnoreRules(selectedRepository.id);

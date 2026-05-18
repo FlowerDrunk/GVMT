@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { MouseEvent } from "react";
 import type { ChangeStatus, Repository, RepositoryStatus, VcsType } from "../../lib/api";
 import type { Translator } from "../../lib/i18n";
-import { VcsLabels } from "../../lib/constants";
+import { getVcsLabels } from "../../lib/constants";
 import { ChangeBadge } from "../shared/ChangeBadge";
 import { EmptyState } from "../shared/EmptyState";
 import { Button } from "../ui/button";
@@ -105,9 +105,9 @@ export function StatusPanel({
                   onDoubleClick={() => onOpenChangeDiff(change.path, { status: change.status, vcsType: change.vcsType, staged: change.staged })}
                   onContextMenu={(event) => onContextMenu(event, change.path, change.vcsType, change.status)}
                 >
-                  <ChangeBadge status={change.status} />
+                  <ChangeBadge status={change.status} t={t} />
                   <span className="change-path">{change.path}</span>
-                  <span className="change-vcs">{VcsLabels[change.vcsType]}</span>
+                  <span className="change-vcs">{getVcsLabels(t)[change.vcsType]}</span>
                 </button>
               ))}
               {isTruncated && (

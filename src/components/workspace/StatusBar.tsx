@@ -21,8 +21,6 @@ export function StatusBar({ isLoading, status }: StatusBarProps) {
   );
 }
 
-// -- Context Menu Overlays --
-
 interface ContextMenuState<T> {
   data: T;
   x: number;
@@ -90,7 +88,6 @@ export function IgnoreContextMenuOverlay({
   const isSvn = vcsType === "svn";
   const isGit = vcsType === "git" || vcsType === "mixed";
   const isConflicted = status === "conflicted";
-  const isMissing = status === "missing";
 
   async function handleSvnRevert() {
     if (!repositoryId) return;
@@ -102,7 +99,7 @@ export function IgnoreContextMenuOverlay({
         operation: "revert",
         vcsType: "svn",
         success: false,
-        summary: "Revert 失败",
+        summary: t("contextMenu.revertFailed"),
         output: String(error),
         warning: String(error),
         missingSvnCli: false,
@@ -120,7 +117,7 @@ export function IgnoreContextMenuOverlay({
         operation: "resolve",
         vcsType: "svn",
         success: false,
-        summary: "Resolve 失败",
+        summary: t("contextMenu.resolveFailed"),
         output: String(error),
         warning: String(error),
         missingSvnCli: false,
@@ -138,7 +135,7 @@ export function IgnoreContextMenuOverlay({
         operation: "resolve",
         vcsType: "svn",
         success: false,
-        summary: "Resolve 失败",
+        summary: t("contextMenu.resolveFailed"),
         output: String(error),
         warning: String(error),
         missingSvnCli: false,
@@ -162,7 +159,7 @@ export function IgnoreContextMenuOverlay({
         operation: "update",
         vcsType: "svn",
         success: false,
-        summary: "强制更新失败",
+        summary: t("contextMenu.forceUpdateFailed"),
         output: String(error),
         warning: String(error),
         missingSvnCli: false,
@@ -180,7 +177,7 @@ export function IgnoreContextMenuOverlay({
         operation: "stash",
         vcsType: "git",
         success: false,
-        summary: "Stash 失败",
+        summary: t("contextMenu.stashFailed"),
         output: String(error),
         warning: String(error),
         missingSvnCli: false,
@@ -199,7 +196,7 @@ export function IgnoreContextMenuOverlay({
         operation: "reset",
         vcsType: "git",
         success: false,
-        summary: "Reset 失败",
+        summary: t("contextMenu.resetFailed"),
         output: String(error),
         warning: String(error),
         missingSvnCli: false,
@@ -219,26 +216,25 @@ export function IgnoreContextMenuOverlay({
           disabled={!status}
           onClick={() => onOpenDiff(path, vcsType, status)}
         >
-          查看 Diff
+          {t("contextMenu.viewDiff")}
         </button>
 
-        {/* SVN 操作 */}
         {isSvn ? (
           <>
             {isConflicted ? (
               <>
-                <div className="context-menu-label">冲突解决</div>
+                <div className="context-menu-label">{t("contextMenu.conflictResolve")}</div>
                 <button type="button" onClick={() => handleSvnResolveAccept("theirs-full")}>
-                  接受服务器版本 (theirs)
+                  {t("contextMenu.acceptTheirs")}
                 </button>
                 <button type="button" onClick={() => handleSvnResolveAccept("mine-full")}>
-                  保留本地版本 (mine)
+                  {t("contextMenu.acceptMine")}
                 </button>
                 <button type="button" onClick={() => handleSvnResolveAccept("base")}>
-                  还原原始版本 (base)
+                  {t("contextMenu.acceptBase")}
                 </button>
                 <button type="button" onClick={handleSvnResolve}>
-                  标记已解决 (保留当前状态)
+                  {t("contextMenu.markResolved")}
                 </button>
                 <div className="context-menu-separator" />
               </>
@@ -247,26 +243,25 @@ export function IgnoreContextMenuOverlay({
               SVN Revert
             </button>
             <button type="button" className="cmd-danger" onClick={handleSvnUpdateForce}>
-              强制更新 (Clean + Revert + Update)
+              {t("contextMenu.forceUpdate")}
             </button>
           </>
         ) : null}
 
-        {/* Git 操作 */}
         {isGit ? (
           <>
             <button type="button" onClick={handleGitStashPush}>
-              Git Stash Push (暂存变更)
+              {t("contextMenu.gitStashPush")}
             </button>
             <button type="button" className="cmd-danger" onClick={() => setIsResetDialogOpen(true)}>
-              Git Reset (soft)…
+              {t("contextMenu.gitResetSoft")}
             </button>
           </>
         ) : null}
 
         <div className="context-menu-separator" />
         <button type="button" onClick={() => onIgnoreFile(path, vcsType)}>
-          加入忽略
+          {t("contextMenu.addIgnore")}
         </button>
         {(() => {
           const dotIdx = path.lastIndexOf(".");
@@ -274,7 +269,7 @@ export function IgnoreContextMenuOverlay({
             const ext = path.slice(dotIdx);
             return (
               <button type="button" onClick={() => onIgnoreFile(`*${ext}`, vcsType)}>
-                忽略同后缀文件 (*{ext})
+                {t("contextMenu.ignoreExt", { ext })}
               </button>
             );
           }
@@ -282,20 +277,20 @@ export function IgnoreContextMenuOverlay({
         })()}
       </div>
 
-      {/* Reset 确认弹窗 */}
       <Modal open={isResetDialogOpen} onClose={() => setIsResetDialogOpen(false)} labelledBy="reset-confirm-title">
         <ModalHeading
           eyebrow="Git reset"
-          title="确认重置？"
+          title={t("contextMenu.resetTitle")}
           titleId="reset-confirm-title"
           onClose={() => setIsResetDialogOpen(false)}
+          t={t}
         />
         <div className="reset-confirm-body">
-          <p>将执行 <code>git reset --soft HEAD</code>，取消当前所有暂存。文件内容不会丢失。</p>
+          <p>{t("contextMenu.resetBody")}</p>
           <p className="reset-confirm-path">{path}</p>
           <div className="modal-actions">
-            <Button variant="secondary" onClick={() => setIsResetDialogOpen(false)}>取消</Button>
-            <Button variant="default" onClick={handleGitResetSoft}>确认 Reset</Button>
+            <Button variant="secondary" onClick={() => setIsResetDialogOpen(false)}>{t("ui.cancel")}</Button>
+            <Button variant="default" onClick={handleGitResetSoft}>{t("contextMenu.confirmReset")}</Button>
           </div>
         </div>
       </Modal>
@@ -304,6 +299,7 @@ export function IgnoreContextMenuOverlay({
         open={isForceUpdateConfirmOpen}
         onClose={() => setIsForceUpdateConfirmOpen(false)}
         onConfirm={handleForceUpdateExecute}
+        t={t}
       />
     </>
   );

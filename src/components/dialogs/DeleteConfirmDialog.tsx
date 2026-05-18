@@ -31,6 +31,7 @@ export function DeleteConfirmDialog({
         title={t("delete.title")}
         titleId={titleId}
         onClose={onClose}
+        t={t}
       />
       <p>
         {t("delete.body")} <strong>{repository.name}</strong>

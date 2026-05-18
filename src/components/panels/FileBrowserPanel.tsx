@@ -401,6 +401,7 @@ export function FileBrowserPanel({
           title={selectedFilePreview?.name ?? "文件预览"}
           titleId="file-preview-title"
           onClose={onCloseFilePreview}
+          t={t}
         />
         {isFilePreviewLoading ? (
           <EmptyState compact title={t("preview.loading")} description="" />
@@ -448,6 +449,7 @@ export function FileBrowserPanel({
             setIsRemotePreviewOpen(false);
             setRemotePreviewError(null);
           }}
+          t={t}
         />
         {isRemotePreviewLoading ? (
           <EmptyState compact title={t("preview.loading")} description="" />
