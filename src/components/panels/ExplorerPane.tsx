@@ -57,13 +57,20 @@ export function ExplorerPane({
   const [editRepo, setEditRepo] = useState<Repository | null>(null);
   const [editName, setEditName] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [editPath, setEditPath] = useState("");
+  const [editRemoteUrl, setEditRemoteUrl] = useState("");
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   async function handleSaveEdit() {
     if (!editRepo) return;
     setIsSavingEdit(true);
     try {
-      await updateRepositoryInfo(editRepo.id, { name: editName.trim() || undefined, notes: editNotes.trim() || undefined });
+      await updateRepositoryInfo(editRepo.id, {
+        name: editName.trim() || undefined,
+        notes: editNotes.trim() || undefined,
+        path: editPath.trim() !== editRepo.path ? editPath.trim() : undefined,
+        remoteUrl: editRemoteUrl.trim() !== (editRepo.remoteUrl ?? "") ? (editRemoteUrl.trim() || undefined) : undefined,
+      });
       setEditRepo(null);
       onRepositoriesChanged();
     } catch (error) {
@@ -77,6 +84,8 @@ export function ExplorerPane({
     setEditRepo(repo);
     setEditName(repo.name);
     setEditNotes(repo.notes || "");
+    setEditPath(repo.path);
+    setEditRemoteUrl(repo.remoteUrl ?? "");
     setAddError(null);
   }
 
@@ -352,13 +361,14 @@ export function ExplorerPane({
                 key={repository.id}
                 trigger={
                   <button
-                    className={`repo-item ${selectedRepository?.id === repository.id ? "active" : ""}`}
+                    className={`repo-item ${!repository.pathExists ? "repo-missing" : ""} ${selectedRepository?.id === repository.id ? "active" : ""}`}
                     type="button"
                     onClick={() => onSelectRepository(repository.id)}
                   >
-                    <span className={`repo-dot ${statusTone(repository.vcsType)}`} />
+                    <span className={`repo-dot ${repository.pathExists ? statusTone(repository.vcsType) : "danger"}`} />
                     <span className="repo-copy">
                       <strong>{repository.name}</strong>
+                      {!repository.pathExists ? <span className="repo-missing-tag">已删除</span> : null}
                       <span className="repo-branch">{latestSvnRevisions[repository.id] ?? repository.branchOrRevision ?? ""}</span>
                     </span>
                     <span className="repo-type">{getVcsLabels(t)[repository.vcsType]}</span>
@@ -388,6 +398,10 @@ export function ExplorerPane({
           <div className="edit-repo-body">
             <label>{t("explorer.repoName")}</label>
             <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} />
+            <label>{t("explorer.localDirectory")}</label>
+            <input type="text" value={editPath} onChange={(e) => setEditPath(e.target.value)} placeholder={editRepo?.path} />
+            <label>{t("explorer.remoteUrl")}</label>
+            <input type="text" value={editRemoteUrl} onChange={(e) => setEditRemoteUrl(e.target.value)} placeholder={t("explorer.remoteUrlPlaceholder")} />
             <label>{t("explorer.notes")}</label>
             <textarea rows={3} value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder={t("explorer.notesPlaceholder")} />
             {addError ? <p className="add-repo-error">{addError}</p> : null}

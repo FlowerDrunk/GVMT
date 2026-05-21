@@ -1,5 +1,6 @@
-import { FormEvent, useMemo, useRef, useState } from "react";
-import type { ChangeItem, QualityCheckResult, VcsType } from "../../lib/api";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getCommitHooks, saveCommitHooks, testHookScript, type CommitHook } from "../../lib/api";
+import type { ChangeItem, VcsType } from "../../lib/api";
 import type { Translator } from "../../lib/i18n";
 import { changeKey } from "../../lib/constants";
 import { Modal, ModalHeading } from "../shared/Modal";
@@ -20,9 +21,10 @@ function saveRecentMessage(msg: string) {
 
 interface CommitDialogProps {
   open: boolean; onClose: () => void; t: Translator;
+  repositoryId: number | null;
   committableFiles: ChangeItem[]; selectedCommitKeys: Set<string>; selectedCommitCount: number;
   hasGitCommitSelection: boolean; pushAfterCommit: boolean; commitMessage: string; isCommitLoading: boolean;
-  latestQualityResult: QualityCheckResult | null; vcsLabels: Record<VcsType, string>;
+  vcsLabels: Record<VcsType, string>;
   commitError: string | null; commitHash: string | null;
   onToggleAllFiles: (files: ChangeItem[]) => void; onToggleFile: (change: ChangeItem) => void;
   onPushToggle: (push: boolean) => void; onCommitMessageChange: (message: string) => void;
@@ -65,9 +67,9 @@ function getPathFilters(t: Translator): { key: PathFilter; label: string }[] {
 }
 
 export function CommitDialog({
-  open, onClose, t, committableFiles, selectedCommitKeys, selectedCommitCount,
+  open, onClose, t, repositoryId, committableFiles, selectedCommitKeys, selectedCommitCount,
   hasGitCommitSelection, pushAfterCommit, commitMessage, isCommitLoading,
-  latestQualityResult, vcsLabels, commitError, commitHash,
+  vcsLabels, commitError, commitHash,
   onToggleAllFiles, onToggleFile, onPushToggle, onCommitMessageChange, onSubmit, onOpenFileDiff,
 }: CommitDialogProps) {
   const titleId = "commit-dialog-title";
@@ -80,6 +82,62 @@ export function CommitDialog({
   const recentMessages = useMemo(loadRecentMessages, [open]);
   const [browseGroup, setBrowseGroup] = useState<FileGroup | null>(null);
   const [browseQuery, setBrowseQuery] = useState("");
+
+  // ── Hook settings ─────────────────────────────────────────────────────────
+  const [hooks, setHooks] = useState<CommitHook[]>([]);
+  const [hookDialogOpen, setHookDialogOpen] = useState(false);
+  const [preEnabled, setPreEnabled] = useState(false);
+  const [preShell, setPreShell] = useState<"cmd" | "powershell">("cmd");
+  const [preScript, setPreScript] = useState("");
+  const [postEnabled, setPostEnabled] = useState(false);
+  const [postShell, setPostShell] = useState<"cmd" | "powershell">("cmd");
+  const [postScript, setPostScript] = useState("");
+  const [hookSaved, setHookSaved] = useState(false);
+
+  const loadHooks = useCallback(async () => {
+    if (!repositoryId) { setHooks([]); return; }
+    try {
+      const data = await getCommitHooks(repositoryId);
+      setHooks(data);
+      const pre = data.find((h) => h.hookType === "pre-commit");
+      const post = data.find((h) => h.hookType === "post-commit");
+      setPreEnabled(pre?.enabled ?? false);
+      setPreShell(pre?.shell ?? "cmd");
+      setPreScript(pre?.script ?? "");
+      setPostEnabled(post?.enabled ?? false);
+      setPostShell(post?.shell ?? "cmd");
+      setPostScript(post?.script ?? "");
+    } catch { /* ignore */ }
+  }, [repositoryId]);
+
+  useEffect(() => { if (open) void loadHooks(); }, [open, loadHooks]);
+
+  async function handleSaveHooks() {
+    if (!repositoryId) return;
+    setHookSaved(false);
+    await saveCommitHooks({
+      repositoryId,
+      hooks: [
+        { hookType: "pre-commit", enabled: preEnabled, shell: preShell, script: preScript },
+        { hookType: "post-commit", enabled: postEnabled, shell: postShell, script: postScript },
+      ],
+    });
+    setHookSaved(true);
+    await loadHooks();
+    setTimeout(() => setHookSaved(false), 2000);
+  }
+
+  const hookSummary = (() => {
+    const pre = hooks.find((h) => h.hookType === "pre-commit");
+    const post = hooks.find((h) => h.hookType === "post-commit");
+    const hasPre = pre?.enabled && pre.script.trim();
+    const hasPost = post?.enabled && post.script.trim();
+    if (!hasPre && !hasPost) return null;
+    const parts: string[] = [];
+    if (hasPre) parts.push(`pre: ${pre.shell}`);
+    if (hasPost) parts.push(`post: ${post.shell}`);
+    return parts.join("  |  ");
+  })();
 
   const groupLabels = useMemo(() => getGroupLabels(t), [t]);
   const statusFilters = useMemo(() => getStatusFilters(t), [t]);
@@ -187,12 +245,17 @@ export function CommitDialog({
           <div><span>{t("commit.pushLabel")}</span><strong>{hasGitCommitSelection && pushAfterCommit ? t("commit.onLabel") : t("commit.offLabel")}</strong></div>
           {commitHash ? <div className="commit-hash-badge"><code>{commitHash.slice(0, 12)}</code></div> : null}
         </div>
-        <div className="commit-quality-summary" data-state={latestQualityResult?.status ?? "idle"}>
-          <span>{t("commit.qualityCheckLabel")}</span>
-          {latestQualityResult ? <><strong>{latestQualityResult.summary}</strong><small>{latestQualityResult.label}</small></>
-            : <><strong>{t("commit.notRun")}</strong><small>{t("commit.notRunDesc")}</small></>}
-        </div>
 
+        <div className="commit-hook-summary">
+          {hookSummary ? (
+            <span className="commit-hook-enabled">{hookSummary}</span>
+          ) : (
+            <span className="commit-hook-disabled">{t("review.commitHooks")}: —</span>
+          )}
+          <Button variant="ghost" size="sm" type="button" onClick={() => setHookDialogOpen(true)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </Button>
+        </div>
         <input className="commit-search-input" type="text" placeholder={t("commit.searchFiles")} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
 
         <div className="commit-filter-bar">
@@ -298,7 +361,85 @@ export function CommitDialog({
           </div>
         ) : null}
       </Modal>
+
+      {/* Hook settings sub-dialog */}
+      <Modal open={hookDialogOpen} onClose={() => setHookDialogOpen(false)} labelledBy="hook-dialog-title" className="hook-settings-dialog">
+        <ModalHeading eyebrow={t("review.commitHooks")} title={t("review.commitHooks")} titleId="hook-dialog-title" onClose={() => setHookDialogOpen(false)} t={t} />
+        <div className="hook-settings-body">
+          <HookEditor
+            title={t("review.preCommit")}
+            enabled={preEnabled} shell={preShell} script={preScript}
+            onEnabledChange={setPreEnabled} onShellChange={setPreShell} onScriptChange={setPreScript}
+            t={t}
+          />
+          <HookEditor
+            title={t("review.postCommit")}
+            enabled={postEnabled} shell={postShell} script={postScript}
+            onEnabledChange={setPostEnabled} onShellChange={setPostShell} onScriptChange={setPostScript}
+            t={t}
+          />
+          <div className="modal-actions">
+            {hookSaved ? <span className="hook-saved-msg">{t("review.saved")}</span> : null}
+            <Button variant="secondary" onClick={() => setHookDialogOpen(false)} type="button">{t("commit.cancel")}</Button>
+            <Button variant="default" onClick={handleSaveHooks} type="button">{t("review.save")}</Button>
+          </div>
+        </div>
+      </Modal>
     </form>
     </Modal>
+  );
+}
+
+function HookEditor({
+  title, enabled, shell, script,
+  onEnabledChange, onShellChange, onScriptChange,
+  t,
+}: {
+  title: string; enabled: boolean; shell: "cmd" | "powershell"; script: string;
+  onEnabledChange: (v: boolean) => void; onShellChange: (v: "cmd" | "powershell") => void;
+  onScriptChange: (v: string) => void; t: Translator;
+}) {
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  async function handleTest() {
+    if (!script.trim()) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await testHookScript(shell, script);
+      setTestResult(result.success
+        ? `✓ ${result.output.slice(0, 500)}`
+        : `✗ ${result.output.slice(0, 500)}`);
+    } catch (e) {
+      setTestResult(`✗ ${String(e)}`);
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <div className="hook-editor" data-enabled={enabled}>
+      <label className="hook-editor-header">
+        <input type="checkbox" checked={enabled} onChange={(e) => onEnabledChange(e.target.checked)} />
+        <span>{title}</span>
+        <select value={shell} onChange={(e) => onShellChange(e.target.value as "cmd" | "powershell")} disabled={!enabled}>
+          <option value="cmd">CMD</option>
+          <option value="powershell">PowerShell</option>
+        </select>
+        <Button variant="ghost" size="sm" type="button" disabled={!enabled || !script.trim() || testing} onClick={handleTest}>
+          {testing ? "…" : "测试"}
+        </Button>
+      </label>
+      <textarea
+        className="hook-editor-textarea"
+        value={script}
+        onChange={(e) => onScriptChange(e.target.value)}
+        placeholder={t("review.scriptPlaceholder")}
+        disabled={!enabled}
+        rows={4}
+      />
+      {testResult ? <pre className="hook-test-result">{testResult}</pre> : null}
+    </div>
   );
 }

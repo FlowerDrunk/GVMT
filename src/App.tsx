@@ -57,7 +57,6 @@ import { useSettings } from "./hooks/useSettings";
 import { useOperationHistory } from "./hooks/useOperationHistory";
 import { useToast } from "./hooks/useToast";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
-import { useQualityChecks } from "./hooks/useQualityChecks";
 import { useCardOrder } from "./hooks/useCardOrder";
 import { ToastContainer } from "./components/workspace/ToastContainer";
 import { ActivityRail } from "./components/layout/ActivityRail";
@@ -127,13 +126,6 @@ function AppContent() {
 
   const fileTree = useFileTree({ selectedRepository: repo.selectedRepository, setStatus, t });
   const changeTree = useChangeTree({ selectedRepository: repo.selectedRepository, setStatus, t });
-  const qualityChecks = useQualityChecks({
-    selectedRepository: repo.selectedRepository,
-    setStatus,
-    showToast,
-    t,
-  });
-
   const [isUpdating, setIsUpdating] = useState(false);
   const [isCloningOp, setIsCloningOp] = useState(false);
   const [updateLines, setUpdateLines] = useState<string[]>([]);
@@ -830,13 +822,7 @@ function AppContent() {
                 content: (
                   <ReviewPane
                     selectedRepository={repo.selectedRepository}
-                    currentReviewState={currentReviewState}
-                    currentChangeCount={currentChangeCount}
-                    repositoryStatus={statusHook.repositoryStatus}
                     t={t}
-                    qualityChecks={qualityChecks.checks}
-                    isQualityCheckLoading={qualityChecks.isLoadingTemplates}
-                    onRunQualityCheck={(checkType) => void qualityChecks.runCheck(checkType)}
                   />
                 ),
               },
@@ -929,6 +915,7 @@ function AppContent() {
         open={commit.isCommitDialogOpen}
         onClose={() => { commit.setIsCommitDialogOpen(false); commit.setCommitError(null); }}
         t={t}
+        repositoryId={repo.selectedRepository?.id ?? null}
         committableFiles={commit.committableFiles}
         selectedCommitKeys={commit.selectedCommitKeys}
         selectedCommitCount={commit.selectedCommitCount}
@@ -936,7 +923,6 @@ function AppContent() {
         pushAfterCommit={commit.pushAfterCommit}
         commitMessage={commit.commitMessage}
         isCommitLoading={commit.isCommitLoading}
-        latestQualityResult={qualityChecks.latestResult}
         vcsLabels={getVcsLabels(t)}
         commitError={commit.commitError}
         commitHash={commit.commitHash}

@@ -1,15 +1,16 @@
 use serde::Serialize;
+use rusqlite::params;
 use crate::command_exec::run_command_args;
 use crate::utils::{summarize_changes};
 use crate::{
-    db, file_browser, git, ignore, quality, svn, windows,
+    db, file_browser, git, ignore, svn, windows,
 };
 use crate::models::{
     AddIgnoreRuleRequest, AddRepositoryInput, BranchInfo, RemoveIgnoreRuleRequest,
-    CommitRequest, DetectedRepository, DiffRequest, IgnoreRules,
-    OperationResult as OpResult, QualityCheckResult, QualityCheckTemplate, QualityCheckType,
+    CommitHook, CommitRequest, DetectedRepository, DiffRequest, IgnoreRules,
+    OperationResult as OpResult, QualityScript, QualityScriptInput, QualityScriptResult,
     Repository, RepositoryDiff, RepositoryDirectory, RepositoryFilePreview, RepositoryStatus,
-    StartupContext, UpdateGitignoreRequest, WindowsContextMenuStatus,
+    SaveCommitHooksRequest, StartupContext, TestHookResult, UpdateGitignoreRequest, WindowsContextMenuStatus,
 };
 use tauri::AppHandle;
 #[tauri::command]
@@ -54,12 +55,14 @@ pub async fn list_repositories(app: AppHandle) -> Result<Vec<Repository>, String
                     notes: row.get(6)?,
                     created_at: row.get(7)?,
                     updated_at: row.get(8)?,
+                    path_exists: true,
                 })
             })
             .map_err(|error| error.to_string())?;
 
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|error| error.to_string())
+            .map(|repos| repos.into_iter().map(Repository::with_path_check).collect())
     })
     .await
 }
@@ -174,6 +177,8 @@ pub async fn clone_repository(app: AppHandle, input: CloneRepositoryInput) -> Re
 pub struct UpdateRepositoryInfoInput {
     pub name: Option<String>,
     pub notes: Option<String>,
+    pub path: Option<String>,
+    pub remote_url: Option<String>,
 }
 
 #[tauri::command]
@@ -194,6 +199,17 @@ pub async fn update_repository_info(app: AppHandle, id: i64, input: UpdateReposi
         if let Some(ref notes) = input.notes {
             set_clauses.push("notes = ?");
             params.push(Box::new(notes.clone()));
+        }
+        if let Some(ref path) = input.path {
+            if path.trim().is_empty() {
+                return Err("本地路径不能为空".to_string());
+            }
+            set_clauses.push("path = ?");
+            params.push(Box::new(path.trim().to_string()));
+        }
+        if let Some(ref remote_url) = input.remote_url {
+            set_clauses.push("remote_url = ?");
+            params.push(Box::new(if remote_url.trim().is_empty() { None::<String> } else { Some(remote_url.trim().to_string()) }));
         }
         if set_clauses.is_empty() {
             return Err("没有需要更新的字段".to_string());
@@ -590,6 +606,37 @@ pub async fn commit_repository(
         let repository = db::find_repository_by_id(&connection, id)?
             .ok_or_else(|| "未找到需要提交的仓库".to_string())?;
 
+        // Execute pre-commit hook
+        let hooks = db::get_commit_hooks(&connection, id)?;
+        for hook in &hooks {
+            if hook.hook_type == "pre-commit" && hook.enabled && !hook.script.trim().is_empty() {
+                match crate::command_exec::execute_script(&hook.shell, &hook.script) {
+                    Ok((true, output)) => {
+                        if !output.trim().is_empty() {
+                            db::insert_operation_log(
+                                &connection, Some(id), "pre-commit-hook", &repository.vcs_type,
+                                true, "pre-commit 钩子执行通过", &output, None,
+                            )?;
+                        }
+                    }
+                    Ok((false, output)) => {
+                        let _ = db::insert_operation_log(
+                            &connection, Some(id), "pre-commit-hook", &repository.vcs_type,
+                            false, "pre-commit 钩子执行失败", &output, None,
+                        );
+                        return Err(format!("提交前钩子执行失败:\n{output}"));
+                    }
+                    Err(error) => {
+                        let _ = db::insert_operation_log(
+                            &connection, Some(id), "pre-commit-hook", &repository.vcs_type,
+                            false, "pre-commit 钩子启动失败", &error, None,
+                        );
+                        return Err(format!("提交前钩子启动失败: {error}"));
+                    }
+                }
+            }
+        }
+
         let mut results = Vec::new();
         let git_files = input
             .files
@@ -618,6 +665,38 @@ pub async fn commit_repository(
 
         if results.is_empty() {
             return Err("当前选择的文件没有可提交的 Git / SVN 变更".to_string());
+        }
+
+        // Execute post-commit hook (after successful commit)
+        let commit_success = results.iter().all(|r| r.success);
+        if commit_success {
+            for hook in &hooks {
+                if hook.hook_type == "post-commit" && hook.enabled && !hook.script.trim().is_empty() {
+                    match crate::command_exec::execute_script(&hook.shell, &hook.script) {
+                        Ok((true, output)) => {
+                            if !output.trim().is_empty() {
+                                db::insert_operation_log(
+                                    &connection, Some(id), "post-commit-hook", &repository.vcs_type,
+                                    true, "post-commit 钩子执行通过", &output, None,
+                                )?;
+                            }
+                        }
+                        Ok((false, output)) => {
+                            let _ = db::insert_operation_log(
+                                &connection, Some(id), "post-commit-hook", &repository.vcs_type,
+                                false, "post-commit 钩子执行失败", &output, None,
+                            );
+                            // Don't block the commit result, just log
+                        }
+                        Err(error) => {
+                            let _ = db::insert_operation_log(
+                                &connection, Some(id), "post-commit-hook", &repository.vcs_type,
+                                false, "post-commit 钩子启动失败", &error, None,
+                            );
+                        }
+                    }
+                }
+            }
         }
 
         Ok(results)
@@ -910,24 +989,118 @@ pub async fn git_reset(app: AppHandle, id: i64, mode: String, target: String) ->
 
 // ── Quality Checks ────────────────────────────────────────────────────────
 
+// ── Commit Hooks ──────────────────────────────────────────────────────────
+
 #[tauri::command]
-pub async fn list_quality_checks(app: AppHandle, id: i64) -> Result<Vec<QualityCheckTemplate>, String> {
+pub async fn get_commit_hooks(app: AppHandle, repository_id: i64) -> Result<Vec<CommitHook>, String> {
     run_blocking(move || {
         let connection = db::open_database(&app)?;
-        quality::list_quality_checks_impl(&connection, id)
+        db::get_commit_hooks(&connection, repository_id)
     })
     .await
 }
 
 #[tauri::command]
-pub async fn run_quality_check(
-    app: AppHandle,
-    id: i64,
-    check_type: QualityCheckType,
-) -> Result<QualityCheckResult, String> {
+pub async fn save_commit_hooks(app: AppHandle, input: SaveCommitHooksRequest) -> Result<(), String> {
     run_blocking(move || {
         let connection = db::open_database(&app)?;
-        quality::run_quality_check_impl(&connection, id, check_type)
+        db::save_commit_hooks(&connection, input.repository_id, &input.hooks)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn test_hook_script(shell: String, script: String) -> Result<TestHookResult, String> {
+    run_blocking(move || {
+        let (success, output) = crate::command_exec::execute_script(&shell, &script)?;
+        Ok(TestHookResult { success, output })
+    })
+    .await
+}
+
+// ── Quality Scripts ───────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_quality_scripts(app: AppHandle, repository_id: i64) -> Result<Vec<QualityScript>, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        db::get_quality_scripts(&connection, repository_id)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn save_quality_script(app: AppHandle, input: QualityScriptInput) -> Result<QualityScript, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let id = db::upsert_quality_script(&connection, &input)?;
+        let scripts = db::get_quality_scripts(&connection, input.repository_id)?;
+        scripts.into_iter().find(|s| s.id == id).ok_or_else(|| "脚本保存后未找到".to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_quality_script(app: AppHandle, id: i64) -> Result<(), String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        db::delete_quality_script(&connection, id)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn run_quality_script(app: AppHandle, id: i64) -> Result<QualityScriptResult, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let mut statement = connection
+            .prepare("SELECT id, shell, script FROM quality_scripts WHERE id = ?1")
+            .map_err(|error| error.to_string())?;
+        let (script_id, shell, script): (i64, String, String) = statement
+            .query_row(params![id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .map_err(|error| format!("未找到质量检查脚本: {error}"))?;
+
+        let start = std::time::Instant::now();
+        let (success, output) = crate::command_exec::execute_script(&shell, &script)?;
+        let duration_ms = start.elapsed().as_millis().min(u128::from(i64::MAX as u64)) as i64;
+
+        db::update_quality_script_result(&connection, script_id, success, duration_ms, &output)?;
+
+        Ok(QualityScriptResult { script_id, success, output, duration_ms })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn run_all_quality_scripts(app: AppHandle, repository_id: i64) -> Result<Vec<QualityScriptResult>, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        let scripts = db::get_quality_scripts(&connection, repository_id)?;
+        let mut results = Vec::new();
+
+        for script in scripts {
+            if !script.enabled {
+                continue;
+            }
+            let start = std::time::Instant::now();
+            match crate::command_exec::execute_script(&script.shell, &script.script) {
+                Ok((success, output)) => {
+                    let duration_ms = start.elapsed().as_millis().min(u128::from(i64::MAX as u64)) as i64;
+                    db::update_quality_script_result(&connection, script.id, success, duration_ms, &output)?;
+                    results.push(QualityScriptResult { script_id: script.id, success, output, duration_ms });
+                }
+                Err(error) => {
+                    results.push(QualityScriptResult {
+                        script_id: script.id,
+                        success: false,
+                        output: error,
+                        duration_ms: 0,
+                    });
+                }
+            }
+        }
+
+        Ok(results)
     })
     .await
 }

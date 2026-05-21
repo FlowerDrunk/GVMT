@@ -1,4 +1,4 @@
-use crate::models::{OperationLog, Repository};
+use crate::models::{CommitHook, CommitHookInput, OperationLog, QualityScript, QualityScriptInput, Repository};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::{env, fs, path::PathBuf};
 use tauri::Manager;
@@ -64,6 +64,30 @@ pub fn initialize_database(connection: &Connection) -> Result<(), String> {
                 output TEXT NOT NULL DEFAULT '',
                 warning TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS commit_hooks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                repository_id INTEGER NOT NULL,
+                hook_type TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                shell TEXT NOT NULL DEFAULT 'cmd',
+                script TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(repository_id, hook_type)
+            );
+            CREATE TABLE IF NOT EXISTS quality_scripts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                repository_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                shell TEXT NOT NULL DEFAULT 'cmd',
+                script TEXT NOT NULL DEFAULT '',
+                last_status TEXT,
+                last_duration_ms INTEGER,
+                last_output TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );",
         )
         .map_err(|error| error.to_string())?;
@@ -140,11 +164,13 @@ pub fn find_repository_by_id(
                     notes: row.get(6)?,
                     created_at: row.get(7)?,
                     updated_at: row.get(8)?,
+                    path_exists: true,
                 })
             },
         )
         .optional()
         .map_err(|error| error.to_string())
+        .map(|opt| opt.map(Repository::with_path_check))
 }
 
 pub fn find_repository_by_path(
@@ -168,11 +194,13 @@ pub fn find_repository_by_path(
                     notes: row.get(6)?,
                     created_at: row.get(7)?,
                     updated_at: row.get(8)?,
+                    path_exists: true,
                 })
             },
         )
         .optional()
         .map_err(|error| error.to_string())
+        .map(|opt| opt.map(Repository::with_path_check))
 }
 
 pub fn normalize_existing_path(path: String) -> Result<PathBuf, String> {
@@ -280,4 +308,117 @@ pub fn clear_old_operation_logs(connection: &Connection, before_days: i64) -> Re
             params![format!("-{} days", before_days)],
         )
         .map_err(|error| error.to_string())
+}
+
+// ── Commit Hooks ──────────────────────────────────────────────────────────
+
+pub fn get_commit_hooks(connection: &Connection, repository_id: i64) -> Result<Vec<CommitHook>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT id, repository_id, hook_type, enabled, shell, script, created_at, updated_at
+             FROM commit_hooks WHERE repository_id = ?1 ORDER BY hook_type",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![repository_id], |row| {
+            Ok(CommitHook {
+                id: row.get(0)?,
+                repository_id: row.get(1)?,
+                hook_type: row.get(2)?,
+                enabled: row.get::<_, i32>(3)? != 0,
+                shell: row.get(4)?,
+                script: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    Ok(rows)
+}
+
+pub fn save_commit_hooks(connection: &Connection, repository_id: i64, hooks: &[CommitHookInput]) -> Result<(), String> {
+    for hook in hooks {
+        connection
+            .execute(
+                "INSERT INTO commit_hooks (repository_id, hook_type, enabled, shell, script)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(repository_id, hook_type) DO UPDATE SET
+                 enabled = excluded.enabled, shell = excluded.shell, script = excluded.script,
+                 updated_at = CURRENT_TIMESTAMP",
+                params![repository_id, hook.hook_type, hook.enabled as i32, hook.shell, hook.script],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+// ── Quality Scripts ───────────────────────────────────────────────────────
+
+pub fn get_quality_scripts(connection: &Connection, repository_id: i64) -> Result<Vec<QualityScript>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT id, repository_id, name, enabled, shell, script, last_status, last_duration_ms, last_output, created_at, updated_at
+             FROM quality_scripts WHERE repository_id = ?1 ORDER BY name",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![repository_id], |row| {
+            Ok(QualityScript {
+                id: row.get(0)?,
+                repository_id: row.get(1)?,
+                name: row.get(2)?,
+                enabled: row.get::<_, i32>(3)? != 0,
+                shell: row.get(4)?,
+                script: row.get(5)?,
+                last_status: row.get(6)?,
+                last_duration_ms: row.get(7)?,
+                last_output: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    Ok(rows)
+}
+
+pub fn upsert_quality_script(connection: &Connection, input: &QualityScriptInput) -> Result<i64, String> {
+    connection
+        .execute(
+            "INSERT INTO quality_scripts (repository_id, name, enabled, shell, script)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT DO UPDATE SET
+             enabled = excluded.enabled, shell = excluded.shell, script = excluded.script,
+             updated_at = CURRENT_TIMESTAMP",
+            params![input.repository_id, input.name, input.enabled as i32, input.shell, input.script],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(connection.last_insert_rowid())
+}
+
+pub fn delete_quality_script(connection: &Connection, id: i64) -> Result<(), String> {
+    connection
+        .execute("DELETE FROM quality_scripts WHERE id = ?1", params![id])
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub fn update_quality_script_result(
+    connection: &Connection,
+    id: i64,
+    success: bool,
+    duration_ms: i64,
+    output: &str,
+) -> Result<(), String> {
+    let status = if success { "pass" } else { "fail" };
+    connection
+        .execute(
+            "UPDATE quality_scripts SET last_status = ?1, last_duration_ms = ?2, last_output = ?3, updated_at = CURRENT_TIMESTAMP WHERE id = ?4",
+            params![status, duration_ms, output, id],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }

@@ -78,6 +78,50 @@ fn decode_windows_ansi(bytes: &[u8]) -> Option<String> {
     }
 }
 
+#[cfg(windows)]
+fn encode_windows_ansi(utf8_text: &str) -> Vec<u8> {
+    use windows_sys::Win32::Globalization::{GetACP, WideCharToMultiByte};
+
+    let wide: Vec<u16> = utf8_text.encode_utf16().collect();
+    if wide.is_empty() {
+        return Vec::new();
+    }
+
+    unsafe {
+        let code_page = GetACP();
+        let required = WideCharToMultiByte(
+            code_page,
+            0,
+            wide.as_ptr(),
+            wide.len() as i32,
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+        );
+        if required <= 0 {
+            return utf8_text.as_bytes().to_vec(); // fallback
+        }
+
+        let mut bytes = vec![0u8; required as usize];
+        let written = WideCharToMultiByte(
+            code_page,
+            0,
+            wide.as_ptr(),
+            wide.len() as i32,
+            bytes.as_mut_ptr(),
+            bytes.len() as i32,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+        );
+        if written <= 0 {
+            return utf8_text.as_bytes().to_vec(); // fallback
+        }
+        bytes.truncate(written as usize);
+        bytes
+    }
+}
+
 pub fn run_command<const N: usize>(parts: [&str; N]) -> Result<String, String> {
     let (program, args) = parts.split_first().ok_or_else(|| "命令为空".to_string())?;
     let resolved_program = resolve_program(program);
@@ -125,6 +169,58 @@ pub fn run_command_args(program: &str, args: &[String]) -> Result<String, String
     }
 
     Ok(decode_command_output(&output.stdout).trim().to_string())
+}
+
+pub fn execute_script(shell: &str, script: &str) -> Result<(bool, String), String> {
+    let extension = match shell {
+        "powershell" => ".ps1",
+        _ => ".bat",
+    };
+
+    let temp_dir = std::env::temp_dir();
+    let temp_file = temp_dir.join(format!("gvmt_hook_{}.{}", std::process::id(), extension));
+
+    let file_bytes: Vec<u8> = if shell == "powershell" {
+        // UTF-8 with BOM — PowerShell reads BOM-prefixed files correctly
+        let mut bom = vec![0xEFu8, 0xBB, 0xBF];
+        bom.extend_from_slice(script.as_bytes());
+        bom
+    } else {
+        // CMD reads .bat in system code page; on zh-CN Windows that's GBK
+        #[cfg(windows)]
+        { encode_windows_ansi(script) }
+        #[cfg(not(windows))]
+        { script.as_bytes().to_vec() }
+    };
+
+    std::fs::write(&temp_file, &file_bytes).map_err(|error| format!("无法创建临时脚本文件: {error}"))?;
+
+    let result = match shell {
+        "powershell" => {
+            new_command("powershell")
+                .args(["-ExecutionPolicy", "Bypass", "-File"])
+                .arg(&temp_file)
+                .output()
+        }
+        _ => {
+            new_command("cmd")
+                .args(["/c"])
+                .arg(&temp_file)
+                .output()
+        }
+    };
+
+    let _ = std::fs::remove_file(&temp_file);
+
+    match result {
+        Ok(output) => {
+            let stdout = decode_command_output(&output.stdout);
+            let stderr = decode_command_output(&output.stderr);
+            let combined = crate::utils::combine_command_streams(&stdout, &stderr);
+            Ok((output.status.success(), combined))
+        }
+        Err(error) => Err(format!("执行脚本失败: {error}")),
+    }
 }
 
 pub fn resolve_program(program: &str) -> String {

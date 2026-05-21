@@ -12,6 +12,7 @@ export interface Repository {
   notes: string;
   createdAt: string;
   updatedAt: string;
+  pathExists: boolean;
 }
 
 export interface DetectedRepository {
@@ -107,30 +108,65 @@ export interface WindowsContextMenuStatus {
   warning: string | null;
 }
 
-export type QualityCheckType = "typescriptBuild" | "playwrightUi" | "cargoCheck";
-export type QualityCheckStatus = "idle" | "running" | "success" | "failed";
-
-export interface QualityCheckTemplate {
-  checkType: QualityCheckType;
-  label: string;
-  command: string;
-  available: boolean;
-  unavailableReason: string | null;
+export interface CommitHook {
+  id: number;
+  repositoryId: number;
+  hookType: "pre-commit" | "post-commit";
+  enabled: boolean;
+  shell: "cmd" | "powershell";
+  script: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export interface QualityCheckResult {
-  checkType: QualityCheckType;
-  label: string;
-  command: string;
-  status: Exclude<QualityCheckStatus, "idle" | "running">;
+export interface CommitHookInput {
+  hookType: "pre-commit" | "post-commit";
+  enabled: boolean;
+  shell: "cmd" | "powershell";
+  script: string;
+}
+
+export interface SaveCommitHooksRequest {
+  repositoryId: number;
+  hooks: CommitHookInput[];
+}
+
+export interface QualityScript {
+  id: number;
+  repositoryId: number;
+  name: string;
+  enabled: boolean;
+  shell: "cmd" | "powershell";
+  script: string;
+  lastStatus: string | null;
+  lastDurationMs: number | null;
+  lastOutput: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QualityScriptInput {
+  repositoryId: number;
+  name: string;
+  enabled: boolean;
+  shell: "cmd" | "powershell";
+  script: string;
+}
+
+export interface QualityScriptResult {
+  scriptId: number;
   success: boolean;
-  startedAt: number;
-  finishedAt: number;
-  durationMs: number;
-  summary: string;
   output: string;
-  warning: string | null;
+  durationMs: number;
 }
+
+export const QUALITY_SCRIPT_TEMPLATES = [
+  { name: "TypeScript 类型检查", shell: "cmd" as const, script: "npx tsc --noEmit" },
+  { name: "Rust 编译检查", shell: "cmd" as const, script: "cargo check" },
+  { name: "Playwright E2E", shell: "cmd" as const, script: "npx playwright test" },
+  { name: "Prettier 格式检查", shell: "cmd" as const, script: "npx prettier --check ." },
+  { name: "ESLint", shell: "cmd" as const, script: "npx eslint ." },
+];
 
 export type RepositoryFileEntryType = "directory" | "file";
 
@@ -196,6 +232,8 @@ export async function cancelOperation(): Promise<void> {
 export interface UpdateRepositoryInfoInput {
   name?: string;
   notes?: string;
+  path?: string;
+  remoteUrl?: string;
 }
 
 export async function updateRepositoryInfo(id: number, input: UpdateRepositoryInfoInput): Promise<Repository> {
@@ -246,12 +284,41 @@ export async function uninstallWindowsContextMenu(): Promise<WindowsContextMenuS
   return invoke<WindowsContextMenuStatus>("uninstall_windows_context_menu");
 }
 
-export async function listQualityChecks(id: number): Promise<QualityCheckTemplate[]> {
-  return invoke<QualityCheckTemplate[]>("list_quality_checks", { id });
+export async function getCommitHooks(repositoryId: number): Promise<CommitHook[]> {
+  return invoke<CommitHook[]>("get_commit_hooks", { repositoryId });
 }
 
-export async function runQualityCheck(id: number, checkType: QualityCheckType): Promise<QualityCheckResult> {
-  return invoke<QualityCheckResult>("run_quality_check", { id, checkType });
+export async function saveCommitHooks(input: SaveCommitHooksRequest): Promise<void> {
+  return invoke<void>("save_commit_hooks", { input });
+}
+
+export interface TestHookResult {
+  success: boolean;
+  output: string;
+}
+
+export async function testHookScript(shell: string, script: string): Promise<TestHookResult> {
+  return invoke<TestHookResult>("test_hook_script", { shell, script });
+}
+
+export async function getQualityScripts(repositoryId: number): Promise<QualityScript[]> {
+  return invoke<QualityScript[]>("get_quality_scripts", { repositoryId });
+}
+
+export async function saveQualityScript(input: QualityScriptInput): Promise<QualityScript> {
+  return invoke<QualityScript>("save_quality_script", { input });
+}
+
+export async function deleteQualityScript(id: number): Promise<void> {
+  return invoke<void>("delete_quality_script", { id });
+}
+
+export async function runQualityScript(id: number): Promise<QualityScriptResult> {
+  return invoke<QualityScriptResult>("run_quality_script", { id });
+}
+
+export async function runAllQualityScripts(repositoryId: number): Promise<QualityScriptResult[]> {
+  return invoke<QualityScriptResult[]>("run_all_quality_scripts", { repositoryId });
 }
 
 export async function commitRepository(id: number, input: CommitRequest): Promise<OperationResult[]> {

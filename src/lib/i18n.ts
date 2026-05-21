@@ -93,9 +93,6 @@ export type TranslationKey =
   | "commit.pushAfterCommit"
   | "commit.on"
   | "commit.off"
-  | "commit.qualityCheck"
-  | "commit.notRun"
-  | "commit.notRunDesc"
   | "commit.selectAll"
   | "commit.deselectAll"
   | "commit.message"
@@ -160,19 +157,28 @@ export type TranslationKey =
   | "review.notDetected"
   | "review.reviewQuality"
   | "review.changesCount"
-  | "review.stepRefresh"
-  | "review.stepChanges"
-  | "review.stepReview"
-  | "review.stepQuality"
-  | "review.qualityCheck"
-  | "review.qualityDesc"
+  | "review.commitHooks"
+  | "review.preCommit"
+  | "review.postCommit"
+  | "review.qualityScripts"
   | "review.run"
-  | "review.running"
-  | "review.recentResult"
-  | "review.noResult"
+  | "review.runAll"
+  | "review.addScript"
+  | "review.fromTemplate"
+  | "review.deleteScript"
+  | "review.edit"
   | "review.passed"
   | "review.failed"
-  | "review.idle"
+  | "review.duration"
+  | "review.scriptResult"
+  | "review.shellLabel"
+  | "review.scriptLabel"
+  | "review.scriptPlaceholder"
+  | "review.namePlaceholder"
+  | "review.save"
+  | "review.saved"
+  | "review.hookPreCommitTitle"
+  | "review.hookPostCommitTitle"
   // General
   | "general.loading"
   | "general.folder"
@@ -403,7 +409,6 @@ export type TranslationKey =
   | "contextMenu.gitResetSoft"
   | "contextMenu.logDetail"
   // Commit dialog extra
-  | "commit.qualityCheckLabel"
   | "commit.pushLabel"
   | "commit.onLabel"
   | "commit.offLabel"
@@ -519,9 +524,6 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "commit.pushAfterCommit": "Git 提交后 push",
     "commit.on": "开启",
     "commit.off": "关闭",
-    "commit.qualityCheck": "最近一次本地质量检查",
-    "commit.notRun": "尚未运行",
-    "commit.notRunDesc": "可以先在右侧\"评审与质量\"中运行 build、UI 测试或 cargo check。",
     "commit.selectAll": "全选文件",
     "commit.deselectAll": "取消全选",
     "commit.message": "提交信息",
@@ -580,19 +582,28 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "review.notDetected": "未检测到",
     "review.reviewQuality": "评审与质量",
     "review.changesCount": "个变更",
-    "review.stepRefresh": "刷新状态",
-    "review.stepChanges": "处理变更",
-    "review.stepReview": "发起评审",
-    "review.stepQuality": "质量检查",
-    "review.qualityCheck": "本地质量检查",
-    "review.qualityDesc": "提交前参考最近一次结果",
+    "review.commitHooks": "提交钩子",
+    "review.preCommit": "提交前",
+    "review.postCommit": "提交后",
+    "review.qualityScripts": "质量检查脚本",
     "review.run": "运行",
-    "review.running": "运行中",
-    "review.recentResult": "提交前最近结果",
-    "review.noResult": "还没有运行本地质量检查",
+    "review.runAll": "全部运行",
+    "review.addScript": "新增",
+    "review.fromTemplate": "从模板添加",
+    "review.deleteScript": "删除",
+    "review.edit": "编辑",
     "review.passed": "通过",
     "review.failed": "失败",
-    "review.idle": "未运行",
+    "review.duration": "耗时",
+    "review.scriptResult": "最近结果",
+    "review.shellLabel": "Shell",
+    "review.scriptLabel": "脚本内容",
+    "review.scriptPlaceholder": "输入脚本内容...",
+    "review.namePlaceholder": "脚本名称",
+    "review.save": "保存",
+    "review.saved": "已保存",
+    "review.hookPreCommitTitle": "提交前脚本",
+    "review.hookPostCommitTitle": "提交后脚本",
     "general.loading": "正在加载...",
     "general.folder": "文件夹",
     "general.directory": "目录",
@@ -803,7 +814,6 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "contextMenu.gitStashPush": "Git Stash Push (暂存变更)",
     "contextMenu.gitResetSoft": "Git Reset (soft)…",
     "contextMenu.logDetail": "提交历史",
-    "commit.qualityCheckLabel": "质量检查",
     "commit.pushLabel": "Git push",
     "commit.onLabel": "开",
     "commit.offLabel": "关",
@@ -915,9 +925,6 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "commit.pushAfterCommit": "Push after commit",
     "commit.on": "On",
     "commit.off": "Off",
-    "commit.qualityCheck": "Last local quality check",
-    "commit.notRun": "Not run yet",
-    "commit.notRunDesc": "Run build, UI tests, or cargo check in the Review & Quality panel first.",
     "commit.selectAll": "Select all",
     "commit.deselectAll": "Deselect all",
     "commit.message": "Commit message",
@@ -976,19 +983,28 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "review.notDetected": "Not detected",
     "review.reviewQuality": "Review & Quality",
     "review.changesCount": "change(s)",
-    "review.stepRefresh": "Refresh status",
-    "review.stepChanges": "Handle changes",
-    "review.stepReview": "Start review",
-    "review.stepQuality": "Quality check",
-    "review.qualityCheck": "Local quality checks",
-    "review.qualityDesc": "Run checks before committing",
+    "review.commitHooks": "Commit Hooks",
+    "review.preCommit": "Pre-commit",
+    "review.postCommit": "Post-commit",
+    "review.qualityScripts": "Quality Scripts",
     "review.run": "Run",
-    "review.running": "Running",
-    "review.recentResult": "Most recent result",
-    "review.noResult": "No quality check run yet",
+    "review.runAll": "Run All",
+    "review.addScript": "Add",
+    "review.fromTemplate": "From Template",
+    "review.deleteScript": "Delete",
+    "review.edit": "Edit",
     "review.passed": "Passed",
     "review.failed": "Failed",
-    "review.idle": "Idle",
+    "review.duration": "Duration",
+    "review.scriptResult": "Latest Result",
+    "review.shellLabel": "Shell",
+    "review.scriptLabel": "Script",
+    "review.scriptPlaceholder": "Enter script content...",
+    "review.namePlaceholder": "Script name",
+    "review.save": "Save",
+    "review.saved": "Saved",
+    "review.hookPreCommitTitle": "Pre-commit script",
+    "review.hookPostCommitTitle": "Post-commit script",
     "general.loading": "Loading...",
     "general.folder": "Folder",
     "general.directory": "Directory",
@@ -1199,7 +1215,6 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "contextMenu.gitStashPush": "Git Stash Push (save changes)",
     "contextMenu.gitResetSoft": "Git Reset (soft)…",
     "contextMenu.logDetail": "Commit history",
-    "commit.qualityCheckLabel": "Quality check",
     "commit.pushLabel": "Git push",
     "commit.onLabel": "On",
     "commit.offLabel": "Off",

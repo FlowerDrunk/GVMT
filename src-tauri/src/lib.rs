@@ -6,7 +6,6 @@ pub mod gh;
 pub mod git;
 pub mod ignore;
 pub mod models;
-pub mod quality;
 pub mod startup;
 pub mod svn;
 pub mod utils;
@@ -54,9 +53,10 @@ pub fn run() {
             commands::install_windows_context_menu,
             commands::list_branches,
             commands::list_operation_logs,
-            commands::list_quality_checks,
+            commands::delete_quality_script,
+            commands::get_commit_hooks,
+            commands::get_quality_scripts,
             commands::open_in_explorer,
-            commands::list_repositories,
             commands::list_repositories,
             commands::list_repository_files,
             commands::log_operation,
@@ -67,8 +67,12 @@ pub fn run() {
             commands::refresh_repository,
             commands::remove_ignore_rule,
             commands::retry_push,
-            commands::run_quality_check,
+            commands::run_quality_script,
+            commands::run_all_quality_scripts,
+            commands::save_commit_hooks,
+            commands::save_quality_script,
             commands::stage_all_files,
+            commands::test_hook_script,
             commands::svn_remote_cat,
             commands::svn_remote_list,
             commands::svn_cleanup,
