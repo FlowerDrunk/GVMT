@@ -7,7 +7,6 @@ import { Modal, ModalHeading } from "../shared/Modal";
 import { Switch } from "../ui/switch";
 import { ChangeBadge } from "../shared/ChangeBadge";
 import { Button } from "../ui/button";
-import { UpdateProgressDialog } from "../workspace/UpdateProgressDialog";
 
 const RECENT_MESSAGES_KEY = "gvmt-recent-commit-messages";
 const MAX_RECENT = 5;
@@ -90,54 +89,6 @@ export function CommitDialog({
   // ── Hook settings ─────────────────────────────────────────────────────────
   const [hooks, setHooks] = useState<CommitHook[]>([]);
   const [hookDialogOpen, setHookDialogOpen] = useState(false);
-
-  // ── Streaming commit results ──────────────────────────────────────────────
-  const [streamingResults, setStreamingResults] = useState<OperationResult[]>([]);
-  const streamRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    if (!open) {
-      // Clean up listener when dialog closes
-      streamRef.current?.();
-      streamRef.current = null;
-      setStreamingResults([]);
-      return;
-    }
-    if (!isTauriRuntime()) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const { listen } = await import("@tauri-apps/api/event");
-        const unlisten = await listen<OperationResult>("commit-step", (e) => {
-          if (cancelled) return;
-          setStreamingResults((prev) => [...prev, e.payload]);
-        });
-        streamRef.current = unlisten;
-      } catch { /* ignore */ }
-    })();
-    return () => {
-      cancelled = true;
-      streamRef.current?.();
-      streamRef.current = null;
-    };
-  }, [open]);
-
-  // Reset streaming when form submits (new commit starts)
-  useEffect(() => {
-    if (isCommitLoading) { setStreamingResults([]); setCommitDismissed(false); }
-  }, [isCommitLoading]);
-
-  const displayResults: OperationResult[] | null = isCommitLoading ? (streamingResults.length > 0 ? streamingResults : null) : (streamingResults.length > 0 ? streamingResults : commitResults);
-
-  const commitLines = useMemo(() => {
-    const results = displayResults ?? [];
-    return results.flatMap((r) => [
-      `── ${r.operation} ${r.success ? "✓" : "✗"} ──`,
-      ...(r.output ? r.output.split("\n") : ["无输出"]),
-    ]);
-  }, [displayResults]);
-
-  const [commitDismissed, setCommitDismissed] = useState(false);
   const [preEnabled, setPreEnabled] = useState(false);
   const [preShell, setPreShell] = useState<"cmd" | "powershell">("cmd");
   const [preScript, setPreScript] = useState("");
@@ -380,11 +331,11 @@ export function CommitDialog({
 
         {commitError ? <div className="commit-error">{commitError}</div> : null}
 
-        {isCommitLoading || displayResults ? null : null}
+        {commitError ? <div className="commit-error">{commitError}</div> : null}
 
         <div className="modal-actions">
           <Button variant="secondary" onClick={onClose} type="button">{t("commit.cancel")}</Button>
-          <Button variant="default" type="submit" disabled={isCommitLoading || (displayResults != null && displayResults.length > 0) || selectedCommitCount === 0 || !commitMessage.trim()}>{submitLabel}</Button>
+          <Button variant="default" type="submit" disabled={isCommitLoading || selectedCommitCount === 0 || !commitMessage.trim()}>{submitLabel}</Button>
         </div>
       </div>
 
@@ -405,26 +356,6 @@ export function CommitDialog({
           </div>
         ) : null}
       </Modal>
-
-      {/* Commit progress dialog */}
-      <UpdateProgressDialog
-        open={(isCommitLoading || (displayResults != null && displayResults.length > 0)) && !commitDismissed}
-        onClose={() => setCommitDismissed(true)}
-        lines={commitLines}
-        title={t("command.commit")}
-        progress={null}
-        stats={null}
-        t={t}
-        preventBackdropClose={false}
-        completed={!isCommitLoading}
-      />
-
-      {(isCommitLoading || (displayResults != null && displayResults.length > 0)) && commitDismissed ? (
-        <button className="floating-progress-indicator" onClick={() => setCommitDismissed(false)} title={t("update.clickToReopen")}>
-          <span className="floating-progress-spinner" />
-          <span>{t("command.commit")}</span>
-        </button>
-      ) : null}
 
       {/* Hook settings sub-dialog */}
       <Modal open={hookDialogOpen} onClose={() => setHookDialogOpen(false)} labelledBy="hook-dialog-title" className="hook-settings-dialog">

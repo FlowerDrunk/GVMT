@@ -128,6 +128,10 @@ function AppContent() {
   const updateProgress = useUpdateProgress();
   const [isCloning, setIsCloning] = useState(false);
   const [commitResults, setCommitResults] = useState<OperationResult[] | null>(null);
+  const [commitProgressOpen, setCommitProgressOpen] = useState(false);
+  const [commitProgressLines, setCommitProgressLines] = useState<string[]>([]);
+  const [commitCompleted, setCommitCompleted] = useState(false);
+  const [commitDismissed, setCommitDismissed] = useState(false);
   const [cloneDismissed, setCloneDismissed] = useState(false);
   const [cloneLines, setCloneLines] = useState<string[]>([]);
   const [clonePct, setClonePct] = useState<number | null>(null);
@@ -224,6 +228,26 @@ function AppContent() {
     commit.setIsCommitLoading(true);
     commit.setCommitError(null);
     commit.setCommitHash(null);
+    // Close commit dialog immediately, show progress at workspace level
+    commit.setIsCommitDialogOpen(false);
+    setCommitProgressOpen(true);
+    setCommitDismissed(false);
+    setCommitCompleted(false);
+    setCommitProgressLines([]);
+    let unlisten: (() => void) | null = null;
+    if (isTauriRuntime()) {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        unlisten = await listen<OperationResult>("commit-step", (e) => {
+          const r = e.payload;
+          setCommitProgressLines((prev) => [
+            ...prev,
+            `── ${r.operation} ${r.success ? "✓" : "✗"} ──`,
+            ...(r.output ? r.output.split("\n") : ["无输出"]),
+          ]);
+        });
+      } catch { /* ignore */ }
+    }
     try {
       const results = await commitRepository(repo.selectedRepository.id, {
         message: commit.commitMessage,
@@ -237,18 +261,13 @@ function AppContent() {
       const pushFailed = results.some((r) => r.operation === "push" && !r.success);
       const commitOutput = results.find((r) => r.operation === "commit" && r.success)?.output;
 
-      // 从 git output 提取 hash
       if (commitSuccess) {
         const hashMatch = commitOutput?.match(/\[[\w\/]+\s+([a-f0-9]+)\]/);
-        const hash = hashMatch?.[1] ?? null;
-        commit.setCommitHash(hash);
+        commit.setCommitHash(hashMatch?.[1] ?? null);
       }
-
       if (failed.length > 0) {
-        const errorMsg = failed.map((r) => r.warning || r.summary).filter(Boolean).join("\n");
-        commit.setCommitError(errorMsg);
+        commit.setCommitError(failed.map((r) => r.warning || r.summary).filter(Boolean).join("\n"));
       }
-
       setStatus(failed.length === 0 ? t("status.commitComplete") : t("status.commitStepsFailed", { count: failed.length }));
       if (commitSuccess) {
         commit.setCommitMessage("");
@@ -256,12 +275,21 @@ function AppContent() {
         else showToast(t("status.commitSuccessToast"), "success");
       }
       setCommitResults(results);
+      setCommitCompleted(true);
+      // Auto-close after showing results briefly
+      setTimeout(() => {
+        setCommitProgressOpen(false);
+        setCommitProgressLines([]);
+        setCommitCompleted(false);
+      }, 2000);
       await statusHook.loadRepositoryStatus(true);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       commit.setCommitError(msg);
       setStatus(msg);
+      setCommitProgressOpen(false);
     } finally {
+      unlisten?.();
       commit.setIsCommitLoading(false);
     }
   }
@@ -1044,6 +1072,23 @@ function AppContent() {
             />
           );
         })()
+      ) : null}
+
+      <UpdateProgressDialog
+        open={commitProgressOpen && !commitDismissed}
+        onClose={() => setCommitDismissed(true)}
+        lines={commitProgressLines}
+        title={t("command.commit")}
+        t={t}
+        preventBackdropClose={false}
+        completed={commitCompleted}
+      />
+
+      {commitProgressOpen && commitDismissed ? (
+        <button className="floating-progress-indicator" onClick={() => setCommitDismissed(false)} title={t("update.clickToReopen")}>
+          <span className="floating-progress-spinner" />
+          <span>{t("command.commit")}</span>
+        </button>
       ) : null}
 
       <UpdateNotificationPanel
