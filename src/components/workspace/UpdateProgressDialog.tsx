@@ -24,17 +24,20 @@ interface UpdateProgressDialogProps {
   /** When true, clicking the backdrop won't close the dialog */
   preventBackdropClose?: boolean;
   startedAt?: number; // epoch seconds
+  /** When true, the spinner stops and shows a checkmark instead */
+  completed?: boolean;
 }
 
-export function UpdateProgressDialog({ open, onClose, lines, onCancel, title = "SVN Update", progress, stats, t, preventBackdropClose, startedAt }: UpdateProgressDialogProps) {
+export function UpdateProgressDialog({ open, onClose, lines, onCancel, title = "SVN Update", progress, stats, t, preventBackdropClose, startedAt, completed }: UpdateProgressDialogProps) {
   const [tick, setTick] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
+    if (completed) return;
     const timer = setInterval(() => setTick((v) => v + 1), 1000);
     return () => clearInterval(timer);
-  }, [open]);
+  }, [open, completed]);
 
   useEffect(() => {
     if (open) endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -49,7 +52,13 @@ export function UpdateProgressDialog({ open, onClose, lines, onCancel, title = "
       <ModalHeading eyebrow={title} title={t("update.executing")} titleId="update-progress-title" onClose={onClose} t={t} />
       <div className="update-progress-body">
         <div className="update-progress-timer">
-          <span className="update-progress-spinner" />
+          {completed ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : (
+            <span className="update-progress-spinner" />
+          )}
           <span>{t("update.elapsed")} {mins}:{secs.toString().padStart(2, "0")}</span>
           {onCancel ? (
             <Button variant="secondary" size="sm" onClick={onCancel} className="update-progress-cancel-btn">

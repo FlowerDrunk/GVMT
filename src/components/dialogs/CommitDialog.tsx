@@ -416,6 +416,7 @@ export function CommitDialog({
         stats={null}
         t={t}
         preventBackdropClose={false}
+        completed={!isCommitLoading}
       />
 
       {(isCommitLoading || (displayResults != null && displayResults.length > 0)) && commitDismissed ? (
