@@ -71,7 +71,9 @@ export function CommandBar({
   const logMenuRef = useRef<HTMLDivElement>(null);
   const isGitRepo = selectedRepository?.vcsType === "git" || selectedRepository?.vcsType === "mixed";
   const isSvnRepo = selectedRepository?.vcsType === "svn" || selectedRepository?.vcsType === "mixed";
+  const repoUsable = selectedRepository ? selectedRepository.pathExists : false;
   const [isCleaningUp, setIsCleaningUp] = useState(false);
+  const [forceUpdateConfirm, setForceUpdateConfirm] = useState(false);
 
   // ── Log detail & context menu state ──
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
@@ -191,119 +193,99 @@ export function CommandBar({
       <div className="command-info">
         <span className={`repo-dot ${selectedRepository ? (selectedRepository.vcsType === "unknown" ? "warning" : "ready") : "warning"}`} />
         <strong className="command-repo-name">{selectedRepository?.name ?? t("command.selectRepository")}</strong>
-        {selectedRepository ? <span className="soft-chip">{getVcsLabels(t)[selectedRepository.vcsType]}</span> : null}
-        {(() => {
-          const rev = selectedRepository
-            ? (latestSvnRevisions[selectedRepository.id] ?? selectedRepository.branchOrRevision)
-            : null;
-          return rev ? (
-            <button className="command-branch" type="button" onClick={onSwitchBranch}>{rev}</button>
-          ) : null;
-        })()}
-        <span className="command-sep" />
-        <div className="command-metrics">
-          <span>{t("command.changes")} <strong>{currentChangeCount}</strong></span>
-          <span>{currentReviewState}</span>
-        </div>
+        {selectedRepository ? (
+          <>
+            <span className={`cmd-vcs-tag ${selectedRepository.vcsType}`}>{getVcsLabels(t)[selectedRepository.vcsType]}</span>
+            {(() => {
+              const rev = latestSvnRevisions[selectedRepository.id] ?? selectedRepository.branchOrRevision;
+              return rev ? (
+                <button className="cmd-rev-btn" type="button" onClick={onSwitchBranch}>{rev}</button>
+              ) : null;
+            })()}
+          </>
+        ) : null}
       </div>
 
       <div className="command-actions">
-        {isGitRepo ? (<>
-          <span className="cmd-sep" />
-
-          {/* ── Fetch ── */}
-          <button className="cmd-btn" type="button" disabled={!selectedRepository || isFetching}
-            onClick={handleGitFetch} title={t("command.fetch")}>
-            <FetchIcon /><span>{t("command.fetch")}</span>
-          </button>
-
-          {/* ── Stash ── */}
-          <div className="cmd-stash-wrap" ref={stashMenuRef}>
-            <button className="cmd-btn" type="button" disabled={!selectedRepository}
-              onClick={() => setIsStashMenuOpen(!isStashMenuOpen)} title={t("command.stash")}>
-              <StashIcon /><span>{t("command.stash")}</span><ChevronDown />
+        {isGitRepo ? (
+          <div className="cmd-group">
+            <button className="cmd-btn" type="button" disabled={!selectedRepository || !repoUsable || isFetching} onClick={handleGitFetch} title={t("command.fetch")}>
+              <FetchIcon /><span>{t("command.fetch")}</span>
             </button>
-            {isStashMenuOpen ? (
-              <div className="stash-menu-dropdown">
-                <button type="button" onClick={handleStashPush}><StashIcon /><span>{t("command.stashPush")}</span></button>
-                <button type="button" onClick={handleStashPop}><StashIcon /><span>{t("command.stashPop")}</span></button>
-                <div className="stash-menu-divider" />
-                <div className="stash-menu-label">{t("command.stash")}</div>
-                {stashEntries.length === 0 ? (
-                  <div className="stash-menu-empty">{t("command.stashEmpty")}</div>
-                ) : (
-                  stashEntries.slice(0, 5).map((entry) => (
+            <div className="cmd-stash-wrap" ref={stashMenuRef}>
+              <button className="cmd-btn" type="button" disabled={!selectedRepository || !repoUsable} onClick={() => setIsStashMenuOpen(!isStashMenuOpen)} title={t("command.stash")}>
+                <StashIcon /><span>{t("command.stash")}</span><ChevronDown />
+              </button>
+              {isStashMenuOpen ? (
+                <div className="stash-menu-dropdown">
+                  <button type="button" onClick={handleStashPush}><StashIcon /><span>{t("command.stashPush")}</span></button>
+                  <button type="button" onClick={handleStashPop}><StashIcon /><span>{t("command.stashPop")}</span></button>
+                  <div className="stash-menu-divider" />
+                  <div className="stash-menu-label">{t("command.stash")}</div>
+                  {stashEntries.length === 0 ? <div className="stash-menu-empty">{t("command.stashEmpty")}</div>
+                  : stashEntries.slice(0, 5).map((entry) => (
                     <div className="stash-menu-item" key={entry.index}>
                       <span className="stash-menu-msg">{entry.message.length > 30 ? entry.message.slice(0, 30) + "…" : entry.message}</span>
                       <button className="stash-menu-drop-btn cmd-danger" type="button" onClick={() => handleStashDrop(entry.index)} title={t("command.stashDrop")}>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M18 6 6 18" /><path d="m6 6 12 12" />
-                </svg>
-              </button>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                      </button>
                     </div>
-                  ))
-                )}
-              </div>
-            ) : null}
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
+        ) : null}
 
-          {/* ── Log ── */}
-          <button className="cmd-btn" type="button" disabled={!selectedRepository}
-            onClick={handleOpenGitLog} title={t("command.log")}>
-            <LogIcon /><span>{t("command.log")}</span>
+        {isSvnRepo ? (
+          <div className="cmd-group">
+            <button className="cmd-btn cmd-btn-warn" type="button" disabled={!selectedRepository || !repoUsable || isCleaningUp} onClick={handleSvnCleanup} title={t("command.cleanup")}>
+              <CleanIcon /><span>{t("command.cleanup")}</span>
+            </button>
+            {forceUpdateConfirm ? (
+              <div className="cmd-confirm-inline">
+                <span>确认强制更新？</span>
+                <button className="cmd-btn cmd-btn-danger" type="button" disabled={!selectedRepository || !repoUsable || isLoading}
+                  onClick={() => { onForceUpdateRepository(); setForceUpdateConfirm(false); }}>确认</button>
+                <button className="cmd-btn" type="button" onClick={() => setForceUpdateConfirm(false)}>取消</button>
+              </div>
+            ) : (
+              <button className="cmd-btn cmd-btn-danger" type="button" disabled={!selectedRepository || !repoUsable || isLoading}
+                onClick={() => setForceUpdateConfirm(true)} title={t("contextMenu.forceUpdate")}>
+                <UpdateIcon /><span>{t("contextMenu.forceUpdate")}</span>
+              </button>
+            )}
+          </div>
+        ) : null}
+
+        <span className="cmd-divider" />
+
+        <div className="cmd-group">
+          <button className="cmd-btn" type="button" disabled={!selectedRepository || !repoUsable || isLoading} onClick={onLoadRepositoryStatus} title={t("command.refreshStatus")}>
+            <RefreshIcon /><span>{t("command.refreshStatus")}</span>
           </button>
-        </>) : null}
-
-        {isSvnRepo ? (<>
-          <span className="cmd-sep" />
-
-          {/* ── Cleanup ── */}
-          <button className="cmd-btn" type="button" disabled={!selectedRepository || isCleaningUp}
-            onClick={handleSvnCleanup} title={t("command.cleanup")}>
-            <CleanIcon /><span>{t("command.cleanup")}</span>
+          {isGitRepo ? (
+            <button className="cmd-btn" type="button" disabled={!selectedRepository || !repoUsable} onClick={handleOpenGitLog} title={t("command.log")}>
+              <LogIcon /><span>{t("command.log")}</span>
+            </button>
+          ) : isSvnRepo ? (
+            <button className="cmd-btn" type="button" disabled={!selectedRepository || !repoUsable} onClick={handleOpenSvnLog} title={t("command.log")}>
+              <LogIcon /><span>{t("command.log")}</span>
+            </button>
+          ) : null}
+          <button className="cmd-btn" type="button" disabled={!selectedRepository || !repoUsable || isIgnoreLoading} onClick={onOpenIgnoreDialog} title={t("command.ignore")}>
+            <IgnoreIcon /><span>{t("command.ignore")}</span>
           </button>
+        </div>
 
-          {/* ── Force Update ── */}
-          <button className="cmd-btn" type="button" disabled={!selectedRepository || isLoading}
-            onClick={onForceUpdateRepository} title={t("contextMenu.forceUpdate")}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.3-9.8"/></svg><span>{t("contextMenu.forceUpdate")}</span>
-          </button>
-
-          {/* ── Log ── */}
-          <button className="cmd-btn" type="button" disabled={!selectedRepository}
-            onClick={handleOpenSvnLog} title={t("command.log")}>
-            <LogIcon /><span>{t("command.log")}</span>
-          </button>
-        </>) : null}
-
-        {/* ── 右侧重要操作组 ── */}
-        <span className="cmd-group-sep" />
-
-        {/* 检测 */}
-        <button className="cmd-btn cmd-refresh-btn" type="button" disabled={!selectedRepository || isLoading}
-          onClick={onLoadRepositoryStatus} title={t("command.refreshStatus")}>
-          <RefreshIcon /><span>{t("command.refreshStatus")}</span>
-        </button>
-
-        {/* 忽略 */}
-        <button className="cmd-btn cmd-ignore-btn" type="button" disabled={!selectedRepository || isIgnoreLoading}
-          onClick={onOpenIgnoreDialog} title={t("command.ignore")}>
-          <IgnoreIcon /><span>{t("command.ignore")}</span>
-        </button>
-
-        {/* 更新 */}
-        <button className="cmd-btn cmd-update-btn" type="button" disabled={!selectedRepository || isLoading}
-          onClick={onUpdateRepository} title={t("command.update")}>
+        <button className="cmd-btn cmd-btn-accent" type="button" disabled={!selectedRepository || !repoUsable || isLoading} onClick={onUpdateRepository} title={t("command.update")}>
           <UpdateIcon /><span>{t("command.update")}</span>
         </button>
 
-        {/* 提交 */}
-        <button className="cmd-btn cmd-commit-btn" type="button" disabled={!canOpenCommitDialog || isCommitLoading}
-          onClick={onOpenCommitDialog} title={t("command.commit")}>
+        <button className="cmd-btn cmd-btn-primary" type="button" disabled={!canOpenCommitDialog || !repoUsable || isCommitLoading} onClick={onOpenCommitDialog} title={t("command.commit")}>
           <CommitIcon /><span>{t("command.commit")}</span>
         </button>
 
-        {/* 设置（仅图标） */}
         <button className="cmd-btn cmd-icon-only" type="button" onClick={onOpenSettings} title={t("activity.settings")}>
           <SettingsIcon />
         </button>

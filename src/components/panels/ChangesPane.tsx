@@ -58,7 +58,7 @@ function collectAllPaths(nodes: TreeViewNode[]): string[] {
 
 interface FlatGroup {
   prefix: string;
-  files: { path: string; name: string; status: ChangeStatus; vcsType: VcsType; staged: boolean }[];
+  files: { path: string; name: string; status: ChangeStatus; vcsType: VcsType; staged: boolean; isDir?: boolean }[];
 }
 
 function buildFlatGroups(changes: ChangeItem[]): FlatGroup[] {
@@ -76,7 +76,7 @@ function buildFlatGroups(changes: ChangeItem[]): FlatGroup[] {
       group = { prefix, files: [] };
       groupMap.set(prefix, group);
     }
-    group.files.push({ path: change.path, name, status: change.status, vcsType: change.vcsType, staged: change.staged });
+    group.files.push({ path: change.path, name, status: change.status, vcsType: change.vcsType, staged: change.staged, isDir: change.isDir });
   }
 
   const groups = [...groupMap.values()];
@@ -211,9 +211,12 @@ export const ChangesPane = memo(function ChangesPane({
             <div className="change-flat-list">
               {filteredGroups.map((group) => (
                 <div className="flat-group" key={group.prefix}>
-                  {group.prefix ? (
+                  {group.prefix && group.files.length > 1 ? (
                     <div className="flat-group-header" title={group.prefix}>
-                      {group.prefix}
+                      <svg className="flat-folder-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                      </svg>
+                      <span>{group.prefix}</span>
                     </div>
                   ) : null}
                   {group.files.map((file) => (
@@ -227,8 +230,12 @@ export const ChangesPane = memo(function ChangesPane({
                         onContextMenu(event, file.path, file.vcsType, file.status);
                       }}
                     >
-                      <ChangeBadge status={file.status} t={t} />
-                      <span className="change-path">{file.name}</span>
+                      <ChangeBadge status={file.status} t={t} isDir={file.isDir} />
+                      {group.prefix && group.files.length <= 1 ? (
+                        <span className="change-path">{group.prefix}{file.name}</span>
+                      ) : (
+                        <span className="change-path">{file.name}</span>
+                      )}
                       <span className="change-vcs">{file.vcsType === "git" ? "Git" : file.vcsType === "svn" ? "SVN" : file.vcsType}</span>
                     </button>
                   ))}
@@ -340,7 +347,7 @@ export const ChangesPane = memo(function ChangesPane({
               .filter((f) => f.staged)
               .map((file) => (
                 <div className="staged-file-row" key={`${file.vcsType}-${file.path}`}>
-                  <ChangeBadge status={file.status} t={t} />
+                  <ChangeBadge status={file.status} t={t} isDir={file.isDir} />
                   <span className="staged-file-path">{file.path}</span>
                   {onUnstageFile && (
                     <Button

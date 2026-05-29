@@ -35,6 +35,7 @@ export interface ChangeItem {
   status: ChangeStatus;
   vcsType: VcsType;
   staged: boolean;
+  isDir?: boolean;
 }
 
 export interface RepositoryStatusSummary {

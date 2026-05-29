@@ -12,7 +12,7 @@ use crate::models::{
     Repository, RepositoryDiff, RepositoryDirectory, RepositoryFilePreview, RepositoryStatus,
     SaveCommitHooksRequest, StartupContext, TestHookResult, UpdateGitignoreRequest, WindowsContextMenuStatus,
 };
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 #[tauri::command]
 pub async fn cancel_operation() -> Result<(), String> {
     crate::command_exec::kill_running_process();
@@ -136,6 +136,15 @@ pub async fn clone_repository(app: AppHandle, input: CloneRepositoryInput) -> Re
     let ignore_externals = input.ignore_externals.unwrap_or(true);
 
     run_blocking(move || {
+        // Pre-cleanup: if target already has a locked .svn from a prior cancelled clone,
+        // try to clean it up so the new clone can proceed.
+        if is_svn {
+            let svn_dir = std::path::Path::new(&path).join(".svn");
+            if svn_dir.exists() {
+                svn::try_cleanup_svn_workdir(&path);
+            }
+        }
+
         let result = if is_svn {
             svn::svn_checkout_streaming(&app_ref, &url, &path, ignore_externals)
         } else {
@@ -608,16 +617,28 @@ pub async fn commit_repository(
 
         // Execute pre-commit hook
         let hooks = db::get_commit_hooks(&connection, id)?;
+        let mut results = Vec::new();
+
         for hook in &hooks {
             if hook.hook_type == "pre-commit" && hook.enabled && !hook.script.trim().is_empty() {
                 match crate::command_exec::execute_script(&hook.shell, &hook.script) {
                     Ok((true, output)) => {
-                        if !output.trim().is_empty() {
-                            db::insert_operation_log(
-                                &connection, Some(id), "pre-commit-hook", &repository.vcs_type,
-                                true, "pre-commit 钩子执行通过", &output, None,
-                            )?;
-                        }
+                        db::insert_operation_log(
+                            &connection, Some(id), "pre-commit-hook", &repository.vcs_type,
+                            true, "pre-commit 钩子执行通过",
+                            if output.trim().is_empty() { "" } else { &output }, None,
+                        )?;
+                        let r = OpResult {
+                            operation: "pre-commit-hook".to_string(),
+                            vcs_type: repository.vcs_type.clone(),
+                            success: true,
+                            summary: format!("pre-commit 钩子通过 ({})", hook.shell),
+                            output: if output.trim().is_empty() { "无输出".to_string() } else { output.clone() },
+                            warning: None,
+                            missing_svn_cli: false,
+                        };
+                        let _ = app.emit("commit-step", &r);
+                        results.push(r);
                     }
                     Ok((false, output)) => {
                         let _ = db::insert_operation_log(
@@ -637,7 +658,6 @@ pub async fn commit_repository(
             }
         }
 
-        let mut results = Vec::new();
         let git_files = input
             .files
             .iter()
@@ -652,15 +672,21 @@ pub async fn commit_repository(
             .collect::<Vec<_>>();
 
         if !git_files.is_empty() {
-            results.extend(git::git_commit_results(
+            let git_results = git::git_commit_results(
                 &repository.path,
                 message,
                 input.push,
                 &git_files,
-            ));
+            );
+            for r in &git_results {
+                let _ = app.emit("commit-step", r);
+            }
+            results.extend(git_results);
         }
         if !svn_files.is_empty() {
-            results.push(svn::svn_commit_result(&repository.path, message, &svn_files));
+            let r = svn::svn_commit_result(&repository.path, message, &svn_files);
+            let _ = app.emit("commit-step", &r);
+            results.push(r);
         }
 
         if results.is_empty() {
@@ -674,25 +700,56 @@ pub async fn commit_repository(
                 if hook.hook_type == "post-commit" && hook.enabled && !hook.script.trim().is_empty() {
                     match crate::command_exec::execute_script(&hook.shell, &hook.script) {
                         Ok((true, output)) => {
-                            if !output.trim().is_empty() {
-                                db::insert_operation_log(
-                                    &connection, Some(id), "post-commit-hook", &repository.vcs_type,
-                                    true, "post-commit 钩子执行通过", &output, None,
-                                )?;
-                            }
+                            db::insert_operation_log(
+                                &connection, Some(id), "post-commit-hook", &repository.vcs_type,
+                                true, "post-commit 钩子执行通过",
+                                if output.trim().is_empty() { "" } else { &output }, None,
+                            )?;
+                            let r = OpResult {
+                                operation: "post-commit-hook".to_string(),
+                                vcs_type: repository.vcs_type.clone(),
+                                success: true,
+                                summary: format!("post-commit 钩子通过 ({})", hook.shell),
+                                output: if output.trim().is_empty() { "无输出".to_string() } else { output.clone() },
+                                warning: None,
+                                missing_svn_cli: false,
+                            };
+                            let _ = app.emit("commit-step", &r);
+                            results.push(r);
                         }
                         Ok((false, output)) => {
                             let _ = db::insert_operation_log(
                                 &connection, Some(id), "post-commit-hook", &repository.vcs_type,
                                 false, "post-commit 钩子执行失败", &output, None,
                             );
-                            // Don't block the commit result, just log
+                            let r = OpResult {
+                                operation: "post-commit-hook".to_string(),
+                                vcs_type: repository.vcs_type.clone(),
+                                success: false,
+                                summary: format!("post-commit 钩子失败 ({})", hook.shell),
+                                output: output.clone(),
+                                warning: Some("post-commit 钩子执行失败，提交未受影响".to_string()),
+                                missing_svn_cli: false,
+                            };
+                            let _ = app.emit("commit-step", &r);
+                            results.push(r);
                         }
                         Err(error) => {
                             let _ = db::insert_operation_log(
                                 &connection, Some(id), "post-commit-hook", &repository.vcs_type,
                                 false, "post-commit 钩子启动失败", &error, None,
                             );
+                            let r = OpResult {
+                                operation: "post-commit-hook".to_string(),
+                                vcs_type: repository.vcs_type.clone(),
+                                success: false,
+                                summary: format!("post-commit 钩子启动失败 ({})", hook.shell),
+                                output: error.clone(),
+                                warning: Some("post-commit 钩子启动失败".to_string()),
+                                missing_svn_cli: false,
+                            };
+                            let _ = app.emit("commit-step", &r);
+                            results.push(r);
                         }
                     }
                 }
@@ -713,8 +770,15 @@ pub async fn update_repository(app: AppHandle, id: i64, depth: Option<String>) -
         let repository = db::find_repository_by_id(&connection, id)?
             .ok_or_else(|| "未找到需要更新的仓库".to_string())?;
 
+        // If .svn is missing or broken, recreate the working copy first
+        if let Some(ref remote) = repository.remote_url {
+            if !remote.is_empty() {
+                svn::recreate_svn_workdir(&repository.path, remote).ok();
+            }
+        }
+
         let app_ref = app.clone();
-        let results = match repository.vcs_type.as_str() {
+        let mut results = match repository.vcs_type.as_str() {
             "git" => vec![git::git_update_result(&repository.path)],
             "svn" => vec![svn::svn_update_streaming(&app_ref, &repository.path, depth.as_deref())],
             "mixed" => vec![
@@ -723,7 +787,7 @@ pub async fn update_repository(app: AppHandle, id: i64, depth: Option<String>) -
             ],
             _ => vec![OpResult {
                 operation: "update".to_string(),
-                vcs_type: repository.vcs_type,
+                vcs_type: repository.vcs_type.clone(),
                 success: false,
                 summary: "当前目录未识别为 Git 或 SVN 仓库".to_string(),
                 output: String::new(),
@@ -731,6 +795,26 @@ pub async fn update_repository(app: AppHandle, id: i64, depth: Option<String>) -
                 missing_svn_cli: false,
             }],
         };
+
+        // Auto-retry on lock: cleanup, recreate, and try update once more
+        if results.len() == 1 && !results[0].success {
+            let w = results[0].warning.as_deref().unwrap_or("");
+            if svn::is_svn_locked_error(w) {
+                if let Some(ref remote) = repository.remote_url {
+                    if !remote.is_empty() {
+                        svn::try_cleanup_svn_workdir(&repository.path);
+                        svn::recreate_svn_workdir(&repository.path, remote).ok();
+                        results = match repository.vcs_type.as_str() {
+                            "svn" => vec![svn::svn_update_streaming(&app_ref, &repository.path, depth.as_deref())],
+                            "mixed" => vec![
+                                svn::svn_update_streaming(&app_ref, &repository.path, depth.as_deref()),
+                            ],
+                            _ => results,
+                        };
+                    }
+                }
+            }
+        }
 
         Ok(results)
     })
@@ -1388,11 +1472,12 @@ pub async fn svn_revert(app: AppHandle, id: i64, path: String) -> Result<OpResul
 
 #[tauri::command]
 pub async fn svn_cleanup(app: AppHandle, id: i64) -> Result<OpResult, String> {
+    let app_ref = app.clone();
     run_blocking(move || {
-        let connection = db::open_database(&app)?;
+        let connection = db::open_database(&app_ref)?;
         let repository =
             db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
-        Ok(svn::svn_cleanup(&repository.path))
+        Ok(svn::svn_cleanup_streaming(&app_ref, &repository.path))
     })
     .await
 }
@@ -1425,7 +1510,22 @@ pub async fn svn_update_force(app: AppHandle, id: i64, depth: Option<String>) ->
         let connection = db::open_database(&app)?;
         let repository =
             db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
-        Ok(svn::svn_update_force(&repository.path, depth.as_deref()))
+        if let Some(ref remote) = repository.remote_url {
+            if !remote.is_empty() {
+                svn::recreate_svn_workdir(&repository.path, remote).ok();
+            }
+        }
+        let mut result = svn::svn_update_force(&repository.path, depth.as_deref());
+        if !result.success && svn::is_svn_locked_error(result.warning.as_deref().unwrap_or("")) {
+            if let Some(ref remote) = repository.remote_url {
+                if !remote.is_empty() {
+                    svn::try_cleanup_svn_workdir(&repository.path);
+                    svn::recreate_svn_workdir(&repository.path, remote).ok();
+                    result = svn::svn_update_force(&repository.path, depth.as_deref());
+                }
+            }
+        }
+        Ok(result)
     })
     .await
 }
@@ -1437,7 +1537,22 @@ pub async fn svn_update_force_streaming_cmd(app: AppHandle, id: i64, depth: Opti
         let connection = db::open_database(&app_ref)?;
         let repository =
             db::find_repository_by_id(&connection, id)?.ok_or_else(|| "未找到仓库".to_string())?;
-        Ok(svn::svn_update_force_streaming(&app_ref, &repository.path, depth.as_deref()))
+        if let Some(ref remote) = repository.remote_url {
+            if !remote.is_empty() {
+                svn::recreate_svn_workdir(&repository.path, remote).ok();
+            }
+        }
+        let mut result = svn::svn_update_force_streaming(&app_ref, &repository.path, depth.as_deref());
+        if !result.success && svn::is_svn_locked_error(result.warning.as_deref().unwrap_or("")) {
+            if let Some(ref remote) = repository.remote_url {
+                if !remote.is_empty() {
+                    svn::try_cleanup_svn_workdir(&repository.path);
+                    svn::recreate_svn_workdir(&repository.path, remote).ok();
+                    result = svn::svn_update_force_streaming(&app_ref, &repository.path, depth.as_deref());
+                }
+            }
+        }
+        Ok(result)
     })
     .await
 }

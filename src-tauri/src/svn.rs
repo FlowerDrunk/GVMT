@@ -2,7 +2,7 @@ use crate::command_exec::{new_command, os_str_to_string, run_command, run_comman
 use tauri::Emitter;
 use crate::file_browser::normalize_relative_path;
 use crate::models::{ChangeItem, CloneProgressStats, CommitFileRequest, OperationResult, SvnMetadata};
-use crate::utils::{failed_operation, slice_from_char, success_operation};
+use crate::utils::{failed_operation, success_operation};
 use rusqlite::{Connection, OptionalExtension};
 use serde::Serialize;
 use std::io::{BufRead, Read};
@@ -46,8 +46,20 @@ pub fn parse_svn_info_item(info: &str, label: &str) -> Option<String> {
     })
 }
 
+fn run_svn_status(path: &str) -> Result<String, String> {
+    crate::command_exec::run_command(["svn", "status", path])
+}
+
 pub fn svn_status_changes(path: &str) -> Result<Vec<ChangeItem>, String> {
-    let output = run_command(["svn", "status", path])?;
+    let output = match run_svn_status(path) {
+        Ok(o) => o,
+        Err(e) if is_svn_locked_error(&e) => {
+            // Auto-recover: try cleanup, then retry status once
+            let _ = run_command_args("svn", &["cleanup".into(), path.to_string()]);
+            run_svn_status(path)?
+        }
+        Err(e) => return Err(e),
+    };
     let patterns = load_svnignore_patterns(path);
     Ok(output
         .lines()
@@ -57,10 +69,31 @@ pub fn svn_status_changes(path: &str) -> Result<Vec<ChangeItem>, String> {
             if change.path == ".svnignore" {
                 return false;
             }
+            // 过滤 SVN 冲突产生的辅助文件 (.mine, .rXXXX)
+            if is_svn_conflict_artifact(&change.path) {
+                return false;
+            }
             // 过滤匹配 .svnignore 规则的文件
             !is_ignored_by_svnignore(&change.path, &patterns)
         })
         .collect::<Vec<_>>())
+}
+
+/// SVN 冲突产生的辅助文件：.mine（本地版本）和 .rXXXX（指定版本）
+fn is_svn_conflict_artifact(path: &str) -> bool {
+    let name = std::path::Path::new(path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    if name.ends_with(".mine") { return true; }
+    // 匹配 filename.ext.rNNNN — 至少 4 位数字的 revision 号
+    if let Some(rest) = name.rfind(".r") {
+        let suffix = &name[rest + 2..];
+        if suffix.len() >= 4 && suffix.chars().all(|c| c.is_ascii_digit()) {
+            return true;
+        }
+    }
+    false
 }
 
 /// 从仓库根目录加载 .svnignore 中的忽略模式
@@ -178,27 +211,25 @@ pub fn parse_svn_status_line(line: &str, root_path: &str) -> Option<ChangeItem> 
         return None;
     }
 
+    let rel = repository_relative_change_path(path, root_path);
+    let abs = format!("{}/{}", root_path.trim_end_matches('/').trim_end_matches('\\'), rel);
+
     Some(ChangeItem {
-        path: repository_relative_change_path(path, root_path),
+        path: rel,
         status: svn_status_kind(status_code).to_string(),
         vcs_type: "svn".to_string(),
         staged: false,
+        is_dir: std::path::Path::new(&abs).is_dir(),
     })
 }
 
 pub fn status_path_after_svn_status(line: &str) -> &str {
-    let after_status = slice_from_char(line, 1).unwrap_or("").trim_start();
-    if let Some(after_columns) = slice_from_char(line, 8) {
-        let fixed_width = after_columns.trim_start();
-        if fixed_width.is_empty() || fixed_width == after_status {
-            return after_status;
-        }
-        if after_status.ends_with(fixed_width) && after_status.len() == fixed_width.len() + 1 {
-            return after_status;
-        }
-        return fixed_width;
+    // SVN status line format: <1-char status><6-char columns><space><path>
+    // The status columns are always 8 chars wide total, so path starts at position 8
+    if let Some(path) = line.get(8..) {
+        return path.trim_start();
     }
-    after_status
+    line.get(1..).unwrap_or("").trim_start()
 }
 
 pub fn svn_status_kind(status_code: char) -> &'static str {
@@ -302,17 +333,48 @@ pub fn svn_commit_result(
     }
 }
 
+/// Recreate .svn working copy metadata when missing or broken.
+/// Returns Ok(true) if recreated, Ok(false) if already healthy, Err on failure.
+pub fn recreate_svn_workdir(path: &str, remote_url: &str) -> Result<bool, String> {
+    let svn_dir = std::path::Path::new(path).join(".svn");
+    if svn_dir.exists() {
+        // Always run cleanup first — it's idempotent and the only reliable way to clear locks
+        // (svn info can succeed even on a locked working copy)
+        if run_command_args("svn", &["cleanup".into(), path.to_string()]).is_ok() {
+            return Ok(false); // cleanup succeeded, working copy is healthy
+        }
+        // Cleanup failed — remove broken .svn
+        try_cleanup_svn_workdir(path);
+    }
+    // Checkout --depth empty to create .svn metadata only (fast, no file download)
+    crate::command_exec::run_command_args(
+        "svn",
+        &["checkout".into(), "--depth".into(), "empty".into(), remote_url.to_string(), path.to_string()],
+    )?;
+    // Change ambient depth to infinity so subsequent update pulls all files
+    crate::command_exec::run_command_args(
+        "svn",
+        &["update".into(), "--accept".into(), "postpone".into(), "--non-interactive".into(), "--set-depth".into(), "infinity".into(), path.to_string()],
+    )?;
+    Ok(true)
+}
+
 pub fn svn_update_result(path: &str, depth: Option<&str>) -> OperationResult {
     // Restore missing items first — `svn update` won't restore manually deleted directories
     let restore_output = svn_restore_missing(path);
 
-    let mut args = vec!["update".to_string(), path.to_string()];
-    if let Some(d) = depth {
-        if d != "infinity" {
+    let mut args = vec!["update".to_string(), "--accept".into(), "postpone".into(), "--non-interactive".into()];
+    match depth {
+        Some(d) if d != "infinity" => {
             args.push("--depth".to_string());
             args.push(d.to_string());
         }
+        _ => {
+            args.push("--set-depth".to_string());
+            args.push("infinity".to_string());
+        }
     }
+    args.push(path.to_string());
     match run_command_args("svn", &args) {
         Ok(output) => {
             let summary = parse_svn_update_output(&output);
@@ -332,13 +394,15 @@ pub fn svn_update_result(path: &str, depth: Option<&str>) -> OperationResult {
                 vcs_type: "svn".to_string(),
                 success: true,
                 summary: msg,
-                output: combined,
+                output: filter_svn_output(&combined),
                 warning: None,
                 missing_svn_cli: false,
             }
         }
         Err(error) => {
             let missing_svn_cli = is_missing_svn_cli_error(&error);
+            let _ = run_command_args("svn", &["cleanup".into(), path.to_string()]);
+            try_cleanup_svn_workdir(path);
             OperationResult {
                 operation: "update".to_string(),
                 vcs_type: "svn".to_string(),
@@ -360,13 +424,18 @@ pub fn svn_update_streaming(
     // Restore missing items first — `svn update` won't restore manually deleted directories
     let restore_output = svn_restore_missing(path);
 
-    let mut args = vec!["update".to_string(), path.to_string()];
-    if let Some(d) = depth {
-        if d != "infinity" {
+    let mut args = vec!["update".to_string(), "--accept".into(), "postpone".into(), "--non-interactive".into()];
+    match depth {
+        Some(d) if d != "infinity" => {
             args.push("--depth".to_string());
             args.push(d.to_string());
         }
+        _ => {
+            args.push("--set-depth".to_string());
+            args.push("infinity".to_string());
+        }
     }
+    args.push(path.to_string());
 
     let resolved = crate::command_exec::resolve_program("svn");
     let mut child = match new_command(&resolved)
@@ -391,25 +460,14 @@ pub fn svn_update_streaming(
 
     crate::command_exec::set_running_pid(child.id());
 
-    let mut full_output = String::new();
-    if let Some(stdout) = child.stdout.take() {
-        let reader = std::io::BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(text) = line {
-                let _ = app.emit("svn-update-line", &text);
-                full_output.push_str(&text);
-                full_output.push('\n');
-            }
-        }
-    }
+    let stdout_handle = child.stdout.take().map(|p| spawn_pipe_reader(app.clone(), p));
+    let stderr_handle = child.stderr.take().map(|p| spawn_pipe_reader(app.clone(), p));
+
+    let full_output = stdout_handle.map(|h| h.join().unwrap_or_default()).unwrap_or_default();
+    let stderr_output = stderr_handle.map(|h| h.join().unwrap_or_default()).unwrap_or_default();
 
     let status = child.wait().unwrap_or_default();
     crate::command_exec::clear_running_pid();
-
-    let mut stderr_output = String::new();
-    if let Some(mut stderr) = child.stderr.take() {
-        let _ = stderr.read_to_string(&mut stderr_output);
-    }
 
     if status.success() {
         let summary = parse_svn_update_output(&full_output);
@@ -429,18 +487,21 @@ pub fn svn_update_streaming(
             vcs_type: "svn".to_string(),
             success: true,
             summary: msg,
-            output: combined,
+            output: filter_svn_output(&combined),
             warning: None,
             missing_svn_cli: false,
         }
     } else {
         let missing_svn_cli = is_missing_svn_cli_error(&stderr_output);
+        // If the update was cancelled or failed, try to clean up the locked .svn
+        let _ = run_command_args("svn", &["cleanup".into(), path.to_string()]);
+        try_cleanup_svn_workdir(path);
         OperationResult {
             operation: "update".to_string(),
             vcs_type: "svn".to_string(),
             success: false,
             summary: "SVN 更新失败".to_string(),
-            output: full_output,
+            output: filter_svn_output(&full_output),
             warning: Some(svn_failure_warning("更新", &stderr_output)),
             missing_svn_cli,
         }
@@ -803,6 +864,45 @@ pub fn svn_cleanup(root_path: &str) -> OperationResult {
     }
 }
 
+/// Streaming cleanup with progress output (cancellable).
+pub fn svn_cleanup_streaming(app: &tauri::AppHandle, path: &str) -> OperationResult {
+    let resolved = crate::command_exec::resolve_program("svn");
+    let mut child = match crate::command_exec::new_command(&resolved)
+        .args(&["cleanup".to_string(), path.to_string()])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return failed_operation("cleanup", "svn", e.to_string(), false);
+        }
+    };
+
+    crate::command_exec::set_running_pid(child.id());
+
+    let stdout_handle = child.stdout.take().map(|p| spawn_pipe_reader(app.clone(), p));
+    let stderr_handle = child.stderr.take().map(|p| spawn_pipe_reader(app.clone(), p));
+
+    let output = stdout_handle.map(|h| h.join().unwrap_or_default()).unwrap_or_default();
+    let _stderr_output = stderr_handle.map(|h| h.join().unwrap_or_default()).unwrap_or_default();
+
+    let status = child.wait().unwrap_or_default();
+    crate::command_exec::clear_running_pid();
+
+    // Drain stderr
+    if let Some(mut stderr) = child.stderr.take() {
+        let _ = stderr.read_to_string(&mut String::new());
+    }
+
+    if status.success() {
+        success_operation("cleanup", "svn", "SVN cleanup 完成", output)
+    } else {
+        try_cleanup_svn_workdir(path);
+        success_operation("cleanup", "svn", "SVN cleanup 无法修复工作副本，已删除损坏的 .svn 元数据，请点击更新重新拉取", output)
+    }
+}
+
 // ── SVN Resolve (mark as resolved) ────────────────────────────────────────────
 
 pub fn svn_resolve(root_path: &str, relative_path: &str) -> OperationResult {
@@ -874,6 +974,43 @@ fn svn_restore_missing(root_path: &str) -> Result<String, String> {
     Ok(combined)
 }
 
+/// Remove SVN summary/meta lines from update output, keeping only file-level changes.
+/// File lines start with U/A/D/G/C/E or space; step labels start with ──.
+fn filter_svn_output(raw: &str) -> String {
+    raw.lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.is_empty() { return true; }
+            let first = trimmed.chars().next().unwrap_or(' ');
+            matches!(first, 'U' | 'A' | 'D' | 'G' | 'C' | 'E' | ' ')
+                || trimmed.starts_with("──")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+// ── Pipe reader helper ─────────────────────────────────────────────────────
+
+/// Spawn a thread that reads lines from a pipe and emits them via Tauri events.
+/// Returns the join handle; call `.join()` to collect the full output string.
+fn spawn_pipe_reader(
+    app: tauri::AppHandle,
+    pipe: impl std::io::Read + Send + 'static,
+) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let mut output = String::new();
+        let reader = std::io::BufReader::new(pipe);
+        for line in reader.lines() {
+            if let Ok(text) = line {
+                let _ = app.emit("svn-update-line", &text);
+                output.push_str(&text);
+                output.push('\n');
+            }
+        }
+        output
+    })
+}
+
 // ── SVN Force Update (Clean → Revert → Update to latest) ──────────────────
 
 /// Execute a single SVN step for the force-update pipeline, emitting output lines.
@@ -893,25 +1030,14 @@ fn svn_force_step(
 
     crate::command_exec::set_running_pid(child.id());
 
-    let mut output = String::new();
-    if let Some(stdout) = child.stdout.take() {
-        let reader = std::io::BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(text) = line {
-                let _ = app.emit("svn-update-line", &text);
-                output.push_str(&text);
-                output.push('\n');
-            }
-        }
-    }
+    let stdout_handle = child.stdout.take().map(|p| spawn_pipe_reader(app.clone(), p));
+    let stderr_handle = child.stderr.take().map(|p| spawn_pipe_reader(app.clone(), p));
+
+    let output = stdout_handle.map(|h| h.join().unwrap_or_default()).unwrap_or_default();
+    let stderr_output = stderr_handle.map(|h| h.join().unwrap_or_default()).unwrap_or_default();
 
     let status = child.wait().unwrap_or_default();
     crate::command_exec::clear_running_pid();
-
-    let mut stderr_output = String::new();
-    if let Some(mut stderr) = child.stderr.take() {
-        let _ = stderr.read_to_string(&mut stderr_output);
-    }
 
     if status.success() {
         Ok(output)
@@ -950,14 +1076,19 @@ pub fn svn_update_force(root_path: &str, depth: Option<&str>) -> OperationResult
         }
     }
 
-    // 3. Update
-    let mut update_args = vec!["update".to_string(), root_path.to_string()];
-    if let Some(d) = depth {
-        if d != "infinity" {
+    // 3. Update — use --set-depth to fix ambient depth after recreate
+    let mut update_args = vec!["update".to_string(), "--accept".into(), "postpone".into(), "--non-interactive".into()];
+    match depth {
+        Some(d) if d != "infinity" => {
             update_args.push("--depth".to_string());
             update_args.push(d.to_string());
         }
+        _ => {
+            update_args.push("--set-depth".to_string());
+            update_args.push("infinity".to_string());
+        }
     }
+    update_args.push(root_path.to_string());
     match run_command_args("svn", &update_args) {
         Ok(out) => {
             combined.push_str("[Update]\n");
@@ -972,12 +1103,14 @@ pub fn svn_update_force(root_path: &str, depth: Option<&str>) -> OperationResult
         }
         Err(error) => {
             let missing_svn_cli = is_missing_svn_cli_error(&error);
+            let _ = run_command_args("svn", &["cleanup".into(), root_path.to_string()]);
+            try_cleanup_svn_workdir(root_path);
             OperationResult {
                 operation: "update".to_string(),
                 vcs_type: "svn".to_string(),
                 success: false,
                 summary: "SVN 强制更新失败".to_string(),
-                output: combined,
+                output: filter_svn_output(&combined),
                 warning: Some(svn_failure_warning("强制更新", &error)),
                 missing_svn_cli,
             }
@@ -1022,26 +1155,33 @@ pub fn svn_update_force_streaming(
             combined.push_str("\n");
         }
         Err(e) => {
+            let _ = run_command_args("svn", &["cleanup".into(), path.to_string()]);
+            try_cleanup_svn_workdir(path);
             return OperationResult {
                 operation: "update".to_string(),
                 vcs_type: "svn".to_string(),
                 success: false,
                 summary: "SVN 强制更新失败".to_string(),
-                output: combined,
+                output: filter_svn_output(&combined),
                 warning: Some(svn_failure_warning("revert", &e)),
                 missing_svn_cli: false,
             };
         }
     }
 
-    // 3. Update
-    let mut update_args = vec!["update".to_string(), path.to_string()];
-    if let Some(d) = depth {
-        if d != "infinity" {
+    // 3. Update — use --set-depth to fix ambient depth after recreate
+    let mut update_args = vec!["update".to_string(), "--accept".into(), "postpone".into(), "--non-interactive".into()];
+    match depth {
+        Some(d) if d != "infinity" => {
             update_args.push("--depth".to_string());
             update_args.push(d.to_string());
         }
+        _ => {
+            update_args.push("--set-depth".to_string());
+            update_args.push("infinity".to_string());
+        }
     }
+    update_args.push(path.to_string());
     match svn_force_step(app, &update_args, "Update") {
         Ok(out) => {
             let label = "[Update]\n";
@@ -1059,19 +1199,21 @@ pub fn svn_update_force_streaming(
                 vcs_type: "svn".to_string(),
                 success: true,
                 summary: msg,
-                output: combined,
+                output: filter_svn_output(&combined),
                 warning: None,
                 missing_svn_cli: false,
             }
         }
         Err(e) => {
             let missing_svn_cli = is_missing_svn_cli_error(&e);
+            let _ = run_command_args("svn", &["cleanup".into(), path.to_string()]);
+            try_cleanup_svn_workdir(path);
             OperationResult {
                 operation: "update".to_string(),
                 vcs_type: "svn".to_string(),
                 success: false,
                 summary: "SVN 强制更新失败".to_string(),
-                output: combined,
+                output: filter_svn_output(&combined),
                 warning: Some(svn_failure_warning("强制更新", &e)),
                 missing_svn_cli,
             }
@@ -1340,6 +1482,7 @@ pub fn svn_checkout_streaming(
     ignore_externals: bool,
 ) -> OperationResult {
     // Step 1: checkout --depth empty (instant — creates .svn metadata only)
+    let _ = app.emit("clone-progress-line", "── Step 1: 创建 .svn 元数据 ──");
     let mut co_args: Vec<String> = vec!["checkout".into(), "--depth".into(), "empty".into()];
     if ignore_externals {
         co_args.push("--ignore-externals".into());
@@ -1366,9 +1509,11 @@ pub fn svn_checkout_streaming(
     // Step 2: update --set-depth infinity (change ambient depth + pull all files)
     // Use a background thread to poll directory size while streaming output,
     // so users see real-time download progress even during large file transfers.
+    let _ = app.emit("clone-progress-line", "── Step 2: 下载仓库文件 ──");
     let resolved = crate::command_exec::resolve_program("svn");
     let up_args: Vec<String> = vec![
-        "update".into(), "--set-depth".into(), "infinity".into(), path.to_string(),
+        "update".into(), "--accept".into(), "postpone".into(), "--non-interactive".into(),
+        "--set-depth".into(), "infinity".into(), path.to_string(),
     ];
     let mut child = match crate::command_exec::new_command(&resolved)
         .args(&up_args)
@@ -1472,20 +1617,35 @@ pub fn svn_checkout_streaming(
             vcs_type: "svn".to_string(),
             success: true,
             summary: msg,
-            output: full_output,
+            output: filter_svn_output(&full_output),
             warning: None,
             missing_svn_cli: false,
         }
     } else {
         let missing_svn_cli = is_missing_svn_cli_error(&stderr_output);
+        // Attempt cleanup — cancelled/failed clones leave locked .svn metadata
+        try_cleanup_svn_workdir(path);
         OperationResult {
             operation: "checkout".to_string(),
             vcs_type: "svn".to_string(),
             success: false,
             summary: "SVN checkout 失败".to_string(),
-            output: full_output,
+            output: filter_svn_output(&full_output),
             warning: Some(svn_failure_warning("checkout", &stderr_output)),
             missing_svn_cli,
         }
     }
+}
+
+pub fn try_cleanup_svn_workdir(path: &str) {
+    let svn_dir = std::path::Path::new(path).join(".svn");
+    if !svn_dir.exists() { return; }
+    // Try svn cleanup first — if it succeeds, the workdir is healthy
+    if crate::command_exec::run_command_args("svn", &["cleanup".into(), path.to_string()]).is_ok() {
+        return;
+    }
+    // cleanup failed — remove stale SQLite WAL/SHM + the broken .svn directory
+    let _ = std::fs::remove_file(svn_dir.join("wc.db-wal"));
+    let _ = std::fs::remove_file(svn_dir.join("wc.db-shm"));
+    let _ = std::fs::remove_dir_all(&svn_dir);
 }

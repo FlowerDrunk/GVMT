@@ -1,6 +1,4 @@
 import { FormEvent, MouseEvent, useEffect, useMemo, useRef, useState } from "react";
-import fileIconUrl from "../src-tauri/icons/file.png";
-import folderIconUrl from "../src-tauri/icons/folder.png";
 import { changeKey, getVcsLabels } from "./lib/constants";
 import { applyDocumentLanguage, createTranslator } from "./lib/i18n";
 import {
@@ -57,6 +55,7 @@ import { useSettings } from "./hooks/useSettings";
 import { useOperationHistory } from "./hooks/useOperationHistory";
 import { useToast } from "./hooks/useToast";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { useUpdateProgress } from "./hooks/useUpdateProgress";
 import { useCardOrder } from "./hooks/useCardOrder";
 import { ToastContainer } from "./components/workspace/ToastContainer";
 import { ActivityRail } from "./components/layout/ActivityRail";
@@ -68,10 +67,10 @@ import { StatusPanel } from "./components/panels/StatusPanel";
 import { ChangesPane } from "./components/panels/ChangesPane";
 import { ReviewPane } from "./components/panels/ReviewPane";
 import { ThemeDialog } from "./components/panels/ThemePane";
+import { UpdateProgressDialog } from "./components/workspace/UpdateProgressDialog";
 import { OperationPanel, OperationDetailModal, type DetailSource } from "./components/workspace/OperationPanel";
 import { BranchSwitcher } from "./components/workspace/BranchSwitcher";
 import { StatusBar, IgnoreContextMenuOverlay } from "./components/workspace/StatusBar";
-import { UpdateProgressDialog } from "./components/workspace/UpdateProgressDialog";
 import { UpdateNotificationPanel } from "./components/workspace/UpdateNotificationPanel";
 import { TabPanel } from "./components/shared/TabPanel";
 import { DraggableCard } from "./components/shared/DraggableCard";
@@ -126,11 +125,14 @@ function AppContent() {
 
   const fileTree = useFileTree({ selectedRepository: repo.selectedRepository, setStatus, t });
   const changeTree = useChangeTree({ selectedRepository: repo.selectedRepository, setStatus, t });
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [isCloningOp, setIsCloningOp] = useState(false);
-  const [updateLines, setUpdateLines] = useState<string[]>([]);
-  const [cloneProgress, setCloneProgress] = useState<number | null>(null);
-  const [progressStats, setProgressStats] = useState<{ files: number; sizeMb?: number; speedKbps?: number } | null>(null);
+  const updateProgress = useUpdateProgress();
+  const [isCloning, setIsCloning] = useState(false);
+  const [commitResults, setCommitResults] = useState<OperationResult[] | null>(null);
+  const [cloneDismissed, setCloneDismissed] = useState(false);
+  const [cloneLines, setCloneLines] = useState<string[]>([]);
+  const [clonePct, setClonePct] = useState<number | null>(null);
+  const [cloneStats, setCloneStats] = useState<{ files: number; sizeMb?: number; speedKbps?: number } | null>(null);
+  const [expandedProgressRepo, setExpandedProgressRepo] = useState<number | null>(null);
 
   const [latestSvnRevisions, setLatestSvnRevisions] = useState<Record<number, string>>({});
   function handleLatestSvnRevision(repoId: number, revision: string) {
@@ -248,16 +250,12 @@ function AppContent() {
       }
 
       setStatus(failed.length === 0 ? t("status.commitComplete") : t("status.commitStepsFailed", { count: failed.length }));
-      // 只要本地提交成功就关闭弹窗 — push 失败不阻塞后续操作
       if (commitSuccess) {
         commit.setCommitMessage("");
-        commit.setIsCommitDialogOpen(false);
-        if (pushFailed) {
-          showToast(t("status.pushFailedToast"), "error");
-        } else {
-          showToast(t("status.commitSuccessToast"), "success");
-        }
+        if (pushFailed) showToast(t("status.pushFailedToast"), "error");
+        else showToast(t("status.commitSuccessToast"), "success");
       }
+      setCommitResults(results);
       await statusHook.loadRepositoryStatus(true);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -460,7 +458,15 @@ function AppContent() {
     const isDirectory = node.isDirectory ?? node.children.length > 0;
     return (
       <>
-        <img className="tree-icon" src={isDirectory ? folderIconUrl : fileIconUrl} alt="" aria-hidden="true" />
+        {isDirectory ? (
+          <svg className="tree-folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+        ) : (
+          <svg className="tree-file-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>
+          </svg>
+        )}
         <strong>{node.name}</strong>
         <span>{isDirectory ? t("ui.folder") : entry ? formatFileSize(entry.size) : "-"}</span>
         <time>{entry ? formatModifiedAt(entry.modifiedAt) : "-"}</time>
@@ -473,7 +479,15 @@ function AppContent() {
     const isDirectory = node.isDirectory ?? node.children.length > 0;
     return (
       <>
-        <img className="tree-icon" src={isDirectory ? folderIconUrl : fileIconUrl} alt="" aria-hidden="true" />
+        {isDirectory ? (
+          <svg className="tree-folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+        ) : (
+          <svg className="tree-file-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>
+          </svg>
+        )}
         <strong>{node.name}</strong>
         {changeNode?.change ? (
           <>
@@ -481,10 +495,7 @@ function AppContent() {
             <small>{getVcsLabels(t)[changeNode.change.vcsType]}</small>
           </>
         ) : (
-          <>
-            <span>{node.children.length} {t("ui.items")}</span>
-            <small>{t("ui.directory")}</small>
-          </>
+          <span className="tree-dir-count">{node.children.length}</span>
         )}
       </>
     );
@@ -551,32 +562,29 @@ function AppContent() {
               showToast(t("status.pathRecognized", { path: droppedPath }), "info");
             }}
             onSetStatus={setStatus}
-            isCloningActive={isUpdating}
+            isCloningActive={isCloning}
             t={t}
             onCloneRepository={async (url: string, targetPath: string, shallow: boolean, ignoreExternals: boolean) => {
-              setIsUpdating(true);
-              setIsCloningOp(true);
-              setUpdateLines([]);
-              setCloneProgress(null);
-              setProgressStats(null);
+              setIsCloning(true);
+              setCloneDismissed(false);
+              setCloneLines([]);
+              setClonePct(null);
+              setCloneStats(null);
               let unlistenLine: (() => void) | null = null;
               let unlistenPct: (() => void) | null = null;
               let unlistenStats: (() => void) | null = null;
               if (isTauriRuntime()) {
                 try {
                   const { listen } = await import("@tauri-apps/api/event");
-                  const u1 = await listen<string>("clone-progress-line", (e) => {
-                    setUpdateLines((prev) => [...prev, e.payload]);
+                  unlistenLine = await listen<string>("clone-progress-line", (e) => {
+                    setCloneLines((prev) => [...prev, e.payload]);
                   });
-                  unlistenLine = u1;
-                  const u2 = await listen<number>("clone-progress-pct", (e) => {
-                    setCloneProgress(e.payload);
+                  unlistenPct = await listen<number>("clone-progress-pct", (e) => {
+                    setClonePct(e.payload);
                   });
-                  unlistenPct = u2;
-                  const u3 = await listen<{ files: number; sizeMb?: number; speedKbps?: number }>("clone-progress-stats", (e) => {
-                    setProgressStats(e.payload);
+                  unlistenStats = await listen<{ files: number; sizeMb?: number; speedKbps?: number }>("clone-progress-stats", (e) => {
+                    setCloneStats(e.payload);
                   });
-                  unlistenStats = u3;
                 } catch { /* ignore */ }
               }
               try {
@@ -593,8 +601,7 @@ function AppContent() {
                 unlistenLine?.();
                 unlistenPct?.();
                 unlistenStats?.();
-                setIsUpdating(false);
-                setIsCloningOp(false);
+                setIsCloning(false);
               }
             }}
             latestSvnRevisions={latestSvnRevisions}
@@ -616,41 +623,45 @@ function AppContent() {
           onRefreshSelected={repo.handleRefreshSelected}
           onLoadRepositoryStatus={statusHook.handleLoadRepositoryStatus}
           onUpdateRepository={async () => {
-            setIsUpdating(true);
-            setUpdateLines([]);
+            const r = repo.selectedRepository;
+            if (!r?.pathExists) return;
+            const repoId = r.id;
+            updateProgress.startUpdate(repoId, false);
             let unlisten: (() => void) | null = null;
             if (isTauriRuntime()) {
               try {
                 const { listen } = await import("@tauri-apps/api/event");
                 const u = await listen<string>("svn-update-line", (e) => {
-                  setUpdateLines((prev) => [...prev, e.payload]);
+                  updateProgress.addLine(repoId, e.payload);
                 });
                 unlisten = u;
               } catch { /* ignore */ }
             }
+            updateProgress.registerCleanup(repoId, () => unlisten?.());
             try {
               await statusHook.handleUpdateRepository(settings.svnDepth);
             } finally {
-              unlisten?.();
-              setIsUpdating(false);
+              updateProgress.finishUpdate(repoId);
             }
           }}
           onForceUpdateRepository={async () => {
-            if (!repo.selectedRepository) return;
-            setIsUpdating(true);
-            setUpdateLines([]);
+            const r = repo.selectedRepository;
+            if (!r?.pathExists) return;
+            const repoId = r.id;
+            updateProgress.startUpdate(repoId, false);
             let unlisten: (() => void) | null = null;
             if (isTauriRuntime()) {
               try {
                 const { listen } = await import("@tauri-apps/api/event");
                 const u = await listen<string>("svn-update-line", (e) => {
-                  setUpdateLines((prev) => [...prev, e.payload]);
+                  updateProgress.addLine(repoId, e.payload);
                 });
                 unlisten = u;
               } catch { /* ignore */ }
             }
+            updateProgress.registerCleanup(repoId, () => unlisten?.());
             try {
-              const result = await forceUpdateRepository(repo.selectedRepository.id, settings.svnDepth);
+              const result = await forceUpdateRepository(repoId, settings.svnDepth);
               statusHook.setOperationResults([result]);
               operationHistory.addEntry([result]);
               setStatus(result.summary);
@@ -659,8 +670,7 @@ function AppContent() {
               }
               await statusHook.loadRepositoryStatus(true);
             } finally {
-              unlisten?.();
-              setIsUpdating(false);
+              updateProgress.finishUpdate(repoId);
             }
           }}
           onOpenIgnoreDialog={ignore.handleOpenIgnoreDialog}
@@ -680,6 +690,26 @@ function AppContent() {
 
         <div className="workbench">
           <section className="main-thread">
+            {Object.keys(updateProgress.progressMap).length > 0 ? (
+              <div className="workspace-progress-bar">
+                {Object.entries(updateProgress.progressMap).map(([repoIdStr, state]) => {
+                  const repoId = Number(repoIdStr);
+                  const repoName = repo.repositories.find((r) => r.id === repoId)?.name ?? `#${repoId}`;
+                  return (
+                    <button
+                      key={repoId}
+                      className={`workspace-progress-chip ${expandedProgressRepo === repoId ? "active" : ""}`}
+                      type="button"
+                      onClick={() => setExpandedProgressRepo(expandedProgressRepo === repoId ? null : repoId)}
+                    >
+                      <span className="workspace-progress-spinner" />
+                      <span>{repoName}</span>
+                      <span className="workspace-progress-count">{state.lines.length}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
             {cardOrder.order.map((cardId, index) => {
               const isDragging = cardOrder.dragId === cardId;
               const isDropTarget = cardOrder.dropIndex === index;
@@ -736,7 +766,6 @@ function AppContent() {
                     return (
                       <OperationPanel
                         operationResults={statusHook.operationResults}
-                        history={operationHistory.history}
                         persistedLogs={operationHistory.persistedLogs}
                         t={t}
                         onOpenSvnDownload={statusHook.handleOpenSvnDownload}
@@ -913,7 +942,7 @@ function AppContent() {
 
       <CommitDialog
         open={commit.isCommitDialogOpen}
-        onClose={() => { commit.setIsCommitDialogOpen(false); commit.setCommitError(null); }}
+        onClose={() => { commit.setIsCommitDialogOpen(false); commit.setCommitError(null); setCommitResults(null); }}
         t={t}
         repositoryId={repo.selectedRepository?.id ?? null}
         committableFiles={commit.committableFiles}
@@ -926,11 +955,13 @@ function AppContent() {
         vcsLabels={getVcsLabels(t)}
         commitError={commit.commitError}
         commitHash={commit.commitHash}
+        commitResults={commitResults}
         onToggleAllFiles={commit.toggleAllCommitFiles}
         onToggleFile={commit.toggleCommitFile}
         onPushToggle={commit.setPushAfterCommit}
         onCommitMessageChange={commit.setCommitMessage}
         onSubmit={handleCommitRepository}
+        onDismissResults={() => setCommitResults(null)}
         onOpenFileDiff={(path, vcsType, status) => {
           const file = changedFiles.find((f) => f.path === path && f.vcsType === vcsType);
           changeTree.handleOpenChangeDiff(path, { status: status as ChangeStatus, vcsType, staged: file?.staged ?? false });
@@ -976,15 +1007,44 @@ function AppContent() {
       />
 
       <UpdateProgressDialog
-        open={isUpdating}
-        onClose={() => { setIsUpdating(false); setIsCloningOp(false); }}
-        lines={updateLines}
-        title={isCloningOp ? t("update.remoteClone") : "SVN Update"}
-        onCancel={isCloningOp ? () => { cancelOperation(); setIsUpdating(false); setIsCloningOp(false); } : undefined}
-        progress={cloneProgress}
-        stats={progressStats}
+        open={isCloning && !cloneDismissed}
+        onClose={() => setCloneDismissed(true)}
+        lines={cloneLines}
+        title={t("update.remoteClone")}
+        onCancel={() => { cancelOperation(); setIsCloning(false); setCloneDismissed(false); }}
+        progress={clonePct}
+        stats={cloneStats}
         t={t}
+        preventBackdropClose={true}
       />
+
+      {isCloning && cloneDismissed ? (
+        <button className="floating-progress-indicator" onClick={() => setCloneDismissed(false)} title={t("update.clickToReopen")}>
+          <span className="floating-progress-spinner" />
+          <span>{t("update.remoteClone")}</span>
+        </button>
+      ) : null}
+
+      {expandedProgressRepo !== null && updateProgress.progressMap[expandedProgressRepo] ? (
+        (() => {
+          const state = updateProgress.progressMap[expandedProgressRepo];
+          const repoName = repo.repositories.find((r) => r.id === expandedProgressRepo)?.name ?? `#${expandedProgressRepo}`;
+          return (
+            <UpdateProgressDialog
+              open={true}
+              onClose={() => setExpandedProgressRepo(null)}
+              lines={state.lines}
+              title={repoName}
+              onCancel={() => { cancelOperation(); updateProgress.finishUpdate(expandedProgressRepo); setExpandedProgressRepo(null); }}
+              progress={state.progress}
+              stats={state.stats}
+              t={t}
+              preventBackdropClose={false}
+              startedAt={state.startedAt}
+            />
+          );
+        })()
+      ) : null}
 
       <UpdateNotificationPanel
         repositories={repo.repositories}

@@ -9,11 +9,11 @@ pub fn git_status_changes(path: &str) -> Result<Vec<ChangeItem>, String> {
     let output = run_command(["git", "-C", path, "-c", "core.quotePath=false", "status", "--porcelain=v1"])?;
     Ok(output
         .lines()
-        .filter_map(parse_git_status_line)
+        .filter_map(|line| parse_git_status_line(line, path))
         .collect::<Vec<_>>())
 }
 
-pub fn parse_git_status_line(line: &str) -> Option<ChangeItem> {
+pub fn parse_git_status_line(line: &str, root_path: &str) -> Option<ChangeItem> {
     if line.chars().count() < 2 {
         return None;
     }
@@ -39,11 +39,14 @@ pub fn parse_git_status_line(line: &str) -> Option<ChangeItem> {
     // 暂存区有变更：索引列不是空格且不是 ?（未跟踪）
     let staged = index_status != ' ' && index_status != '?';
 
+    let abs = format!("{}/{}", root_path.trim_end_matches('/').trim_end_matches('\\'), path);
+
     Some(ChangeItem {
         path,
         status: git_status_kind(&status_code).to_string(),
         vcs_type: "git".to_string(),
         staged,
+        is_dir: std::path::Path::new(&abs).is_dir(),
     })
 }
 
@@ -673,6 +676,7 @@ pub fn git_clone_streaming(
     };
 
     crate::command_exec::set_running_pid(child.id());
+    let _ = app.emit("clone-progress-line", "── 正在克隆仓库 ──");
 
     let mut full_output = String::new();
     // git clone outputs progress to stderr

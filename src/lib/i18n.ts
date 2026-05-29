@@ -322,6 +322,7 @@ export type TranslationKey =
   | "update.elapsed"
   | "update.filesCount"
   | "update.remoteClone"
+  | "update.clickToReopen"
   // Notification
   | "notification.remoteUpdateAvailable"
   | "notification.updating"
@@ -733,6 +734,7 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "update.elapsed": "已耗时",
     "update.filesCount": "{count} 个文件",
     "update.remoteClone": "远程克隆",
+    "update.clickToReopen": "点击重新打开进度面板",
     "notification.remoteUpdateAvailable": "远端有更新可用",
     "notification.updating": "更新中...",
     "notification.update": "更新",
@@ -800,7 +802,7 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "contextMenu.acceptMine": "保留本地版本 (mine)",
     "contextMenu.acceptBase": "还原原始版本 (base)",
     "contextMenu.markResolved": "标记已解决 (保留当前状态)",
-    "contextMenu.forceUpdate": "强制更新 (Clean + Revert + Update)",
+    "contextMenu.forceUpdate": "强制更新",
     "contextMenu.addIgnore": "加入忽略",
     "contextMenu.ignoreExt": "忽略同后缀文件 (*{ext})",
     "contextMenu.resetTitle": "确认重置？",
@@ -1134,6 +1136,7 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "update.elapsed": "Elapsed",
     "update.filesCount": "{count} file(s)",
     "update.remoteClone": "Remote Clone",
+    "update.clickToReopen": "Click to reopen progress panel",
     "notification.remoteUpdateAvailable": "Remote update available",
     "notification.updating": "Updating...",
     "notification.update": "Update",
@@ -1201,7 +1204,7 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "contextMenu.acceptMine": "Keep local version (mine)",
     "contextMenu.acceptBase": "Restore original (base)",
     "contextMenu.markResolved": "Mark resolved (keep current state)",
-    "contextMenu.forceUpdate": "Force Update (Clean + Revert + Update)",
+    "contextMenu.forceUpdate": "Force Update",
     "contextMenu.addIgnore": "Add to ignore",
     "contextMenu.ignoreExt": "Ignore files with same extension (*{ext})",
     "contextMenu.resetTitle": "Confirm reset?",

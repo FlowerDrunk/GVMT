@@ -58,6 +58,8 @@ pub struct ChangeItem {
     pub status: String,
     pub vcs_type: String,
     pub staged: bool,
+    #[serde(default)]
+    pub is_dir: bool,
 }
 
 #[derive(Debug, Deserialize)]

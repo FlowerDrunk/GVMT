@@ -22,8 +22,6 @@ import { formatFileSize, formatModifiedAt } from "../../lib/utils";
 import { Modal, ModalHeading } from "../shared/Modal";
 import { CodeBlock } from "../shared/CodeBlock";
 import { Button } from "../ui/button";
-import fileIconUrl from "../../../src-tauri/icons/file.png";
-import folderIconUrl from "../../../src-tauri/icons/folder.png";
 
 type FileSource = "local" | "remote";
 
@@ -256,7 +254,15 @@ export function FileBrowserPanel({
     }
     return (
       <>
-        <img className="tree-icon" src={isDirectory ? folderIconUrl : fileIconUrl} alt="" aria-hidden="true" />
+        {isDirectory ? (
+          <svg className="tree-folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+        ) : (
+          <svg className="tree-file-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>
+          </svg>
+        )}
         <strong>{node.name}</strong>
         <span>{isDirectory ? "文件夹" : entry?.size != null ? formatFileSize(entry.size) : "-"}</span>
         <time>-</time>
@@ -284,23 +290,11 @@ export function FileBrowserPanel({
             {isSvn ? "SVN 远程" : "远程"}
           </Button>
         </div>
-        <Button variant="ghost" disabled={!selectedRepository || isLoading} onClick={() => {
-            if (source === "local") {
-              onLoadRepositoryFiles(repositoryFiles?.path ?? "");
-            } else {
-              handleRemoteBrowse(remoteState?.currentPath ?? "");
-            }
-          }}>
-          {t("browser.refresh")}
-        </Button>
       </div>
 
       {source === "local" ? (
         <>
           <div className="file-toolbar">
-            <Button variant="secondary" disabled={repositoryFiles?.parentPath === null || repositoryFiles?.parentPath === undefined || isLoading} onClick={() => onLoadRepositoryFiles(repositoryFiles?.parentPath ?? "")}>
-              {t("browser.goUp")}
-            </Button>
             <div className="breadcrumb" aria-label={t("browser.currentPath")}>
               <button type="button" onClick={() => onLoadRepositoryFiles("")} disabled={isLoading}>
                 {t("browser.root")}
@@ -343,9 +337,6 @@ export function FileBrowserPanel({
       ) : (
         <>
           <div className="file-toolbar">
-            <Button variant="secondary" disabled={!remoteState || remoteState.parentPath === null || isLoading} onClick={() => handleRemoteBrowse(remoteState?.parentPath ?? "")}>
-              {t("browser.goUp")}
-            </Button>
             <div className="breadcrumb" aria-label={t("browser.currentPath")}>
               <button type="button" onClick={() => handleRemoteBrowse("")} disabled={isLoading}>
                 {t("browser.root")}

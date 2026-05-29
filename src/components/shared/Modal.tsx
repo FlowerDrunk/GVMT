@@ -9,12 +9,13 @@ interface ModalProps {
   labelledBy?: string;
   className?: string;
   children: ReactNode;
+  preventBackdropClose?: boolean;
 }
 
-export function Modal({ open, onClose, labelledBy, className, children }: ModalProps) {
+export function Modal({ open, onClose, labelledBy, className, children, preventBackdropClose }: ModalProps) {
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => {
-      if (!nextOpen) onClose();
+      if (!nextOpen && !preventBackdropClose) onClose();
     }}>
       <DialogContent className={className} aria-labelledby={labelledBy}>
         {children}

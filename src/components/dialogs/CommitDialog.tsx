@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getCommitHooks, saveCommitHooks, testHookScript, type CommitHook } from "../../lib/api";
-import type { ChangeItem, VcsType } from "../../lib/api";
+import { getCommitHooks, isTauriRuntime, saveCommitHooks, testHookScript, type CommitHook } from "../../lib/api";
+import type { ChangeItem, OperationResult, VcsType } from "../../lib/api";
 import type { Translator } from "../../lib/i18n";
 import { changeKey } from "../../lib/constants";
 import { Modal, ModalHeading } from "../shared/Modal";
@@ -26,10 +26,12 @@ interface CommitDialogProps {
   hasGitCommitSelection: boolean; pushAfterCommit: boolean; commitMessage: string; isCommitLoading: boolean;
   vcsLabels: Record<VcsType, string>;
   commitError: string | null; commitHash: string | null;
+  commitResults: OperationResult[] | null;
   onToggleAllFiles: (files: ChangeItem[]) => void; onToggleFile: (change: ChangeItem) => void;
   onPushToggle: (push: boolean) => void; onCommitMessageChange: (message: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onOpenFileDiff: (path: string, vcsType: VcsType, status: string) => void;
+  onDismissResults: () => void;
 }
 
 interface FileGroup { label: string; status: string; files: ChangeItem[]; }
@@ -69,8 +71,9 @@ function getPathFilters(t: Translator): { key: PathFilter; label: string }[] {
 export function CommitDialog({
   open, onClose, t, repositoryId, committableFiles, selectedCommitKeys, selectedCommitCount,
   hasGitCommitSelection, pushAfterCommit, commitMessage, isCommitLoading,
-  vcsLabels, commitError, commitHash,
+  vcsLabels, commitError, commitHash, commitResults,
   onToggleAllFiles, onToggleFile, onPushToggle, onCommitMessageChange, onSubmit, onOpenFileDiff,
+  onDismissResults,
 }: CommitDialogProps) {
   const titleId = "commit-dialog-title";
   const [searchQuery, setSearchQuery] = useState("");
@@ -86,6 +89,44 @@ export function CommitDialog({
   // ── Hook settings ─────────────────────────────────────────────────────────
   const [hooks, setHooks] = useState<CommitHook[]>([]);
   const [hookDialogOpen, setHookDialogOpen] = useState(false);
+
+  // ── Streaming commit results ──────────────────────────────────────────────
+  const [streamingResults, setStreamingResults] = useState<OperationResult[]>([]);
+  const streamRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      // Clean up listener when dialog closes
+      streamRef.current?.();
+      streamRef.current = null;
+      setStreamingResults([]);
+      return;
+    }
+    if (!isTauriRuntime()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const unlisten = await listen<OperationResult>("commit-step", (e) => {
+          if (cancelled) return;
+          setStreamingResults((prev) => [...prev, e.payload]);
+        });
+        streamRef.current = unlisten;
+      } catch { /* ignore */ }
+    })();
+    return () => {
+      cancelled = true;
+      streamRef.current?.();
+      streamRef.current = null;
+    };
+  }, [open]);
+
+  // Reset streaming when form submits (new commit starts)
+  useEffect(() => {
+    if (isCommitLoading) setStreamingResults([]);
+  }, [isCommitLoading]);
+
+  const displayResults: OperationResult[] | null = isCommitLoading ? (streamingResults.length > 0 ? streamingResults : null) : (streamingResults.length > 0 ? streamingResults : commitResults);
   const [preEnabled, setPreEnabled] = useState(false);
   const [preShell, setPreShell] = useState<"cmd" | "powershell">("cmd");
   const [preScript, setPreScript] = useState("");
@@ -216,7 +257,7 @@ export function CommitDialog({
     return (
       <label className="commit-file-row" key={key}>
         {showCheckbox ? <input type="checkbox" checked={selectedCommitKeys.has(key)} onChange={() => onToggleFile(change)} /> : <span className="commit-row-spacer" />}
-        <ChangeBadge status={change.status} t={t} />
+        <ChangeBadge status={change.status} t={t} isDir={change.isDir} />
         <strong>{change.path}</strong>
         <small>{vcsLabels[change.vcsType]}</small>
         <button type="button" className="commit-file-view" title={t("commit.viewDiff")} onClick={(e) => { e.preventDefault(); onOpenFileDiff(change.path, change.vcsType, change.status); }}>
@@ -338,9 +379,38 @@ export function CommitDialog({
 
         {commitError ? <div className="commit-error">{commitError}</div> : null}
 
+        {/* Streaming progress */}
+        {(isCommitLoading || displayResults) ? (
+          <div className="commit-results-area">
+            <div className="commit-results-header">
+              {isCommitLoading ? (
+                <>
+                  <span className="commit-progress-spinner" />
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>{t("commit.submitting")}</span>
+                </>
+              ) : displayResults ? (
+                <>
+                  <span className={`commit-results-badge ${displayResults.every((r) => r.success) ? "success" : "fail"}`}>
+                    {displayResults.every((r) => r.success) ? t("review.passed") : t("review.failed")}
+                  </span>
+                  <Button variant="ghost" size="sm" type="button" onClick={onDismissResults}>{t("ui.close")}</Button>
+                </>
+              ) : null}
+            </div>
+            <div className="commit-results-lines">
+              {displayResults?.map((r, i) => (
+                <div key={i} className="commit-result-block">
+                  <span className={`commit-result-op ${r.success ? "success" : "fail"}`}>{r.operation}</span>
+                  <pre className="commit-result-output">{r.output}</pre>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div className="modal-actions">
           <Button variant="secondary" onClick={onClose} type="button">{t("commit.cancel")}</Button>
-          <Button variant="default" type="submit" disabled={isCommitLoading || selectedCommitCount === 0 || !commitMessage.trim()}>{submitLabel}</Button>
+          <Button variant="default" type="submit" disabled={isCommitLoading || (displayResults != null && displayResults.length > 0) || selectedCommitCount === 0 || !commitMessage.trim()}>{submitLabel}</Button>
         </div>
       </div>
 
