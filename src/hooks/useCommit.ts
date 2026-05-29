@@ -59,6 +59,10 @@ export function useCommit({ selectedRepository, changedFiles }: UseCommitOptions
     });
   }
 
+  function selectAllFiles(changes: ChangeItem[]) {
+    setSelectedCommitKeys(new Set(changes.map(changeKey)));
+  }
+
   function syncKeys(changes: ChangeItem[]) {
     const nextKeys = new Set(changes.map(changeKey));
     setSelectedCommitKeys((current) => {
@@ -96,6 +100,7 @@ export function useCommit({ selectedRepository, changedFiles }: UseCommitOptions
     setCommitHash,
     toggleCommitFile,
     toggleAllCommitFiles,
+    selectAllFiles,
     syncKeys,
     resetCommitState,
   };

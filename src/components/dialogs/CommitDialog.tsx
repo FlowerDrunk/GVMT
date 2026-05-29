@@ -7,6 +7,7 @@ import { Modal, ModalHeading } from "../shared/Modal";
 import { Switch } from "../ui/switch";
 import { ChangeBadge } from "../shared/ChangeBadge";
 import { Button } from "../ui/button";
+import { UpdateProgressDialog } from "../workspace/UpdateProgressDialog";
 
 const RECENT_MESSAGES_KEY = "gvmt-recent-commit-messages";
 const MAX_RECENT = 5;
@@ -123,10 +124,20 @@ export function CommitDialog({
 
   // Reset streaming when form submits (new commit starts)
   useEffect(() => {
-    if (isCommitLoading) setStreamingResults([]);
+    if (isCommitLoading) { setStreamingResults([]); setCommitDismissed(false); }
   }, [isCommitLoading]);
 
   const displayResults: OperationResult[] | null = isCommitLoading ? (streamingResults.length > 0 ? streamingResults : null) : (streamingResults.length > 0 ? streamingResults : commitResults);
+
+  const commitLines = useMemo(() => {
+    const results = displayResults ?? [];
+    return results.flatMap((r) => [
+      `── ${r.operation} ${r.success ? "✓" : "✗"} ──`,
+      ...(r.output ? r.output.split("\n") : ["无输出"]),
+    ]);
+  }, [displayResults]);
+
+  const [commitDismissed, setCommitDismissed] = useState(false);
   const [preEnabled, setPreEnabled] = useState(false);
   const [preShell, setPreShell] = useState<"cmd" | "powershell">("cmd");
   const [preScript, setPreScript] = useState("");
@@ -281,9 +292,20 @@ export function CommitDialog({
 
       <div className="commit-fixed-top">
         <div className="commit-dialog-summary">
-          <div><span>{t("commit.selectedFiles")}</span><strong>{selectedCommitCount}</strong></div>
-          <div><span>{t("commit.committable")}</span><strong>{totalFileCount}</strong></div>
-          <div><span>{t("commit.pushLabel")}</span><strong>{hasGitCommitSelection && pushAfterCommit ? t("commit.onLabel") : t("commit.offLabel")}</strong></div>
+          <div className="commit-stat">
+            <span>{t("commit.selectedFiles")}</span>
+            <strong>{selectedCommitCount}</strong>
+          </div>
+          <div className="commit-stat">
+            <span>{t("commit.committable")}</span>
+            <strong>{totalFileCount}</strong>
+          </div>
+          {hasGitCommitSelection ? (
+            <label className="commit-push-row">
+              <span>{t("commit.pushLabel")}</span>
+              <Switch checked={pushAfterCommit} onCheckedChange={onPushToggle} />
+            </label>
+          ) : null}
           {commitHash ? <div className="commit-hash-badge"><code>{commitHash.slice(0, 12)}</code></div> : null}
         </div>
 
@@ -297,34 +319,13 @@ export function CommitDialog({
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           </Button>
         </div>
-        <input className="commit-search-input" type="text" placeholder={t("commit.searchFiles")} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
 
         <div className="commit-filter-bar">
-          <div className="commit-filter-group">
-            {statusFilters.map((f) => (
-              <button key={f.key} type="button" className={`commit-filter-chip ${statusFilter === f.key ? "active" : ""}`} onClick={() => setStatusFilter(f.key)}>
-                {f.label}{f.key !== "all" && statusCounts[f.key] > 0 ? <span className="commit-filter-count">{statusCounts[f.key]}</span> : null}
-              </button>
-            ))}
-          </div>
-          {showPathFilter ? (
-            <div className="commit-filter-group">
-              {pathFilters.map((f) => (
-                <button key={f.key} type="button" className={`commit-filter-chip ${pathFilter === f.key ? "active" : ""}`} onClick={() => setPathFilter(f.key)}>{f.label}</button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="commit-toolbar-actions">
-          <span className="commit-toolbar-label">{t("ui.selectAll")}</span>
-          <Button variant="ghost" size="sm" type="button" onClick={() => onToggleAllFiles(filteredFiles)}>{t("commit.currentView")}</Button>
-          <Button variant="ghost" size="sm" type="button" onClick={() => onToggleAllFiles(committableFiles)}>{t("commit.allFiles")}</Button>
-          {!vcsTypes.isSingle && vcsTypes.hasGit ? <Button variant="ghost" size="sm" type="button" onClick={() => onToggleAllFiles(committableFiles.filter((f) => f.vcsType === "git" || f.vcsType === "mixed"))}>Git</Button> : null}
-          {!vcsTypes.isSingle && vcsTypes.hasSvn ? <Button variant="ghost" size="sm" type="button" onClick={() => onToggleAllFiles(committableFiles.filter((f) => f.vcsType === "svn"))}>SVN</Button> : null}
-          {hasGitCommitSelection ? (
-            <label className="radix-switch-label commit-push-toggle"><Switch checked={pushAfterCommit} onCheckedChange={onPushToggle} /><span>push</span></label>
-          ) : null}
+          {statusFilters.map((f) => (
+            <button key={f.key} type="button" className={`commit-filter-chip ${statusFilter === f.key ? "active" : ""}`} onClick={() => setStatusFilter(f.key)}>
+              {f.label}{f.key !== "all" && statusCounts[f.key] > 0 ? <span className="commit-filter-count">{statusCounts[f.key]}</span> : null}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -344,11 +345,11 @@ export function CommitDialog({
                 </button>
                 <span className="commit-file-group-label">{group.label}</span>
                 <span className="commit-file-group-count">{group.files.length}</span>
-                <button type="button" className="commit-file-group-browse" title={t("commit.browseGroup")} onClick={() => openBrowse(group)}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <span className="commit-file-group-browse" title={t("commit.browseGroup")} onClick={() => openBrowse(group)}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
                   </svg>
-                </button>
+                </span>
                 <button type="button" className="commit-file-group-select" onClick={() => onToggleAllFiles(group.files)}>
                   {groupAllSelected ? t("ui.deselectAll") : t("ui.selectAll")}
                 </button>
@@ -379,34 +380,7 @@ export function CommitDialog({
 
         {commitError ? <div className="commit-error">{commitError}</div> : null}
 
-        {/* Streaming progress */}
-        {(isCommitLoading || displayResults) ? (
-          <div className="commit-results-area">
-            <div className="commit-results-header">
-              {isCommitLoading ? (
-                <>
-                  <span className="commit-progress-spinner" />
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>{t("commit.submitting")}</span>
-                </>
-              ) : displayResults ? (
-                <>
-                  <span className={`commit-results-badge ${displayResults.every((r) => r.success) ? "success" : "fail"}`}>
-                    {displayResults.every((r) => r.success) ? t("review.passed") : t("review.failed")}
-                  </span>
-                  <Button variant="ghost" size="sm" type="button" onClick={onDismissResults}>{t("ui.close")}</Button>
-                </>
-              ) : null}
-            </div>
-            <div className="commit-results-lines">
-              {displayResults?.map((r, i) => (
-                <div key={i} className="commit-result-block">
-                  <span className={`commit-result-op ${r.success ? "success" : "fail"}`}>{r.operation}</span>
-                  <pre className="commit-result-output">{r.output}</pre>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
+        {isCommitLoading || displayResults ? null : null}
 
         <div className="modal-actions">
           <Button variant="secondary" onClick={onClose} type="button">{t("commit.cancel")}</Button>
@@ -431,6 +405,25 @@ export function CommitDialog({
           </div>
         ) : null}
       </Modal>
+
+      {/* Commit progress dialog */}
+      <UpdateProgressDialog
+        open={(isCommitLoading || (displayResults != null && displayResults.length > 0)) && !commitDismissed}
+        onClose={() => setCommitDismissed(true)}
+        lines={commitLines}
+        title={t("command.commit")}
+        progress={null}
+        stats={null}
+        t={t}
+        preventBackdropClose={false}
+      />
+
+      {(isCommitLoading || (displayResults != null && displayResults.length > 0)) && commitDismissed ? (
+        <button className="floating-progress-indicator" onClick={() => setCommitDismissed(false)} title={t("update.clickToReopen")}>
+          <span className="floating-progress-spinner" />
+          <span>{t("command.commit")}</span>
+        </button>
+      ) : null}
 
       {/* Hook settings sub-dialog */}
       <Modal open={hookDialogOpen} onClose={() => setHookDialogOpen(false)} labelledBy="hook-dialog-title" className="hook-settings-dialog">
