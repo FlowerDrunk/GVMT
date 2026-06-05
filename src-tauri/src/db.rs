@@ -99,6 +99,13 @@ pub fn initialize_database(connection: &Connection) -> Result<(), String> {
         )
         .ok(); // Ignore error if column already exists
 
+    // Migration: add tags column
+    connection
+        .execute_batch(
+            "ALTER TABLE repositories ADD COLUMN tags TEXT NOT NULL DEFAULT '';",
+        )
+        .ok();
+
     Ok(())
 }
 
@@ -149,7 +156,7 @@ pub fn find_repository_by_id(
 ) -> Result<Option<Repository>, String> {
     connection
         .query_row(
-            "SELECT id, name, path, vcs_type, remote_url, branch_or_revision, notes, created_at, updated_at
+            "SELECT id, name, path, vcs_type, remote_url, branch_or_revision, notes, tags, created_at, updated_at
              FROM repositories
              WHERE id = ?1",
             params![id],
@@ -162,8 +169,9 @@ pub fn find_repository_by_id(
                     remote_url: row.get(4)?,
                     branch_or_revision: row.get(5)?,
                     notes: row.get(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
+                    tags: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
                     path_exists: true,
                 })
             },
@@ -179,7 +187,7 @@ pub fn find_repository_by_path(
 ) -> Result<Option<Repository>, String> {
     connection
         .query_row(
-            "SELECT id, name, path, vcs_type, remote_url, branch_or_revision, notes, created_at, updated_at
+            "SELECT id, name, path, vcs_type, remote_url, branch_or_revision, notes, tags, created_at, updated_at
              FROM repositories
              WHERE path = ?1",
             params![path],
@@ -192,8 +200,9 @@ pub fn find_repository_by_path(
                     remote_url: row.get(4)?,
                     branch_or_revision: row.get(5)?,
                     notes: row.get(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
+                    tags: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
                     path_exists: true,
                 })
             },

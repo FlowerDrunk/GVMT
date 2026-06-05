@@ -10,6 +10,7 @@ export interface Repository {
   remoteUrl: string | null;
   branchOrRevision: string | null;
   notes: string;
+  tags: string;
   createdAt: string;
   updatedAt: string;
   pathExists: boolean;
@@ -243,6 +244,10 @@ export async function updateRepositoryInfo(id: number, input: UpdateRepositoryIn
 
 export async function deleteRepository(id: number): Promise<void> {
   return invoke<void>("delete_repository", { id });
+}
+
+export async function updateRepositoryTags(id: number, tags: string): Promise<Repository> {
+  return invoke<Repository>("update_repository_tags", { id, tags });
 }
 
 export async function detectRepository(path: string): Promise<DetectedRepository> {

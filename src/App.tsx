@@ -517,10 +517,10 @@ function AppContent() {
           </svg>
         )}
         <strong>{node.name}</strong>
-        {changeNode?.change ? (
+        {changeNode?.change || changeNode?.derivedChange ? (
           <>
-            <ChangeBadge status={changeNode.change.status} t={t} />
-            <small>{getVcsLabels(t)[changeNode.change.vcsType]}</small>
+            <ChangeBadge status={(changeNode.change ?? changeNode.derivedChange)!.status} t={t} isDir={!changeNode.change && !!changeNode.derivedChange} />
+            <small>{getVcsLabels(t)[(changeNode.change ?? changeNode.derivedChange)!.vcsType]}</small>
           </>
         ) : (
           <span className="tree-dir-count">{node.children.length}</span>
@@ -612,6 +612,10 @@ function AppContent() {
                   });
                   unlistenStats = await listen<{ files: number; sizeMb?: number; speedKbps?: number }>("clone-progress-stats", (e) => {
                     setCloneStats(e.payload);
+                  });
+                  // Refresh repo list when .svn is created (before full checkout completes)
+                  await listen<string>("clone-repo-ready", () => {
+                    void repo.refreshRepositories();
                   });
                 } catch { /* ignore */ }
               }
@@ -781,9 +785,7 @@ function AppContent() {
                       <StatusPanel
                         repositoryStatus={statusHook.repositoryStatus}
                         selectedRepository={repo.selectedRepository}
-                        isLoading={isLoading}
                         t={t}
-                        onLoadRepositoryStatus={statusHook.handleLoadRepositoryStatus}
                         onOpenSvnDownload={statusHook.handleOpenSvnDownload}
                         onSelectChange={changeTree.selectChange}
                         onOpenChangeDiff={(path, ch) => void changeTree.handleOpenChangeDiff(path, ch)}

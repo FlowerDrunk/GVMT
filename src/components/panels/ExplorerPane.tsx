@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { Repository } from "../../lib/api";
-import { addRepository, detectRepository, isTauriRuntime, openInExplorer, pickFolder, updateRepositoryInfo } from "../../lib/api";
+import { addRepository, detectRepository, isTauriRuntime, openInExplorer, pickFolder, updateRepositoryInfo, updateRepositoryTags } from "../../lib/api";
 import { statusTone } from "../../lib/utils";
 import { getVcsLabels } from "../../lib/constants";
 import type { Translator } from "../../lib/i18n";
@@ -54,9 +54,13 @@ export function ExplorerPane({
   const [isCloning, setIsCloning] = useState(false);
   const [shallowClone, setShallowClone] = useState(true);
   const [ignoreExternals, setIgnoreExternals] = useState(true);
+
   const [editRepo, setEditRepo] = useState<Repository | null>(null);
   const [editName, setEditName] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [tagDialogRepo, setTagDialogRepo] = useState<Repository | null>(null);
+  const [tagDialogTags, setTagDialogTags] = useState<string[]>([]);
+  const [tagDialogInput, setTagDialogInput] = useState("");
   const [editPath, setEditPath] = useState("");
   const [editRemoteUrl, setEditRemoteUrl] = useState("");
   const [isSavingEdit, setIsSavingEdit] = useState(false);
@@ -89,6 +93,52 @@ export function ExplorerPane({
     setAddError(null);
   }
 
+  function openTagDialog(repo: Repository) {
+    setTagDialogRepo(repo);
+    setTagDialogTags(parseTags(repo.tags || ""));
+    setTagDialogInput("");
+  }
+
+  function addTagToDialog() {
+    const name = tagDialogInput.trim();
+    if (!name || tagDialogTags.includes(name)) { setTagDialogInput(""); return; }
+    setTagDialogTags((prev) => [...prev, name]);
+    setTagDialogInput("");
+  }
+
+  function removeTagFromDialog(name: string) {
+    setTagDialogTags((prev) => prev.filter((t) => t !== name));
+  }
+
+  function handleTagInputKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") { e.preventDefault(); addTagToDialog(); }
+    if (e.key === "," || e.key === "，") {
+      e.preventDefault();
+      if (tagDialogInput.trim()) addTagToDialog();
+    }
+  }
+
+  async function saveTagDialog() {
+    if (!tagDialogRepo) return;
+    try {
+      await updateRepositoryTags(tagDialogRepo.id, tagDialogTags.join(", "));
+      onRepositoriesChanged();
+    } catch { /* ignore */ }
+    setTagDialogRepo(null);
+  }
+
+  const TAG_COLORS = ["#6366f1", "#0891b2", "#059669", "#d97706", "#dc2626", "#7c3aed", "#db2777", "#2563eb"];
+
+  function tagColor(name: string): string {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+    return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
+  }
+
+  function parseTags(tags: string): string[] {
+    return tags.split(",").map((t) => t.trim()).filter(Boolean);
+  }
+
   const isSvnUrl = useMemo(() => {
     const lower = remoteUrl.trim().toLowerCase();
     if (!lower) return false;
@@ -110,10 +160,14 @@ export function ExplorerPane({
       list = list.filter(
         (r) =>
           r.name.toLowerCase().includes(lower) ||
-          r.path.toLowerCase().includes(lower),
+          r.path.toLowerCase().includes(lower) ||
+          (r.tags || "").toLowerCase().includes(lower),
       );
     }
-    return [...list].sort((a, b) => a.name.localeCompare(b.name));
+    return [...list].sort((a, b) => {
+      if (a.pathExists !== b.pathExists) return a.pathExists ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
   }, [repositories, searchQuery]);
 
   async function handlePickFolder() {
@@ -256,17 +310,12 @@ export function ExplorerPane({
                 {remoteUrl.trim() ? (
                   <div className="clone-options">
                     <span className="clone-options-label">{isSvnUrl ? t("explorer.svnOptions") : t("explorer.gitOptions")}</span>
-                    {isSvnUrl ? (
-                      <label className="shallow-clone-label">
-                        <input type="checkbox" checked={ignoreExternals} onChange={(e) => setIgnoreExternals(e.target.checked)} />
-                        {t("explorer.ignoreExternalsDesc")}
-                      </label>
-                    ) : (
+                    {!isSvnUrl ? (
                       <label className="shallow-clone-label">
                         <input type="checkbox" checked={shallowClone} onChange={(e) => setShallowClone(e.target.checked)} />
                         {t("explorer.shallowCloneDesc")}
                       </label>
-                    )}
+                    ) : null}
                   </div>
                 ) : null}
               </>
@@ -366,25 +415,49 @@ export function ExplorerPane({
                     onClick={() => onSelectRepository(repository.id)}
                   >
                     <span className={`repo-dot ${repository.pathExists ? statusTone(repository.vcsType) : "danger"}`} />
-                    <span className="repo-copy">
-                      <strong>{repository.name}</strong>
-                      {!repository.pathExists ? <span className="repo-missing-tag">已删除</span> : null}
-                      <span className="repo-branch">{latestSvnRevisions[repository.id] ?? repository.branchOrRevision ?? ""}</span>
+                    <span className="repo-body">
+                      <span className="repo-header">
+                        <strong>{repository.name}</strong>
+                        {!repository.pathExists ? <span className="repo-missing-tag">已删除</span> : null}
+                        <span className={`repo-type ${repository.vcsType}`}>{getVcsLabels(t)[repository.vcsType]}</span>
+                      </span>
+                      <span className="repo-meta">
+                        {(latestSvnRevisions[repository.id] ?? repository.branchOrRevision) ? (
+                          <>
+                            <span className="repo-branch">{latestSvnRevisions[repository.id] ?? repository.branchOrRevision}</span>
+                            {repository.tags ? <span className="repo-meta-sep">·</span> : null}
+                          </>
+                        ) : null}
+                        {repository.tags ? (
+                          <span className="repo-tags-row">
+                            {parseTags(repository.tags).map((tag) => (
+                              <span key={tag} className="repo-tag-chip" style={{ background: tagColor(tag) }}>{tag}</span>
+                            ))}
+                          </span>
+                        ) : null}
+                      </span>
                     </span>
-                    <span className="repo-type">{getVcsLabels(t)[repository.vcsType]}</span>
                   </button>
                 }
               >
                 <ContextMenuItem onSelect={() => openEditDialog(repository)}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="ctx-menu-icon"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                   {t("explorer.editInfo")}
                 </ContextMenuItem>
+                <ContextMenuItem onSelect={() => openTagDialog(repository)}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="ctx-menu-icon"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg>
+                  {repository.tags ? "编辑标签" : "添加标签"}
+                </ContextMenuItem>
                 <ContextMenuItem onSelect={() => { openInExplorer(repository.path); }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="ctx-menu-icon"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                   {t("explorer.openDir")}
                 </ContextMenuItem>
+                <div className="ctx-menu-sep" />
                 <ContextMenuItem
                   className="danger"
                   onSelect={() => onDeleteRepository(repository)}
                 >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="ctx-menu-icon"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                   {t("explorer.deleteRecordContext")}
                 </ContextMenuItem>
               </ContextMenu>
@@ -410,6 +483,43 @@ export function ExplorerPane({
               <Button variant="default" onClick={handleSaveEdit} disabled={isSavingEdit || !editName.trim()}>
                 {isSavingEdit ? t("ui.saving") : t("ui.save")}
               </Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+
+      {tagDialogRepo ? (
+        <Modal open={true} onClose={() => setTagDialogRepo(null)} labelledBy="tag-dialog-title" className="tag-dialog">
+          <ModalHeading eyebrow="标签" title={tagDialogRepo.name} titleId="tag-dialog-title" onClose={() => setTagDialogRepo(null)} t={t} />
+          <div className="tag-dialog-body">
+            <div className="tag-preview-row">
+              {tagDialogTags.length === 0 ? (
+                <span className="tag-preview-empty">点击下方输入框添加标签</span>
+              ) : (
+                tagDialogTags.map((tag) => (
+                  <span key={tag} className="tag-preview-chip" style={{ background: tagColor(tag) }}>
+                    {tag}
+                    <button className="tag-chip-remove" onClick={() => removeTagFromDialog(tag)} type="button" title="移除">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                  </span>
+                ))
+              )}
+            </div>
+            <div className="tag-input-row">
+              <input
+                className="tag-dialog-input"
+                value={tagDialogInput}
+                onChange={(e) => setTagDialogInput(e.target.value)}
+                onKeyDown={handleTagInputKeyDown}
+                placeholder="输入标签名，回车添加"
+                autoFocus
+              />
+              <Button variant="ghost" size="sm" onClick={addTagToDialog} disabled={!tagDialogInput.trim()} type="button">添加</Button>
+            </div>
+            <div className="form-actions">
+              <Button variant="secondary" onClick={() => setTagDialogRepo(null)} type="button">{t("ui.cancel")}</Button>
+              <Button variant="default" onClick={saveTagDialog} type="button">{t("ui.save")}</Button>
             </div>
           </div>
         </Modal>

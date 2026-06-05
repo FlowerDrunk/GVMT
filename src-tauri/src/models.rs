@@ -12,6 +12,7 @@ pub struct Repository {
     pub remote_url: Option<String>,
     pub branch_or_revision: Option<String>,
     pub notes: String,
+    pub tags: String,
     pub created_at: String,
     pub updated_at: String,
     #[serde(default)]

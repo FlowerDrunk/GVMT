@@ -28,6 +28,7 @@ export type TranslationKey =
   | "command.refreshStatus"
   | "command.commit"
   | "command.ignore"
+  | "command.openFolder"
   | "command.update"
   | "command.fetch"
   | "command.stash"
@@ -462,6 +463,7 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "command.refreshStatus": "检测",
     "command.commit": "提交",
     "command.ignore": "忽略",
+    "command.openFolder": "打开文件夹",
     "command.update": "更新",
     "command.fetch": "拉取",
     "command.stash": "暂存",
@@ -864,6 +866,7 @@ const resources: Record<AppLanguage, Record<TranslationKey, string>> = {
     "command.refreshStatus": "Refresh",
     "command.commit": "Commit",
     "command.ignore": "Ignore",
+    "command.openFolder": "Open Folder",
     "command.update": "Update",
     "command.fetch": "Fetch",
     "command.stash": "Stash",

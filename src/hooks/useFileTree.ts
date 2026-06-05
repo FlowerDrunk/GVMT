@@ -68,25 +68,23 @@ export function useFileTree({ selectedRepository, setStatus, t }: UseFileTreeOpt
       return;
     }
 
-    if (!loadedFilePaths.has(entry.path)) {
-      setIsFileBrowserLoading(true);
-      try {
-        const nextDirectory = await listRepositoryFiles(selectedRepository.id, entry.path);
-        setRepositoryFiles((current) =>
-          current
-            ? {
-                ...current,
-                entries: replaceFileTreeChildren(current.entries, entry.path, nextDirectory.entries),
-              }
-            : current,
-        );
-        setLoadedFilePaths((current) => new Set(current).add(entry.path));
-      } catch (error) {
-        setStatus(error instanceof Error ? error.message : String(error));
-        return;
-      } finally {
-        setIsFileBrowserLoading(false);
-      }
+    // Always reload to get fresh data — lightweight for most repos
+    setIsFileBrowserLoading(true);
+    try {
+      const nextDirectory = await listRepositoryFiles(selectedRepository.id, entry.path);
+      setRepositoryFiles((current) =>
+        current
+          ? {
+              ...current,
+              entries: replaceFileTreeChildren(current.entries, entry.path, nextDirectory.entries),
+            }
+          : current,
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+      return;
+    } finally {
+      setIsFileBrowserLoading(false);
     }
 
     setExpandedFilePaths((current) => new Set(current).add(entry.path));

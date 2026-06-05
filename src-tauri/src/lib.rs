@@ -90,6 +90,7 @@ pub fn run() {
             commands::update_gitignore,
             commands::update_repository,
             commands::update_repository_info,
+            commands::update_repository_tags,
             commands::update_svn_ignore,
         ])
         .run(tauri::generate_context!())

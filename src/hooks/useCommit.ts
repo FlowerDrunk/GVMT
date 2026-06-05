@@ -66,7 +66,6 @@ export function useCommit({ selectedRepository, changedFiles }: UseCommitOptions
   function syncKeys(changes: ChangeItem[]) {
     const nextKeys = new Set(changes.map(changeKey));
     setSelectedCommitKeys((current) => {
-      if (current.size === 0) return nextKeys;
       return new Set([...current].filter((key) => nextKeys.has(key)));
     });
   }

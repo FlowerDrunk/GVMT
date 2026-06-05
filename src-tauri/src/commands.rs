@@ -37,7 +37,7 @@ pub async fn list_repositories(app: AppHandle) -> Result<Vec<Repository>, String
         let connection = db::open_database(&app)?;
         let mut statement = connection
             .prepare(
-                "SELECT id, name, path, vcs_type, remote_url, branch_or_revision, notes, created_at, updated_at
+                "SELECT id, name, path, vcs_type, remote_url, branch_or_revision, notes, tags, created_at, updated_at
                  FROM repositories
                  ORDER BY updated_at DESC, name ASC",
             )
@@ -53,8 +53,9 @@ pub async fn list_repositories(app: AppHandle) -> Result<Vec<Repository>, String
                     remote_url: row.get(4)?,
                     branch_or_revision: row.get(5)?,
                     notes: row.get(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
+                    tags: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
                     path_exists: true,
                 })
             })
@@ -142,6 +143,35 @@ pub async fn clone_repository(app: AppHandle, input: CloneRepositoryInput) -> Re
             let svn_dir = std::path::Path::new(&path).join(".svn");
             if svn_dir.exists() {
                 svn::try_cleanup_svn_workdir(&path);
+            } else {
+                // Pre-create .svn metadata so the repo appears in the list immediately
+                // (the full checkout is slow but .svn creation is instant)
+                let _ = crate::command_exec::run_command_args("svn", &[
+                    "checkout".into(), "--depth".into(), "empty".into(),
+                    url.clone(), path.clone(),
+                ]);
+                // Detect and insert into DB now — the repo shows in the list while files download
+                if let Ok(detected) = detect_repository_sync(path.clone()) {
+                    let connection = db::open_database(&app_ref)?;
+                    let _ = connection.execute(
+                        "INSERT INTO repositories (name, path, vcs_type, remote_url, branch_or_revision)
+                         VALUES (?1, ?2, ?3, ?4, ?5)
+                         ON CONFLICT(path) DO UPDATE SET
+                           name = excluded.name,
+                           vcs_type = excluded.vcs_type,
+                           remote_url = excluded.remote_url,
+                           branch_or_revision = excluded.branch_or_revision,
+                           updated_at = CURRENT_TIMESTAMP",
+                        rusqlite::params![
+                            detected.name,
+                            detected.path,
+                            detected.vcs_type,
+                            detected.remote_url,
+                            detected.branch_or_revision
+                        ],
+                    );
+                    let _ = app_ref.emit("clone-repo-ready", path.clone());
+                }
             }
         }
 
@@ -155,7 +185,7 @@ pub async fn clone_repository(app: AppHandle, input: CloneRepositoryInput) -> Re
             return Err(result.warning.unwrap_or_else(|| result.summary));
         }
 
-        // Detect and add the cloned repository
+        // Detect and add/update the cloned repository
         let detected = detect_repository_sync(path)?;
         let connection = db::open_database(&app_ref)?;
         connection.execute(
@@ -233,6 +263,22 @@ pub async fn update_repository_info(app: AppHandle, id: i64, input: UpdateReposi
         if affected == 0 {
             return Err("未找到仓库".to_string());
         }
+        db::find_repository_by_id(&connection, id)?
+            .ok_or_else(|| "更新后未能读取仓库".to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn update_repository_tags(app: AppHandle, id: i64, tags: String) -> Result<Repository, String> {
+    run_blocking(move || {
+        let connection = db::open_database(&app)?;
+        connection
+            .execute(
+                "UPDATE repositories SET tags = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+                rusqlite::params![tags, id],
+            )
+            .map_err(|e| e.to_string())?;
         db::find_repository_by_id(&connection, id)?
             .ok_or_else(|| "更新后未能读取仓库".to_string())
     })

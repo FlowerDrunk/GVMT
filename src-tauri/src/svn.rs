@@ -73,8 +73,8 @@ pub fn svn_status_changes(path: &str) -> Result<Vec<ChangeItem>, String> {
             if is_svn_conflict_artifact(&change.path) {
                 return false;
             }
-            // 过滤匹配 .svnignore 规则的文件
-            !is_ignored_by_svnignore(&change.path, &patterns)
+            // 过滤匹配 .svnignore 规则的文件（冲突文件始终显示）
+            change.status == "conflicted" || !is_ignored_by_svnignore(&change.path, &patterns)
         })
         .collect::<Vec<_>>())
 }
@@ -203,6 +203,14 @@ fn simple_wildcard_match(text: &str, pattern: &str) -> bool {
 pub fn parse_svn_status_line(line: &str, root_path: &str) -> Option<ChangeItem> {
     let status_code = line.chars().next()?;
     if line.trim().is_empty() {
+        return None;
+    }
+    // SVN status 第一列只能是这些有效状态码，其他字符（如 "Summary of conflicts:" 首字符 'S'）是汇总行，应过滤
+    if !matches!(status_code, 'A' | 'C' | 'D' | 'M' | 'R' | '?' | '!' | '~' | 'I' | 'X' | 'E' | 'L' | ' ') {
+        return None;
+    }
+    // SVN status 行固定为 8 字符头部 + 路径；第 8 列（index 7）必须是空格分隔符，否则不是文件条目
+    if line.as_bytes().get(7) != Some(&b' ') {
         return None;
     }
 
@@ -1454,6 +1462,90 @@ pub fn parse_svn_update_output(output: &str) -> SvnUpdateSummary {
     }
 }
 
+// ── SVN Checkout Helpers ────────────────────────────────────────────────────
+
+fn run_single_update(app: &tauri::AppHandle, path: &str) -> (bool, String) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let resolved = crate::command_exec::resolve_program("svn");
+    let args: Vec<String> = vec![
+        "update".into(), "--accept".into(), "postpone".into(), "--non-interactive".into(),
+        "--set-depth".into(), "infinity".into(), path.to_string(),
+    ];
+    let mut child = match crate::command_exec::new_command(&resolved)
+        .args(&args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => return (false, e.to_string()),
+    };
+
+    crate::command_exec::set_running_pid(child.id());
+
+    // Read stdout in a separate thread
+    let app_clone = app.clone();
+    let stdout = child.stdout.take();
+    let reader = std::thread::spawn(move || {
+        let mut output = String::new();
+        if let Some(out) = stdout {
+            let buf = std::io::BufReader::new(out);
+            for line in buf.lines() {
+                if let Ok(text) = line {
+                    let _ = app_clone.emit("clone-progress-line", &text);
+                    output.push_str(&text);
+                    output.push('\n');
+                }
+            }
+        }
+        output
+    });
+
+    // Poll directory size every second
+    let path_owned = path.to_string();
+    let app_poll = app.clone();
+    let running = std::sync::Arc::new(AtomicBool::new(true));
+    let running_clone = running.clone();
+    let poller = std::thread::spawn(move || {
+        let mut last_size: u64 = 0;
+        while running_clone.load(Ordering::Relaxed) {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            let size_bytes = dir_size(&path_owned);
+            let size_mb = size_bytes as f64 / (1024.0 * 1024.0);
+            let speed_kbps = if size_bytes > last_size { (size_bytes - last_size) as f64 / 1024.0 } else { 0.0 };
+            last_size = size_bytes;
+            let stats = CloneProgressStats { files: 0, size_mb: Some(size_mb), speed_kbps: if speed_kbps > 0.0 { Some(speed_kbps) } else { None } };
+            let _ = app_poll.emit("clone-progress-stats", &stats);
+        }
+    });
+
+    let status = child.wait().unwrap_or_default();
+    crate::command_exec::clear_running_pid();
+    running.store(false, Ordering::Relaxed);
+    let _ = poller.join();
+
+    let full_output = reader.join().unwrap_or_default();
+    let mut stderr_output = String::new();
+    if let Some(mut stderr) = child.stderr.take() { let _ = stderr.read_to_string(&mut stderr_output); }
+    let combined = if stderr_output.trim().is_empty() { full_output.clone() } else { format!("{full_output}\n{stderr_output}") };
+
+    let final_stats = CloneProgressStats { files: 0, size_mb: Some(dir_size(path) as f64 / (1024.0 * 1024.0)), speed_kbps: None };
+    let _ = app.emit("clone-progress-stats", &final_stats);
+
+    (status.success(), combined)
+}
+
+fn build_checkout_result(success: bool, full_output: &str, path: &str) -> OperationResult {
+    if success {
+        let summary = parse_svn_update_output(full_output);
+        let msg = if summary.total > 0 { format!("SVN checkout 完成（{} 项）", summary.total) } else { "SVN checkout 完成".to_string() };
+        OperationResult { operation: "checkout".into(), vcs_type: "svn".into(), success: true, summary: msg, output: filter_svn_output(full_output), warning: None, missing_svn_cli: false }
+    } else {
+        try_cleanup_svn_workdir(path);
+        OperationResult { operation: "checkout".into(), vcs_type: "svn".into(), success: false, summary: "SVN checkout 失败".to_string(), output: filter_svn_output(full_output), warning: Some("检出失败".to_string()), missing_svn_cli: false }
+    }
+}
+
 // ── SVN Checkout (streaming) ──────────────────────────────────────────────
 
 /// Recursively count total file sizes in a directory (excludes .svn metadata).
@@ -1482,6 +1574,9 @@ pub fn svn_checkout_streaming(
     ignore_externals: bool,
 ) -> OperationResult {
     // Step 1: checkout --depth empty (instant — creates .svn metadata only)
+    // Skip if .svn already exists (e.g., pre-created by clone_repository for early DB insert)
+    let svn_dir = std::path::Path::new(path).join(".svn");
+    if !svn_dir.exists() {
     let _ = app.emit("clone-progress-line", "── Step 1: 创建 .svn 元数据 ──");
     let mut co_args: Vec<String> = vec!["checkout".into(), "--depth".into(), "empty".into()];
     if ignore_externals {
@@ -1491,7 +1586,10 @@ pub fn svn_checkout_streaming(
     co_args.push(path.to_string());
 
     match crate::command_exec::run_command_args("svn", &co_args) {
-        Ok(_) => {}
+        Ok(_) => {
+            // .svn metadata created — notify frontend so repo appears in list immediately
+            let _ = app.emit("clone-repo-ready", path.to_string());
+        }
         Err(error) => {
             let missing_svn_cli = is_missing_svn_cli_error(&error);
             return OperationResult {
@@ -1505,136 +1603,12 @@ pub fn svn_checkout_streaming(
             };
         }
     };
+    } // end if !svn_dir.exists()
 
-    // Step 2: update --set-depth infinity (change ambient depth + pull all files)
-    // Use a background thread to poll directory size while streaming output,
-    // so users see real-time download progress even during large file transfers.
-    let _ = app.emit("clone-progress-line", "── Step 2: 下载仓库文件 ──");
-    let resolved = crate::command_exec::resolve_program("svn");
-    let up_args: Vec<String> = vec![
-        "update".into(), "--accept".into(), "postpone".into(), "--non-interactive".into(),
-        "--set-depth".into(), "infinity".into(), path.to_string(),
-    ];
-    let mut child = match crate::command_exec::new_command(&resolved)
-        .args(&up_args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            return OperationResult {
-                operation: "checkout".to_string(),
-                vcs_type: "svn".to_string(),
-                success: false,
-                summary: "SVN 文件拉取启动失败".to_string(),
-                output: String::new(),
-                warning: Some(e.to_string()),
-                missing_svn_cli: false,
-            };
-        }
-    };
-
-    crate::command_exec::set_running_pid(child.id());
-
-    // Spawn a thread to read stdout line-by-line
-    let app_clone = app.clone();
-    let stdout = child.stdout.take();
-    let line_reader = std::thread::spawn(move || {
-        let mut output = String::new();
-        let mut count: u32 = 0;
-        if let Some(out) = stdout {
-            let reader = std::io::BufReader::new(out);
-            for line in reader.lines() {
-                if let Ok(text) = line {
-                    if let Some(ch) = text.trim().chars().next() {
-                        if matches!(ch, 'A' | 'U' | 'D' | 'G' | 'C' | 'E') {
-                            count += 1;
-                        }
-                    }
-                    let _ = app_clone.emit("clone-progress-line", &text);
-                    output.push_str(&text);
-                    output.push('\n');
-                }
-            }
-        }
-        (output, count)
-    });
-
-    // Poll directory size every second while the update runs
-    let path_owned = path.to_string();
-    let app_poll = app.clone();
-    let mut last_size: u64 = 0;
-    loop {
-        let tick_start = std::time::Instant::now();
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        // Check if the svn process is still alive
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) => {},
-            Err(_) => break,
-        }
-        // Measure directory size on disk
-        let size_bytes = dir_size(&path_owned);
-        let size_mb = size_bytes as f64 / (1024.0 * 1024.0);
-        let tick_elapsed = tick_start.elapsed().as_secs_f64().max(1.0);
-        let speed_kbps = if size_bytes > last_size {
-            (size_bytes - last_size) as f64 / 1024.0 / tick_elapsed
-        } else {
-            0.0
-        };
-        last_size = size_bytes;
-        let stats = CloneProgressStats {
-            files: 0,
-            size_mb: Some(size_mb),
-            speed_kbps: if speed_kbps > 0.0 { Some(speed_kbps) } else { None },
-        };
-        let _ = app_poll.emit("clone-progress-stats", &stats);
-    }
-
-    let (full_output, file_count) = line_reader.join().unwrap_or_default();
-    let final_size_mb = dir_size(&path_owned) as f64 / (1024.0 * 1024.0);
-    let final_stats = CloneProgressStats { files: file_count, size_mb: Some(final_size_mb), speed_kbps: None };
-    let _ = app.emit("clone-progress-stats", &final_stats);
-
-    let status = child.wait().unwrap_or_default();
-    crate::command_exec::clear_running_pid();
-
-    let mut stderr_output = String::new();
-    if let Some(mut stderr) = child.stderr.take() {
-        let _ = stderr.read_to_string(&mut stderr_output);
-    }
-
-    if status.success() {
-        let summary = parse_svn_update_output(&full_output);
-        let msg = if summary.total > 0 {
-            format!("SVN checkout 完成（{} 项）", summary.total)
-        } else {
-            "SVN checkout 完成".to_string()
-        };
-        OperationResult {
-            operation: "checkout".to_string(),
-            vcs_type: "svn".to_string(),
-            success: true,
-            summary: msg,
-            output: filter_svn_output(&full_output),
-            warning: None,
-            missing_svn_cli: false,
-        }
-    } else {
-        let missing_svn_cli = is_missing_svn_cli_error(&stderr_output);
-        // Attempt cleanup — cancelled/failed clones leave locked .svn metadata
-        try_cleanup_svn_workdir(path);
-        OperationResult {
-            operation: "checkout".to_string(),
-            vcs_type: "svn".to_string(),
-            success: false,
-            summary: "SVN checkout 失败".to_string(),
-            output: filter_svn_output(&full_output),
-            warning: Some(svn_failure_warning("checkout", &stderr_output)),
-            missing_svn_cli,
-        }
-    }
+    // Step 2: single-threaded svn update with real-time size polling
+    let _ = app.emit("clone-progress-line", "── Step 2: 拉取仓库文件 ──");
+    let (success, output) = run_single_update(app, path);
+    return build_checkout_result(success, &output, path);
 }
 
 pub fn try_cleanup_svn_workdir(path: &str) {

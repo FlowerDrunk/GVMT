@@ -115,6 +115,13 @@ export function CommitDialog({
 
   useEffect(() => { if (open) void loadHooks(); }, [open, loadHooks]);
 
+  // Auto-select all committable files when dialog opens (only if nothing selected)
+  useEffect(() => {
+    if (open && committableFiles.length > 0 && selectedCommitCount === 0) {
+      onToggleAllFiles(committableFiles);
+    }
+  }, [open]);
+
   async function handleSaveHooks() {
     if (!repositoryId) return;
     setHookSaved(false);

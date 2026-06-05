@@ -331,7 +331,11 @@ export function FileBrowserPanel({
               </div>
             )
           ) : (
-            <EmptyState compact title={isFileBrowserLoading ? "加载中..." : selectedRepository ? t("browser.notLoaded") : t("review.notSelected")} description={isFileBrowserLoading ? "正在读取文件列表" : selectedRepository ? t("browser.notLoadedDesc") : t("review.notDetected")} />
+            isFileBrowserLoading ? (
+              <div className="loading-indicator"><span className="loading-spinner" /><span>加载中...</span></div>
+            ) : (
+              <EmptyState compact title={selectedRepository ? t("browser.notLoaded") : t("review.notSelected")} description={selectedRepository ? t("browser.notLoadedDesc") : t("review.notDetected")} />
+            )
           )}
         </>
       ) : (
@@ -360,7 +364,11 @@ export function FileBrowserPanel({
                 <pre>{remoteBrowseError}</pre>
               </div>
             ) : (
-              <EmptyState compact title={t("browser.notLoaded")} description={!remoteUrl ? "无远程 URL" : "正在加载远程文件列表..."} />
+              isRemoteLoading ? (
+                <div className="loading-indicator"><span className="loading-spinner" /><span>加载中...</span></div>
+              ) : (
+                <EmptyState compact title={t("browser.notLoaded")} description={!remoteUrl ? "无远程 URL" : "点击远程浏览按钮加载"} />
+              )
             )
           ) : remoteTreeNodes.length === 0 ? (
             <EmptyState compact title={t("browser.empty")} description={t("browser.emptyDesc")} />
@@ -395,7 +403,7 @@ export function FileBrowserPanel({
           t={t}
         />
         {isFilePreviewLoading ? (
-          <EmptyState compact title={t("preview.loading")} description="" />
+          <div className="loading-indicator"><span className="loading-spinner" /><span>加载中...</span></div>
         ) : selectedFilePreview ? (
           <>
             <aside className="file-preview-pane">
@@ -443,7 +451,7 @@ export function FileBrowserPanel({
           t={t}
         />
         {isRemotePreviewLoading ? (
-          <EmptyState compact title={t("preview.loading")} description="" />
+          <div className="loading-indicator"><span className="loading-spinner" /><span>加载中...</span></div>
         ) : remotePreviewError ? (
           <div className="file-preview-error">
             <p>打开远程文件失败：</p>

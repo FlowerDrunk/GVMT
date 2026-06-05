@@ -211,7 +211,7 @@ export const ChangesPane = memo(function ChangesPane({
             <div className="change-flat-list">
               {filteredGroups.map((group) => (
                 <div className="flat-group" key={group.prefix}>
-                  {group.prefix && group.files.length > 1 ? (
+                  {group.prefix ? (
                     <div className="flat-group-header" title={group.prefix}>
                       <svg className="flat-folder-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -231,11 +231,7 @@ export const ChangesPane = memo(function ChangesPane({
                       }}
                     >
                       <ChangeBadge status={file.status} t={t} isDir={file.isDir} />
-                      {group.prefix && group.files.length <= 1 ? (
-                        <span className="change-path">{group.prefix}{file.name}</span>
-                      ) : (
-                        <span className="change-path">{file.name}</span>
-                      )}
+                      <span className="change-path">{group.prefix ? file.name : file.path}</span>
                       <span className="change-vcs">{file.vcsType === "git" ? "Git" : file.vcsType === "svn" ? "SVN" : file.vcsType}</span>
                     </button>
                   ))}

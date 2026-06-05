@@ -144,7 +144,7 @@ pub fn run_command<const N: usize>(parts: [&str; N]) -> Result<String, String> {
         });
     }
 
-    Ok(decode_command_output(&output.stdout).trim().to_string())
+    Ok(decode_command_output(&output.stdout).trim_end().to_string())
 }
 
 pub fn run_command_args(program: &str, args: &[String]) -> Result<String, String> {
@@ -168,7 +168,7 @@ pub fn run_command_args(program: &str, args: &[String]) -> Result<String, String
         });
     }
 
-    Ok(decode_command_output(&output.stdout).trim().to_string())
+    Ok(decode_command_output(&output.stdout).trim_end().to_string())
 }
 
 pub fn execute_script(shell: &str, script: &str) -> Result<(bool, String), String> {

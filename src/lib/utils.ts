@@ -69,6 +69,34 @@ export interface ChangeTreeNode {
     vcsType: VcsType;
     staged: boolean;
   };
+  derivedChange?: {
+    status: ChangeStatus;
+    vcsType: VcsType;
+    staged: boolean;
+  };
+}
+
+const STATUS_PRIORITY: ChangeStatus[] = ["modified", "added", "deleted", "renamed", "conflicted", "missing", "untracked", "unknown"];
+
+function propagateChangeStatus(nodes: ChangeTreeNode[]): void {
+  for (const node of nodes) {
+    propagateChangeStatus(node.children);
+    if (!node.change && node.children.length > 0) {
+      const statuses = new Set<ChangeStatus>();
+      let vcsType: VcsType | null = null;
+      for (const child of node.children) {
+        const s = child.change ?? child.derivedChange;
+        if (s) {
+          statuses.add(s.status);
+          vcsType = vcsType ?? s.vcsType;
+        }
+      }
+      if (statuses.size > 0 && vcsType) {
+        const best = STATUS_PRIORITY.find((s) => statuses.has(s)) ?? "modified";
+        node.derivedChange = { status: best, vcsType, staged: false };
+      }
+    }
+  }
 }
 
 export function buildChangeTree(changes: ChangeItem[]) {
@@ -108,6 +136,7 @@ export function buildChangeTree(changes: ChangeItem[]) {
   }
 
   sortChangeTree(root);
+  propagateChangeStatus(root);
   return root;
 }
 

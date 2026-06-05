@@ -4,7 +4,6 @@ import type { ChangeItem, ChangeStatus, Repository, RepositoryStatus, VcsType } 
 import type { Translator } from "../../lib/i18n";
 import { getVcsLabels } from "../../lib/constants";
 import { ChangeBadge } from "../shared/ChangeBadge";
-import { EmptyState } from "../shared/EmptyState";
 import { Modal, ModalHeading } from "../shared/Modal";
 import { Button } from "../ui/button";
 
@@ -14,9 +13,7 @@ type FilterKey = (typeof STATUS_FILTERS)[number];
 interface StatusPanelProps {
   repositoryStatus: RepositoryStatus | null;
   selectedRepository: Repository | undefined;
-  isLoading: boolean;
   t: Translator;
-  onLoadRepositoryStatus: () => void;
   onOpenSvnDownload: (target: "tortoise" | "sliksvn") => void;
   onSelectChange: (path: string, change: { status: ChangeStatus; vcsType: VcsType; staged: boolean }) => void;
   onOpenChangeDiff: (path: string, change: { status: ChangeStatus; vcsType: VcsType; staged: boolean }) => void;
@@ -49,9 +46,7 @@ const SUMMARY_LABELS: Record<FilterKey, string> = {
 export function StatusPanel({
   repositoryStatus,
   selectedRepository,
-  isLoading,
   t,
-  onLoadRepositoryStatus,
   onOpenSvnDownload,
   onSelectChange,
   onOpenChangeDiff,
@@ -85,42 +80,47 @@ export function StatusPanel({
           <p className="eyebrow">Workspace status</p>
           <h3>{t("status.workspaceStatus")}</h3>
         </div>
+        {repositoryStatus ? (
+          (() => {
+            const s = repositoryStatus.summary;
+            if (repositoryStatus.warning) {
+              return <span className="status-clean-badge warn" title={repositoryStatus.warning}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>警告</span>;
+            }
+            if (s.total === 0) {
+              return <span className="status-clean-badge"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>{t("status.clean")}</span>;
+            }
+            if (s.conflicted > 0) {
+              return <span className="status-clean-badge danger"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>{s.conflicted} {t("change.conflicted")}</span>;
+            }
+            return <span className="status-clean-badge info">{s.total} 项变更</span>;
+          })()
+        ) : null}
       </div>
-      {repositoryStatus ? (
-        <>
-          <div className="change-summary" aria-label={t("status.workspaceStatus")}>
-            {STATUS_FILTERS.map((key) => (
-              <button
-                key={key}
-                className={`change-summary-chip ${dialogFilter === key ? "active" : ""}`}
-                type="button"
-                disabled={getCount(key) === 0}
-                onClick={() => setDialogFilter(dialogFilter === key ? null : key)}
-              >
-                <span>{t(SUMMARY_LABELS[key] as any)}</span>
-                <strong>{getCount(key)}</strong>
-              </button>
-            ))}
-          </div>
-          {repositoryStatus.warning ? (
-            <div className="hint">
-              <p>{repositoryStatus.warning}</p>
-              {repositoryStatus.missingSvnCli ? (
-                <div className="hint-actions">
-                  <Button variant="secondary" onClick={() => onOpenSvnDownload("tortoise")}>{t("status.downloadTortoise")}</Button>
-                  <Button variant="secondary" onClick={() => onOpenSvnDownload("sliksvn")}>{t("status.downloadSlikSvn")}</Button>
-                </div>
-              ) : null}
+      <div className="change-summary" aria-label={t("status.workspaceStatus")}>
+        {STATUS_FILTERS.map((key) => (
+          <button
+            key={key}
+            className={`change-summary-chip ${dialogFilter === key ? "active" : ""}`}
+            type="button"
+            disabled={getCount(key) === 0}
+            onClick={() => setDialogFilter(dialogFilter === key ? null : key)}
+          >
+            <span>{t(SUMMARY_LABELS[key] as any)}</span>
+            <strong>{getCount(key)}</strong>
+          </button>
+        ))}
+      </div>
+      {repositoryStatus?.warning ? (
+        <div className="hint">
+          <p>{repositoryStatus.warning}</p>
+          {repositoryStatus.missingSvnCli ? (
+            <div className="hint-actions">
+              <Button variant="secondary" onClick={() => onOpenSvnDownload("tortoise")}>{t("status.downloadTortoise")}</Button>
+              <Button variant="secondary" onClick={() => onOpenSvnDownload("sliksvn")}>{t("status.downloadSlikSvn")}</Button>
             </div>
           ) : null}
-          {changes.length === 0 ? (
-            <EmptyState compact title={t("status.clean")} description={t("status.noChanges")} />
-          ) : null}
-        </>
-      ) : (
-        <EmptyState compact title={t("status.notRefreshed")} description={t("status.notRefreshedDesc")} />
-      )}
-
+        </div>
+      ) : null}
       <Modal open={dialogFilter !== null} onClose={() => setDialogFilter(null)} labelledBy="status-dialog-title">
         <ModalHeading
           eyebrow={t("status.workspaceStatus")}
