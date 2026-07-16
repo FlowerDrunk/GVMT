@@ -86,6 +86,17 @@ export function CommandBar({
   const repoId = selectedRepository?.id;
 
   const closeLogMenu = useCallback(() => setLogMenu(null), []);
+
+  // 切换仓库时清理上一个仓库遗留的日志/详情/stash 状态，避免 detailCache 无限累积
+  useEffect(() => {
+    setLogs([]);
+    setStashEntries([]);
+    setExpandedIdx(null);
+    setDetailCache({});
+    setLogMenu(null);
+    setIsLogOpen(false);
+  }, [repoId]);
+
   useEffect(() => {
     if (!logMenu) return;
     function onClick(e: MouseEvent) {

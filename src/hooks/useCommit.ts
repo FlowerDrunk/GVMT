@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ChangeItem, Repository } from "../lib/api";
 import { changeKey, isCommittableChange } from "../lib/constants";
 
@@ -8,7 +8,7 @@ interface UseCommitOptions {
 }
 
 export function useCommit({ selectedRepository, changedFiles }: UseCommitOptions) {
-  const [commitMessage, setCommitMessage] = useState("");
+  const commitMessageRef = useRef("");
   const [pushAfterCommit, setPushAfterCommit] = useState(true);
   const [selectedCommitKeys, setSelectedCommitKeys] = useState<Set<string>>(new Set());
   const [isCommitLoading, setIsCommitLoading] = useState(false);
@@ -25,6 +25,17 @@ export function useCommit({ selectedRepository, changedFiles }: UseCommitOptions
     () => committableFiles.filter((c) => selectedCommitKeys.has(changeKey(c))).length,
     [committableFiles, selectedCommitKeys],
   );
+
+  const selectedVcsCounts = useMemo(() => {
+    let git = 0;
+    let svn = 0;
+    for (const c of committableFiles) {
+      if (!selectedCommitKeys.has(changeKey(c))) continue;
+      if (c.vcsType === "svn") svn++;
+      else git++;
+    }
+    return { git, svn, total: git + svn };
+  }, [committableFiles, selectedCommitKeys]);
 
   const hasGitCommitSelection = useMemo(
     () =>
@@ -71,7 +82,7 @@ export function useCommit({ selectedRepository, changedFiles }: UseCommitOptions
   }
 
   function resetCommitState() {
-    setCommitMessage("");
+    commitMessageRef.current = "";
     setSelectedCommitKeys(new Set());
     setIsCommitLoading(false);
     setIsCommitDialogOpen(false);
@@ -80,8 +91,7 @@ export function useCommit({ selectedRepository, changedFiles }: UseCommitOptions
   }
 
   return {
-    commitMessage,
-    setCommitMessage,
+    commitMessageRef,
     pushAfterCommit,
     setPushAfterCommit,
     selectedCommitKeys,
@@ -91,6 +101,7 @@ export function useCommit({ selectedRepository, changedFiles }: UseCommitOptions
     setIsCommitDialogOpen,
     committableFiles,
     selectedCommitCount,
+    selectedVcsCounts,
     hasGitCommitSelection,
     canOpenCommitDialog,
     commitError,

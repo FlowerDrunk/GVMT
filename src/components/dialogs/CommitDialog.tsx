@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCommitHooks, isTauriRuntime, saveCommitHooks, testHookScript, type CommitHook } from "../../lib/api";
 import type { ChangeItem, OperationResult, VcsType } from "../../lib/api";
 import type { Translator } from "../../lib/i18n";
@@ -23,12 +23,14 @@ interface CommitDialogProps {
   open: boolean; onClose: () => void; t: Translator;
   repositoryId: number | null;
   committableFiles: ChangeItem[]; selectedCommitKeys: Set<string>; selectedCommitCount: number;
-  hasGitCommitSelection: boolean; pushAfterCommit: boolean; commitMessage: string; isCommitLoading: boolean;
+  selectedVcsCounts: { git: number; svn: number; total: number };
+  hasGitCommitSelection: boolean; pushAfterCommit: boolean; isCommitLoading: boolean;
   vcsLabels: Record<VcsType, string>;
   commitError: string | null; commitHash: string | null;
   commitResults: OperationResult[] | null;
+  commitMessageRef: React.MutableRefObject<string>;
   onToggleAllFiles: (files: ChangeItem[]) => void; onToggleFile: (change: ChangeItem) => void;
-  onPushToggle: (push: boolean) => void; onCommitMessageChange: (message: string) => void;
+  onPushToggle: (push: boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onOpenFileDiff: (path: string, vcsType: VcsType, status: string) => void;
   onDismissResults: () => void;
@@ -68,14 +70,16 @@ function getPathFilters(t: Translator): { key: PathFilter; label: string }[] {
   ];
 }
 
-export function CommitDialog({
+export const CommitDialog = memo(function CommitDialog({
   open, onClose, t, repositoryId, committableFiles, selectedCommitKeys, selectedCommitCount,
-  hasGitCommitSelection, pushAfterCommit, commitMessage, isCommitLoading,
-  vcsLabels, commitError, commitHash, commitResults,
-  onToggleAllFiles, onToggleFile, onPushToggle, onCommitMessageChange, onSubmit, onOpenFileDiff,
+  selectedVcsCounts,
+  hasGitCommitSelection, pushAfterCommit, isCommitLoading,
+  vcsLabels, commitError, commitHash, commitResults, commitMessageRef,
+  onToggleAllFiles, onToggleFile, onPushToggle, onSubmit, onOpenFileDiff,
   onDismissResults,
 }: CommitDialogProps) {
   const titleId = "commit-dialog-title";
+  const [commitMessage, setCommitMessage] = useState(commitMessageRef.current);
   const [searchQuery, setSearchQuery] = useState("");
   const [showRecent, setShowRecent] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -113,7 +117,7 @@ export function CommitDialog({
     } catch { /* ignore */ }
   }, [repositoryId]);
 
-  useEffect(() => { if (open) void loadHooks(); }, [open, loadHooks]);
+  useEffect(() => { if (open) { setCommitMessage(commitMessageRef.current); void loadHooks(); } }, [open, loadHooks, commitMessageRef]);
 
   // Auto-select all committable files when dialog opens (only if nothing selected)
   useEffect(() => {
@@ -202,7 +206,7 @@ export function CommitDialog({
       if (form) form.requestSubmit();
     }
   }
-  function selectRecentMessage(msg: string) { onCommitMessageChange(msg); setShowRecent(false); }
+  function selectRecentMessage(msg: string) { setCommitMessage(msg); commitMessageRef.current = msg; setShowRecent(false); }
   function toggleGroupCollapse(status: string) {
     setCollapsedGroups((prev) => { const next = new Set(prev); if (next.has(status)) next.delete(status); else next.add(status); return next; });
   }
@@ -212,12 +216,10 @@ export function CommitDialog({
   const submitLabel = useMemo(() => {
     if (isCommitLoading) return t("commit.submitting");
     const parts: string[] = [];
-    const gitCount = committableFiles.filter((f) => selectedCommitKeys.has(changeKey(f)) && (f.vcsType === "git" || f.vcsType === "mixed")).length;
-    const svnCount = committableFiles.filter((f) => selectedCommitKeys.has(changeKey(f)) && f.vcsType === "svn").length;
-    if (gitCount > 0) parts.push(`Git(${gitCount})`);
-    if (svnCount > 0) parts.push(`SVN(${svnCount})`);
+    if (selectedVcsCounts.git > 0) parts.push(`Git(${selectedVcsCounts.git})`);
+    if (selectedVcsCounts.svn > 0) parts.push(`SVN(${selectedVcsCounts.svn})`);
     return parts.length > 0 ? `${t("command.commit")} ${parts.join(" + ")}` : t("commit.submit");
-  }, [isCommitLoading, committableFiles, selectedCommitKeys, t]);
+  }, [isCommitLoading, selectedVcsCounts, t]);
 
   const isSearching = searchQuery.trim().length > 0 || statusFilter !== "all" || pathFilter !== "all";
 
@@ -333,7 +335,7 @@ export function CommitDialog({
               ))}
             </div>
           ) : null}
-          <textarea value={commitMessage} onChange={(e) => onCommitMessageChange(e.target.value)} placeholder={t("commit.placeholder")} rows={3} />
+          <textarea value={commitMessage} onChange={(e) => { setCommitMessage(e.target.value); commitMessageRef.current = e.target.value; }} placeholder={t("commit.placeholder")} rows={3} />
         </div>
 
         {commitError ? <div className="commit-error">{commitError}</div> : null}
@@ -390,7 +392,7 @@ export function CommitDialog({
     </form>
     </Modal>
   );
-}
+});
 
 function HookEditor({
   title, enabled, shell, script,

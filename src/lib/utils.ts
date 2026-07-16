@@ -45,9 +45,7 @@ export function fileBreadcrumbs(path: string) {
 }
 
 export function statusTone(vcsType: VcsType) {
-  if (vcsType === "unknown") return "warning";
-  if (vcsType === "mixed") return "mixed";
-  return "ready";
+  return vcsType;
 }
 
 export function formatRemoteUrlForDisplay(remoteUrl: string | null, notDetectedLabel?: string) {

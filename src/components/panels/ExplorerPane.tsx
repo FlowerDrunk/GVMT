@@ -127,13 +127,15 @@ export function ExplorerPane({
     setTagDialogRepo(null);
   }
 
-  const TAG_COLORS = ["#6366f1", "#0891b2", "#059669", "#d97706", "#dc2626", "#7c3aed", "#db2777", "#2563eb"];
+  const TAG_COLORS = ["#6366f1","#0891b2","#059669","#d97706","#dc2626","#7c3aed","#db2777","#2563eb","#0d9488","#ca8a04","#9333ea","#e11d48"];
 
   function tagColor(name: string): string {
     let hash = 0;
     for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
     return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
   }
+
+  const VCS_ACCENT: Record<string, string> = { git: "#f05133", svn: "#2b7cd3", mixed: "#8b5cf6", unknown: "#94a3b8" };
 
   function parseTags(tags: string): string[] {
     return tags.split(",").map((t) => t.trim()).filter(Boolean);
@@ -402,7 +404,8 @@ export function ExplorerPane({
         <div className="repo-list">
           {filteredRepos.length === 0 ? (
             <div className="empty-list">
-              {searchQuery ? t("explorer.noMatch") : t("explorer.dropHint")}
+              <svg className="empty-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <span>{searchQuery ? t("explorer.noMatch") : t("explorer.dropHint")}</span>
             </div>
           ) : (
             filteredRepos.map((repository) => (
@@ -411,6 +414,7 @@ export function ExplorerPane({
                 trigger={
                   <button
                     className={`repo-item ${!repository.pathExists ? "repo-missing" : ""} ${selectedRepository?.id === repository.id ? "active" : ""}`}
+                    style={{ "--repo-accent": VCS_ACCENT[repository.vcsType] ?? "var(--line)" } as React.CSSProperties}
                     type="button"
                     onClick={() => onSelectRepository(repository.id)}
                   >

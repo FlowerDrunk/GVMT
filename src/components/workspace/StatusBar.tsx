@@ -69,6 +69,7 @@ interface IgnoreContextMenuOverlayProps {
   onOpenDiff: (path: string, vcsType: VcsType, status?: ChangeStatus) => void;
   onIgnoreFile: (path: string, vcsType: VcsType) => void;
   onOperationResult: (result: OperationResult) => void;
+  onClose: () => void;
 }
 
 export function IgnoreContextMenuOverlay({
@@ -78,6 +79,7 @@ export function IgnoreContextMenuOverlay({
   onOpenDiff,
   onIgnoreFile,
   onOperationResult,
+  onClose,
 }: IgnoreContextMenuOverlayProps) {
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [isForceUpdateConfirmOpen, setIsForceUpdateConfirmOpen] = useState(false);
@@ -91,6 +93,7 @@ export function IgnoreContextMenuOverlay({
 
   async function handleSvnRevert() {
     if (!repositoryId) return;
+    onClose();
     try {
       const result = await svnRevert(repositoryId, path);
       onOperationResult(result);
@@ -109,6 +112,7 @@ export function IgnoreContextMenuOverlay({
 
   async function handleSvnResolve() {
     if (!repositoryId) return;
+    onClose();
     try {
       const result = await svnResolve(repositoryId, path);
       onOperationResult(result);
@@ -127,6 +131,7 @@ export function IgnoreContextMenuOverlay({
 
   async function handleSvnResolveAccept(accept: SvnAcceptType) {
     if (!repositoryId) return;
+    onClose();
     try {
       const result = await svnResolveAccept(repositoryId, path, accept);
       onOperationResult(result);
@@ -145,6 +150,7 @@ export function IgnoreContextMenuOverlay({
 
   function handleSvnUpdateForce() {
     if (!repositoryId) return;
+    onClose();
     setIsForceUpdateConfirmOpen(true);
   }
 
@@ -169,6 +175,7 @@ export function IgnoreContextMenuOverlay({
 
   async function handleGitStashPush() {
     if (!repositoryId) return;
+    onClose();
     try {
       const result = await gitStashPush(repositoryId);
       onOperationResult(result);
@@ -187,6 +194,7 @@ export function IgnoreContextMenuOverlay({
 
   async function handleGitResetSoft() {
     if (!repositoryId) return;
+    onClose();
     try {
       const result = await gitReset(repositoryId, "soft", "HEAD");
       onOperationResult(result);
@@ -253,7 +261,7 @@ export function IgnoreContextMenuOverlay({
             <button type="button" onClick={handleGitStashPush}>
               {t("contextMenu.gitStashPush")}
             </button>
-            <button type="button" className="cmd-danger" onClick={() => setIsResetDialogOpen(true)}>
+            <button type="button" className="cmd-danger" onClick={() => { onClose(); setIsResetDialogOpen(true); }}>
               {t("contextMenu.gitResetSoft")}
             </button>
           </>

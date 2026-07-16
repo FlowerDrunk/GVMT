@@ -391,11 +391,13 @@ pub fn svn_update_result(path: &str, depth: Option<&str>) -> OperationResult {
                 _ => output.clone(),
             };
             let restore_count = restore_output.as_ref().map_or(0, |r| r.lines().count());
-            let msg = match (summary.total, restore_count) {
-                (0, 0) => "SVN 更新完成".to_string(),
-                (u, 0) => format!("SVN 更新完成（{} 项）", u),
-                (0, r) => format!("SVN 更新完成（恢复 {} 个缺失项）", r),
-                (u, r) => format!("SVN 更新完成（恢复 {} 个缺失项，更新 {} 项）", r, u),
+            let already_up_to_date = output.contains("At revision");
+            let msg = match (summary.total, restore_count, already_up_to_date) {
+                (0, 0, true) => "SVN 已是最新".to_string(),
+                (0, 0, false) => "SVN 更新完成".to_string(),
+                (u, 0, _) => format!("SVN 更新完成（{} 项）", u),
+                (0, r, _) => format!("SVN 更新完成（恢复 {} 个缺失项）", r),
+                (u, r, _) => format!("SVN 更新完成（恢复 {} 个缺失项，更新 {} 项）", r, u),
             };
             OperationResult {
                 operation: "update".to_string(),
@@ -484,11 +486,13 @@ pub fn svn_update_streaming(
             _ => full_output.clone(),
         };
         let restore_count = restore_output.as_ref().map_or(0, |r| r.lines().count());
-        let msg = match (summary.total, restore_count) {
-            (0, 0) => "SVN 更新完成".to_string(),
-            (u, 0) => format!("SVN 更新完成（{} 项）", u),
-            (0, r) => format!("SVN 更新完成（恢复 {} 个缺失项）", r),
-            (u, r) => format!("SVN 更新完成（恢复 {} 个缺失项，更新 {} 项）", r, u),
+        let already_up_to_date = full_output.contains("At revision");
+        let msg = match (summary.total, restore_count, already_up_to_date) {
+            (0, 0, true) => "SVN 已是最新".to_string(),
+            (0, 0, false) => "SVN 更新完成".to_string(),
+            (u, 0, _) => format!("SVN 更新完成（{} 项）", u),
+            (0, r, _) => format!("SVN 更新完成（恢复 {} 个缺失项）", r),
+            (u, r, _) => format!("SVN 更新完成（恢复 {} 个缺失项，更新 {} 项）", r, u),
         };
         OperationResult {
             operation: "update".to_string(),
@@ -568,13 +572,13 @@ pub fn svn_has_remote_updates(path: &str) -> Result<bool, String> {
         .ok()
         .and_then(|info| parse_svn_info_item(&info, "Revision"))
         .and_then(|r| r.parse::<i64>().ok());
-    let head_rev = run_command(["svn", "info", "-r", "HEAD", path])
-        .ok()
-        .and_then(|info| parse_svn_info_item(&info, "Revision"))
+    let head_output = run_command(["svn", "info", "-r", "HEAD", path])?;
+    let head_rev = parse_svn_info_item(&head_output, "Revision")
         .and_then(|r| r.parse::<i64>().ok());
     match (local_rev, head_rev) {
         (Some(local), Some(head)) => Ok(head > local),
-        _ => Ok(false),
+        (None, _) => Err("无法获取本地 SVN 版本号".to_string()),
+        (_, None) => Err("无法解析服务器 HEAD 版本号".to_string()),
     }
 }
 
@@ -1102,8 +1106,11 @@ pub fn svn_update_force(root_path: &str, depth: Option<&str>) -> OperationResult
             combined.push_str("[Update]\n");
             combined.push_str(&out);
             let summary = parse_svn_update_output(&out);
+            let already_up_to_date = out.contains("At revision");
             let msg = if summary.total > 0 {
                 format!("SVN 强制更新完成（更新 {} 项）", summary.total)
+            } else if already_up_to_date {
+                "SVN 已是最新".to_string()
             } else {
                 "SVN 强制更新完成".to_string()
             };
@@ -1197,8 +1204,11 @@ pub fn svn_update_force_streaming(
             combined.push_str(label);
             combined.push_str(&out);
             let summary = parse_svn_update_output(&out);
+            let already_up_to_date = out.contains("At revision");
             let msg = if summary.total > 0 {
                 format!("SVN 强制更新完成（更新 {} 项）", summary.total)
+            } else if already_up_to_date {
+                "SVN 已是最新".to_string()
             } else {
                 "SVN 强制更新完成".to_string()
             };
@@ -1441,7 +1451,11 @@ pub fn parse_svn_update_output(output: &str) -> SvnUpdateSummary {
             let action = line.chars().next()?;
             match action {
                 'A' | 'D' | 'U' | 'G' | 'C' | 'E' => {
-                    let path = line[1..].trim().to_string();
+                    let rest = &line[1..];
+                    if !rest.starts_with(|c: char| c == ' ' || c == '\t') {
+                        return None;
+                    }
+                    let path = rest.trim().to_string();
                     if path.is_empty() {
                         None
                     } else {

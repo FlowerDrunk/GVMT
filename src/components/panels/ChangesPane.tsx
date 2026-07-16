@@ -1,4 +1,4 @@
-import { memo, MouseEvent, useMemo, useState } from "react";
+import { memo, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeItem, ChangeStatus, RepositoryStatus, VcsType } from "../../lib/api";
 import type { Translator } from "../../lib/i18n";
 import type { ChangeTreeNode } from "../../lib/utils";
@@ -143,35 +143,47 @@ export const ChangesPane = memo(function ChangesPane({
   onUnstageFile,
 }: ChangesPaneProps) {
   const [filterText, setFilterText] = useState("");
+  const [debouncedFilter, setDebouncedFilter] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleFilterChange = useCallback((value: string) => {
+    setFilterText(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setDebouncedFilter(value), 180);
+  }, []);
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
   const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
   const [isStagedDialogOpen, setIsStagedDialogOpen] = useState(false);
 
   const flatGroups = useMemo(() => buildFlatGroups(changedFiles), [changedFiles]);
 
   const filteredGroups = useMemo(() => {
-    if (!filterText.trim()) return flatGroups;
-    const lower = filterText.toLowerCase();
+    if (!debouncedFilter.trim()) return flatGroups;
+    const lower = debouncedFilter.toLowerCase();
     return flatGroups
       .map((g) => ({
         ...g,
         files: g.files.filter((f) => f.name.toLowerCase().includes(lower) || f.path.toLowerCase().includes(lower)),
       }))
       .filter((g) => g.files.length > 0);
-  }, [flatGroups, filterText]);
+  }, [flatGroups, debouncedFilter]);
 
   const filteredNodes = useMemo(
-    () => filterTreeNodes(changeTreeViewNodes, filterText),
-    [changeTreeViewNodes, filterText],
+    () => filterTreeNodes(changeTreeViewNodes, debouncedFilter),
+    [changeTreeViewNodes, debouncedFilter],
   );
 
   const effectiveExpandedPaths = useMemo(() => {
-    if (!filterText.trim()) return expandedChangePaths;
+    if (!debouncedFilter.trim()) return expandedChangePaths;
     const autoExpand = new Set(expandedChangePaths);
     for (const path of collectAllPaths(filteredNodes)) {
       autoExpand.add(path);
     }
     return autoExpand;
-  }, [expandedChangePaths, filteredNodes, filterText]);
+  }, [expandedChangePaths, filteredNodes, debouncedFilter]);
+
+  const stagedCount = useMemo(() => changedFiles.filter((f) => f.staged).length, [changedFiles]);
+  const unstagedCount = useMemo(() => changedFiles.filter((f) => !f.staged).length, [changedFiles]);
+  const stagedFiles = useMemo(() => changedFiles.filter((f) => f.staged), [changedFiles]);
 
   return (
     <aside className="changes-pane">
@@ -201,7 +213,7 @@ export const ChangesPane = memo(function ChangesPane({
           placeholder={t("changes.filter")}
           aria-label={t("changes.filter")}
           value={filterText}
-          onChange={(event) => setFilterText(event.currentTarget.value)}
+          onChange={(event) => handleFilterChange(event.currentTarget.value)}
         />
       </header>
 
@@ -300,11 +312,11 @@ export const ChangesPane = memo(function ChangesPane({
               onClick={() => setIsStagedDialogOpen(true)}
             >
               <span className="staging-label">{t("changes.staged")}</span>
-              <strong className="staging-count staged">{changedFiles.filter((f) => f.staged).length}</strong>
+              <strong className="staging-count staged">{stagedCount}</strong>
             </button>
             <div className="staging-stat">
               <span className="staging-label">{t("changes.unstaged")}</span>
-              <strong className="staging-count unstaged">{changedFiles.filter((f) => !f.staged).length}</strong>
+              <strong className="staging-count unstaged">{unstagedCount}</strong>
             </div>
           </div>
           <div className="staging-actions">
@@ -336,12 +348,10 @@ export const ChangesPane = memo(function ChangesPane({
           t={t}
         />
         <div className="staged-files-list">
-          {changedFiles.filter((f) => f.staged).length === 0 ? (
+          {stagedFiles.length === 0 ? (
             <p className="staged-files-empty">{t("changes.noStagedFiles")}</p>
           ) : (
-            changedFiles
-              .filter((f) => f.staged)
-              .map((file) => (
+            stagedFiles.map((file) => (
                 <div className="staged-file-row" key={`${file.vcsType}-${file.path}`}>
                   <ChangeBadge status={file.status} t={t} isDir={file.isDir} />
                   <span className="staged-file-path">{file.path}</span>

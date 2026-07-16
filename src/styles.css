@@ -845,25 +845,28 @@ textarea:focus {
 .repo-item {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  min-height: 44px;
+  gap: 10px;
+  min-height: 54px;
   border: 1px solid transparent;
+  border-left: 3px solid transparent;
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--text);
-  padding: 8px 10px;
+  padding: 8px 10px 8px 8px;
   text-align: left;
   cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease;
+  transition: background 150ms ease, border-color 150ms ease, border-left-color 150ms ease;
 }
 
 .repo-item:hover:not(:disabled) {
   background: var(--surface-glass);
   border-color: var(--line);
+  border-left-color: var(--repo-accent, var(--line));
 }
 
 .repo-item.active {
   border-color: var(--accent-border);
+  border-left-color: var(--repo-accent, var(--accent));
   background: var(--surface-strong);
   outline: 1px solid var(--accent-border);
   outline-offset: -1px;
@@ -878,11 +881,20 @@ textarea:focus {
   background: var(--muted);
   transition: background 150ms ease, box-shadow 150ms ease;
 }
-.repo-item.active .repo-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
-.repo-dot.ready { background: var(--accent); }
-.repo-dot.warning { background: #f59e0b; }
-.repo-dot.mixed { background: linear-gradient(135deg, var(--accent) 50%, #16a34a 50%); }
-.repo-dot.danger { background: var(--danger); box-shadow: 0 0 6px var(--danger-fg); }
+.repo-item.active .repo-dot {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  transform: scale(1.2);
+  transition: transform 120ms ease, box-shadow 150ms ease;
+}
+.repo-dot.git     { background: #f05133; }
+.repo-dot.svn     { background: #2b7cd3; }
+.repo-dot.mixed   { background: linear-gradient(135deg, #f05133 50%, #2b7cd3 50%); }
+.repo-dot.unknown { background: #94a3b8; }
+.repo-dot.danger  { background: var(--danger); box-shadow: 0 0 6px var(--danger-fg); }
+
+[data-theme="dark"] .repo-dot.git     { background: #f0623f; }
+[data-theme="dark"] .repo-dot.svn     { background: #419fdd; }
+[data-theme="dark"] .repo-dot.unknown { background: #64748b; }
 
 .repo-body {
   display: flex;
@@ -911,16 +923,16 @@ textarea:focus {
 
 .repo-type {
   flex-shrink: 0;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 2px 7px;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
   border-radius: var(--radius-pill);
   background: var(--surface-muted);
   color: var(--muted);
   border: 1px solid var(--line);
-  line-height: 1.4;
+  line-height: 1.5;
 }
 .repo-type.git { color: #e85d33; border-color: #e85d3340; background: #e85d3312; }
 .repo-type.svn { color: #2b7cd3; border-color: #2b7cd340; background: #2b7cd312; }
@@ -963,17 +975,17 @@ textarea:focus {
 .repo-tag-chip {
   display: inline-flex;
   align-items: center;
-  padding: 1px 6px;
-  height: 16px;
+  padding: 1.5px 7px;
+  height: 18px;
   border-radius: var(--radius-pill);
   color: #fff;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   white-space: nowrap;
-  letter-spacing: 0.01em;
-  transition: opacity 100ms ease;
+  letter-spacing: 0.02em;
+  transition: opacity 100ms ease, transform 100ms ease;
 }
-.repo-tag-chip:hover { opacity: 0.85; }
+.repo-tag-chip:hover { opacity: 0.85; transform: scale(1.05); }
 
 /* ── Tag dialog ── */
 
@@ -1091,45 +1103,67 @@ textarea:focus {
 
 .repo-stats-pills {
   display: flex;
-  gap: 4px;
+  gap: 5px;
 }
 
 .repo-stat-pill {
   font-size: 10px;
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 3px 7px;
   border-radius: var(--radius-pill);
 }
 
 .repo-stat-pill.git {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: #f0513318;
+  color: #d14836;
+}
+[data-theme="dark"] .repo-stat-pill.git {
+  background: #f0513328;
+  color: #f0623f;
 }
 
 .repo-stat-pill.svn {
-  background: var(--warning-soft);
-  color: var(--warning);
+  background: #2b7cd318;
+  color: #1a6bc0;
+}
+[data-theme="dark"] .repo-stat-pill.svn {
+  background: #2b7cd328;
+  color: #419fdd;
 }
 
 .repo-stat-pill.mixed {
-  background: var(--mixed-soft);
-  color: var(--mixed);
+  background: #8b5cf618;
+  color: #7c3aed;
+}
+[data-theme="dark"] .repo-stat-pill.mixed {
+  background: #8b5cf628;
+  color: #a78bfa;
 }
 
 /* ── Repo search ── */
 
 .repo-search {
-  padding: 0 0 8px;
+  padding: 0 0 10px;
 }
 
 .repo-search-input {
-  min-height: 28px !important;
+  min-height: 30px !important;
   font-size: 12px !important;
-  padding: 0 8px;
+  padding: 0 10px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   background: var(--surface-muted);
   color: var(--text);
+  width: 100%;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.repo-search-input:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+  outline: none;
+}
+.repo-search-input::placeholder {
+  color: var(--subtle);
 }
 
 .repo-dot {
@@ -1194,9 +1228,18 @@ textarea:focus {
 }
 
 .empty-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
   color: var(--subtle);
-  font-size: 14px;
-  padding: 12px 8px;
+  font-size: 13px;
+  padding: 24px 16px;
+  text-align: center;
+}
+.empty-list .empty-icon {
+  opacity: 0.35;
+  flex-shrink: 0;
 }
 
 .workspace {
@@ -3270,10 +3313,32 @@ textarea:focus {
   white-space: nowrap;
 }
 
-.status-pill.ready {
-  border-color: var(--success-border);
-  background: var(--success-soft);
-  color: var(--success);
+.status-pill.git {
+  border-color: #f0513360;
+  background: #f0513318;
+  color: #d14836;
+}
+[data-theme="dark"] .status-pill.git {
+  border-color: #f0623f60;
+  background: #f0623f28;
+  color: #f0623f;
+}
+
+.status-pill.svn {
+  border-color: #2b7cd360;
+  background: #2b7cd318;
+  color: #1a6bc0;
+}
+[data-theme="dark"] .status-pill.svn {
+  border-color: #419fdd60;
+  background: #419fdd28;
+  color: #419fdd;
+}
+
+.status-pill.unknown {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 .status-pill.warning {
@@ -3283,9 +3348,89 @@ textarea:focus {
 }
 
 .status-pill.mixed {
-  border-color: var(--accent-border);
-  background: var(--mixed-soft);
-  color: var(--mixed);
+  border-color: #8b5cf660;
+  background: #8b5cf618;
+  color: #7c3aed;
+}
+[data-theme="dark"] .status-pill.mixed {
+  border-color: #a78bfa60;
+  background: #a78bfa28;
+  color: #a78bfa;
+}
+
+/* ── Remote-behind bar ────────────────────────────────────────────────── */
+
+.remote-behind-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: #f59e0b10;
+  border: 1px solid #f59e0b40;
+  border-radius: var(--radius-md);
+  color: #b45309;
+  font-size: 13px;
+  flex-shrink: 0;
+  margin: 8px 0;
+}
+[data-theme="dark"] .remote-behind-bar {
+  background: #f59e0b14;
+  border-color: #f59e0b30;
+  color: #fbbf24;
+}
+
+.remote-behind-bar svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.remote-behind-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.remote-behind-update-btn {
+  flex-shrink: 0;
+  padding: 4px 14px;
+  border: 1px solid #f59e0b50;
+  border-radius: var(--radius-pill);
+  background: #f59e0b;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 100ms ease, opacity 100ms ease;
+}
+.remote-behind-update-btn:hover {
+  background: #d97706;
+}
+[data-theme="dark"] .remote-behind-update-btn {
+  background: #f59e0b;
+  color: #1c1917;
+}
+[data-theme="dark"] .remote-behind-update-btn:hover {
+  background: #fbbf24;
+}
+
+.remote-behind-dismiss-btn {
+  flex-shrink: 0;
+  padding: 3px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 100ms ease, background 100ms ease;
+  line-height: 1;
+}
+.remote-behind-dismiss-btn:hover {
+  opacity: 1;
+  background: #f59e0b18;
 }
 
 /* ── Workspace Progress Bar (workbench top) ───────────────────────────── */

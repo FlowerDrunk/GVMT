@@ -1,4 +1,4 @@
-import { FormEvent, MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { changeKey, getVcsLabels } from "./lib/constants";
 import { applyDocumentLanguage, createTranslator } from "./lib/i18n";
 import {
@@ -128,6 +128,13 @@ function AppContent() {
   const updateProgress = useUpdateProgress();
   const [isCloning, setIsCloning] = useState(false);
   const [commitResults, setCommitResults] = useState<OperationResult[] | null>(null);
+  const [remoteBehind, setRemoteBehind] = useState<RemoteUpdateStatus | null>(null);
+  const vcsLabels = useMemo(() => getVcsLabels(t), [t]);
+  const handleCommitDialogClose = useCallback(() => {
+    commit.setIsCommitDialogOpen(false);
+    commit.setCommitError(null);
+    setCommitResults(null);
+  }, [commit.setIsCommitDialogOpen, commit.setCommitError, setCommitResults]);
   const [commitProgressOpen, setCommitProgressOpen] = useState(false);
   const [commitProgressLines, setCommitProgressLines] = useState<string[]>([]);
   const [commitCompleted, setCommitCompleted] = useState(false);
@@ -197,13 +204,21 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    statusHook.reset();
     fileTree.reset();
     changeTree.reset();
     commit.resetCommitState();
+    statusHook.setOperationResults([]);
     repo.setRepositoryPendingDelete(null);
     ignore.reset();
     ignoreContextMenu.close();
+    setRemoteBehind(null);
+
+    const r = repo.selectedRepository;
+    if (r && r.remoteUrl && r.pathExists) {
+      checkRemoteUpdates(r.id).then((status) => {
+        if (status.hasUpdates) setRemoteBehind(status);
+      }).catch(() => {});
+    }
   }, [repo.selectedRepository?.id]);
 
   async function handleCommitRepository(event: FormEvent<HTMLFormElement>) {
@@ -220,7 +235,7 @@ function AppContent() {
       setStatus(t("status.selectFilesToCommit"));
       return;
     }
-    if (!commit.commitMessage.trim()) {
+    if (!commit.commitMessageRef.current.trim()) {
       setStatus(t("status.enterCommitMessage"));
       return;
     }
@@ -250,7 +265,7 @@ function AppContent() {
     }
     try {
       const results = await commitRepository(repo.selectedRepository.id, {
-        message: commit.commitMessage,
+        message: commit.commitMessageRef.current,
         push: commit.pushAfterCommit,
         files: selectedFiles,
       });
@@ -270,7 +285,7 @@ function AppContent() {
       }
       setStatus(failed.length === 0 ? t("status.commitComplete") : t("status.commitStepsFailed", { count: failed.length }));
       if (commitSuccess) {
-        commit.setCommitMessage("");
+        commit.commitMessageRef.current = "";
         if (pushFailed) showToast(t("status.pushFailedToast"), "error");
         else showToast(t("status.commitSuccessToast"), "success");
       }
@@ -425,15 +440,15 @@ function AppContent() {
 
   const [remoteUpdateStatus, setRemoteUpdateStatus] = useState<RemoteUpdateStatus | null>(null);
 
-  function handleChangeRowContextMenu(
+  const handleChangeRowContextMenu = useCallback((
     event: MouseEvent<HTMLButtonElement>,
     path: string,
     vcsType: VcsType,
     status?: ChangeStatus,
-  ) {
+  ) => {
     event.preventDefault();
     ignoreContextMenu.open({ path, vcsType, status }, event.clientX, event.clientY);
-  }
+  }, [ignoreContextMenu]);
 
   function handleOpenDiffFromContextMenu(path: string, vcsType: VcsType, status?: ChangeStatus) {
     const file = changedFiles.find((f) => f.path === path && f.vcsType === vcsType);
@@ -454,34 +469,44 @@ function AppContent() {
       : t("review.reviewStatePending")
     : t("review.reviewStateWaiting");
   const breadcrumbs = fileBreadcrumbs(fileTree.repositoryFiles?.path ?? "");
-  const changeTreeData = buildChangeTree(changedFiles);
-  const changeTreeWithRoot: ChangeTreeNode[] =
+  const changeTreeData = useMemo(() => buildChangeTree(changedFiles), [changedFiles]);
+  const changeTreeWithRoot = useMemo((): ChangeTreeNode[] =>
     repo.selectedRepository && changeTreeData.length > 0
       ? [{ name: repo.selectedRepository.name, path: "", children: changeTreeData }]
-      : changeTreeData;
-  const fileTreeNodes = fileTree.repositoryFiles ? toFileTreeNodes(fileTree.repositoryFiles.entries) : [];
-  const fileEntryMap = fileTree.repositoryFiles ? buildFileEntryMap(fileTree.repositoryFiles.entries) : new Map();
-  const changeTreeViewNodes = changeTreeToViewNodes(changeTreeWithRoot);
-  const changeNodeMap = buildChangeNodeMap(changeTreeWithRoot);
-  const handleFileTreeToggle = (path: string) => {
+      : changeTreeData
+  , [changeTreeData, repo.selectedRepository]);
+  const fileTreeNodes = useMemo(() => fileTree.repositoryFiles ? toFileTreeNodes(fileTree.repositoryFiles.entries) : [], [fileTree.repositoryFiles]);
+  const fileEntryMap = useMemo(() => fileTree.repositoryFiles ? buildFileEntryMap(fileTree.repositoryFiles.entries) : new Map(), [fileTree.repositoryFiles]);
+  const changeTreeViewNodes = useMemo(() => changeTreeToViewNodes(changeTreeWithRoot), [changeTreeWithRoot]);
+  const changeNodeMap = useMemo(() => buildChangeNodeMap(changeTreeWithRoot), [changeTreeWithRoot]);
+  const handleFileTreeToggle = useCallback((path: string) => {
     const entry = fileEntryMap.get(path);
     if (entry) {
       void fileTree.handleExpandFileEntry(entry);
     }
-  };
-  const handleFileTreeOpen = (path: string) => {
+  }, [fileEntryMap, fileTree]);
+  const handleFileTreeOpen = useCallback((path: string) => {
     const entry = fileEntryMap.get(path);
     if (entry) {
       void fileTree.handleSelectFileEntry(entry);
     }
-  };
+  }, [fileEntryMap, fileTree]);
+
+  const handleOpenChangeDiff = useCallback((path: string, ch: { status: ChangeStatus; vcsType: VcsType; staged: boolean }) => {
+    void changeTree.handleOpenChangeDiff(path, ch);
+  }, [changeTree]);
+
+  const onStageAllCb = useCallback(() => void handleStageAll(), [repo, statusHook]);
+  const onUnstageAllCb = useCallback(() => void handleUnstageAll(), [repo, statusHook]);
+  const onCommitStagedCb = useCallback(() => handleCommitStaged(), [repo, commit]);
+  const onUnstageFileCb = useCallback((path: string) => void handleUnstageFile(path), [repo, statusHook]);
 
   useEffect(() => {
     if (!repo.selectedRepository || !visibleSections.files) return;
     void fileTree.handleLoadRepositoryFiles("");
   }, [repo.selectedRepository?.id, visibleSections.files]);
 
-  const renderFileRow = (node: TreeViewNode, _level: number, _isExpanded: boolean) => {
+  const renderFileRow = useCallback((node: TreeViewNode, _level: number, _isExpanded: boolean) => {
     const entry = fileEntryMap.get(node.path);
     const isDirectory = node.isDirectory ?? node.children.length > 0;
     return (
@@ -500,9 +525,9 @@ function AppContent() {
         <time>{entry ? formatModifiedAt(entry.modifiedAt) : "-"}</time>
       </>
     );
-  };
+  }, [fileEntryMap, t]);
 
-  const renderChangeRow = (node: TreeViewNode, _level: number, _isExpanded: boolean) => {
+  const renderChangeRow = useCallback((node: TreeViewNode, _level: number, _isExpanded: boolean) => {
     const changeNode = changeNodeMap.get(node.path);
     const isDirectory = node.isDirectory ?? node.children.length > 0;
     return (
@@ -527,7 +552,7 @@ function AppContent() {
         )}
       </>
     );
-  };
+  }, [changeNodeMap, t]);
 
   const shortcuts = useMemo(() => [
     { key: "r", ctrl: true, action: () => statusHook.handleLoadRepositoryStatus(), enabled: !!repo.selectedRepository },
@@ -601,6 +626,7 @@ function AppContent() {
               let unlistenLine: (() => void) | null = null;
               let unlistenPct: (() => void) | null = null;
               let unlistenStats: (() => void) | null = null;
+              let unlistenReady: (() => void) | null = null;
               if (isTauriRuntime()) {
                 try {
                   const { listen } = await import("@tauri-apps/api/event");
@@ -614,7 +640,7 @@ function AppContent() {
                     setCloneStats(e.payload);
                   });
                   // Refresh repo list when .svn is created (before full checkout completes)
-                  await listen<string>("clone-repo-ready", () => {
+                  unlistenReady = await listen<string>("clone-repo-ready", () => {
                     void repo.refreshRepositories();
                   });
                 } catch { /* ignore */ }
@@ -633,6 +659,7 @@ function AppContent() {
                 unlistenLine?.();
                 unlistenPct?.();
                 unlistenStats?.();
+                unlistenReady?.();
                 setIsCloning(false);
               }
             }}
@@ -719,6 +746,46 @@ function AppContent() {
           }}
           onStashChanged={() => statusHook.loadRepositoryStatus(true)}
         />
+
+        {remoteBehind ? (
+          <div className="remote-behind-bar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+            <span className="remote-behind-text">{remoteBehind.details ?? t("notification.remoteUpdateAvailable")}</span>
+            <button type="button" className="remote-behind-update-btn" onClick={async () => {
+              const r = repo.selectedRepository;
+              if (!r) return;
+              setRemoteBehind(null);
+              const repoId = r.id;
+              updateProgress.startUpdate(repoId, false);
+              let unlisten: (() => void) | null = null;
+              if (isTauriRuntime()) {
+                try {
+                  const { listen } = await import("@tauri-apps/api/event");
+                  const u = await listen<string>("svn-update-line", (e) => {
+                    updateProgress.addLine(repoId, e.payload);
+                  });
+                  unlisten = u;
+                } catch { /* ignore */ }
+              }
+              try {
+                const results = await updateRepository(repoId);
+                updateProgress.finishUpdate(repoId);
+                statusHook.setOperationResults(results);
+                operationHistory.addEntry(results);
+                statusHook.loadRepositoryStatus(true);
+              } catch (error) {
+                const msg = error instanceof Error ? error.message : String(error);
+                updateProgress.finishUpdate(repoId);
+                setStatus(msg);
+              } finally {
+                unlisten?.();
+              }
+            }}>{t("notification.update")}</button>
+            <button type="button" className="remote-behind-dismiss-btn" onClick={() => setRemoteBehind(null)} title={t("commit.cancel")}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        ) : null}
 
         <div className="workbench">
           <section className="main-thread">
@@ -863,14 +930,14 @@ function AppContent() {
                     changeNodeMap={changeNodeMap}
                     selectedChange={changeTree.selectedChange}
                     onSelectChange={changeTree.selectChange}
-                    onOpenChangeDiff={(path, ch) => void changeTree.handleOpenChangeDiff(path, ch)}
+                    onOpenChangeDiff={handleOpenChangeDiff}
                     onContextMenu={handleChangeRowContextMenu}
                     repositoryStatus={statusHook.repositoryStatus}
                     defaultViewMode={settings.defaultViewMode}
-                    onStageAll={repo.selectedRepository?.vcsType !== "svn" ? () => void handleStageAll() : undefined}
-                    onUnstageAll={repo.selectedRepository?.vcsType !== "svn" ? () => void handleUnstageAll() : undefined}
-                    onCommitStaged={() => handleCommitStaged()}
-                    onUnstageFile={(path) => void handleUnstageFile(path)}
+                    onStageAll={repo.selectedRepository?.vcsType !== "svn" ? onStageAllCb : undefined}
+                    onUnstageAll={repo.selectedRepository?.vcsType !== "svn" ? onUnstageAllCb : undefined}
+                    onCommitStaged={onCommitStagedCb}
+                    onUnstageFile={onUnstageFileCb}
                   />
                 ),
               },
@@ -933,6 +1000,7 @@ function AppContent() {
         t={t}
         onOpenDiff={handleOpenDiffFromContextMenu}
         onIgnoreFile={(path, vcsType) => ignore.handleAddIgnoreRule(path, vcsType)}
+        onClose={ignoreContextMenu.close}
         onOperationResult={(result) => {
           statusHook.setOperationResults([result]);
           operationHistory.addEntry([result]);
@@ -946,7 +1014,18 @@ function AppContent() {
         isLoading={isLoading}
         t={t}
         onClose={() => repo.setRepositoryPendingDelete(null)}
-        onConfirm={repo.handleDeleteRepositoryRecord}
+        onConfirm={async () => {
+          const deletedId = repo.repositoryPendingDelete?.id;
+          await repo.handleDeleteRepositoryRecord();
+          if (deletedId != null) {
+            setLatestSvnRevisions((prev) => {
+              if (!(deletedId in prev)) return prev;
+              const next = { ...prev };
+              delete next[deletedId];
+              return next;
+            });
+          }
+        }}
       />
 
       <IgnoreDialog
@@ -972,24 +1051,24 @@ function AppContent() {
 
       <CommitDialog
         open={commit.isCommitDialogOpen}
-        onClose={() => { commit.setIsCommitDialogOpen(false); commit.setCommitError(null); setCommitResults(null); }}
+        onClose={handleCommitDialogClose}
         t={t}
         repositoryId={repo.selectedRepository?.id ?? null}
         committableFiles={commit.committableFiles}
         selectedCommitKeys={commit.selectedCommitKeys}
         selectedCommitCount={commit.selectedCommitCount}
+        selectedVcsCounts={commit.selectedVcsCounts}
         hasGitCommitSelection={commit.hasGitCommitSelection}
         pushAfterCommit={commit.pushAfterCommit}
-        commitMessage={commit.commitMessage}
         isCommitLoading={commit.isCommitLoading}
-        vcsLabels={getVcsLabels(t)}
+        vcsLabels={vcsLabels}
+        commitMessageRef={commit.commitMessageRef}
         commitError={commit.commitError}
         commitHash={commit.commitHash}
         commitResults={commitResults}
         onToggleAllFiles={commit.toggleAllCommitFiles}
         onToggleFile={commit.toggleCommitFile}
         onPushToggle={commit.setPushAfterCommit}
-        onCommitMessageChange={commit.setCommitMessage}
         onSubmit={handleCommitRepository}
         onDismissResults={() => setCommitResults(null)}
         onOpenFileDiff={(path, vcsType, status) => {
